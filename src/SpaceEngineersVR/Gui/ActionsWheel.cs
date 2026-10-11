@@ -33,6 +33,9 @@ namespace SpaceEngineersVR.Gui
     /// <item>After the game's own entries come two of the plugin's, for the external view screen
     /// (<see cref="ExternalViewEntries"/>): "External view", a page to choose what it shows (off, third person, or one of
     /// the ship's cameras), and "Next camera", which steps through them with the wheel left up.</item>
+    /// <item>Then what the game has a key for and its radial leaves out: on the build ring Default mount point, and the voxel
+    /// hand's Voxel material page (<see cref="BuildEntries"/>); Remote access on the Menu page and an Emotes page
+    /// (<see cref="GameControlEntries"/>).</item>
     /// </list>
     /// Left out, as the hands have no use for them: the keyboard help screen, the free spectator camera (nothing moves it
     /// in VR: <see cref="VRControls"/>), and the camera switch while third person is off (<see cref="VRSettings.ThirdPerson"/>).
@@ -137,8 +140,9 @@ namespace SpaceEngineersVR.Gui
                 Log.Warn("Actions wheel: the game's system items could not be read; nothing is left out of the wheel");
             try
             {
-                // The HUD draws whether it has the focus or not, onto the same GUI panel: while the panel is the wheel in the
-                // hand it would shrink onto it beside the ring.
+                // The HUD draws whether it has the focus or not, onto the same GUI panel: while the panel is a wheel in the
+                // hand it would shrink onto it beside the ring (the readouts, the markers' distances, the game's notifications
+                // and the toolbar's lines behind the ring and its labels).
                 harmony.Patch(AccessTools.Method(typeof(MyGuiScreenHudSpace), nameof(MyGuiScreenHudSpace.Draw)),
                     prefix: new HarmonyMethod(typeof(ActionsWheel), nameof(HudDraw)));
             }
@@ -150,7 +154,7 @@ namespace SpaceEngineersVR.Gui
 
         private static bool HudDraw(ref bool __result)
         {
-            if (!Showing())
+            if (!Showing() && !VRRadialMenus.RadialShowing())
                 return true;
             __result = true;
             return false;
@@ -206,7 +210,10 @@ namespace SpaceEngineersVR.Gui
                     return false;
                 }
                 List<Entry> top = Build(menu, VRSettings.ThirdPerson, out string left);
+                BuildEntries.AddTo(top, subtype);
                 ExternalViewEntries.AddTo(top);
+                QuickActionsScreen.AddTo(top);
+                GameControlEntries.AddTo(top);
                 Vector3 at = Anchor(hand, out float fromHead);
                 MyGuiSandbox.AddScreen(new ActionsWheelScreen(top, hand, gripHeld));
                 Log.Info($"Actions wheel: opened at the {hand.ToString().ToLowerInvariant()} hand, fixed at ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}), {fromHead:0.00} m from the head; {subtype}, {top.Count} entries ({Names(top)}); left out: {left}");

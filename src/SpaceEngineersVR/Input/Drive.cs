@@ -38,10 +38,18 @@ namespace SpaceEngineersVR.Input
     /// </summary>
     /// <remarks>
     /// Commands: load &lt;world&gt;, quit-to-menu, control &lt;MyControlsSpace id&gt; [seconds], key &lt;MyKeys&gt;[+&lt;MyKeys&gt;...]
-    /// [seconds], escape, move x,z[,up] [seconds], look yaw,pitch, gui click x,y, gui hover x,y, gui release, type &lt;text&gt;,
-    /// shot &lt;path&gt;, wait &lt;seconds&gt;, recentre (as the Options button; reports where the eye then is), sit [name] (into the nearest empty
-    /// cockpit, named or not, as its door does), head (where the eye is,
-    /// from the character's eye, and the play position). Everything goes in where the game reads it, after it has read (or, without focus,
+    /// [seconds], escape, move x,z[,up] [seconds], look yaw,pitch, gui click x,y, gui hover x,y, gui press x,y (hover and hold the button down, to see a
+    /// pressed look; a gui hover or click at the same place lets it go there, so the press clicks), gui release, type &lt;text&gt;,
+    /// shot [both] &lt;path&gt; (both: the whole window, both eyes on the desktop), wait &lt;seconds&gt;, recentre (as the Options button; reports where the eye then is), sit [name] (into the nearest empty
+    /// cockpit, named or not, as its door does), view [name] (through the nearest working camera block, as the terminal's View button), turret [name]
+    /// (control of the nearest turret, searchlight or turret control block, as the terminal's Control button), respawn (presses the respawn
+    /// screen's Respawn button once it is up; die first with control SUICIDE), answer yes|no|ok (the focused message box, such as
+    /// the confirm box control SUICIDE opens, by its own button's handler; reports its text), edit text|data|code [name|lines] (a multi-line text editor, as the game opens it),
+    /// keyboard [state|press &lt;label&gt;|where &lt;label&gt;] (the on-screen keyboard; <see cref="Gui.TextEntryTest"/>),
+    /// setting key=value (a VR setting for this run, not saved), head (where the eye is,
+    /// from the character's eye, and the play position), wheel open [left|right] | state | pick &lt;name&gt; | close (the actions
+    /// wheel, <see cref="Gui.ActionsWheelDrive"/>), mouth (where push to talk's mouth is in tracking space, for a fake left
+    /// grip: <see cref="Hands.VoiceTalk"/>). Everything goes in where the game reads it, after it has read (or, without focus,
     /// cleared) the real devices for the frame: the controls through the same questions the hands answer
     /// (<see cref="InputPatches"/>), keys into its keyboard state, typed text into its text input, the cursor and
     /// left button through the laser's path (<see cref="Laser"/>, <see cref="PanelCursor"/>). The window without focus
@@ -79,6 +87,8 @@ namespace SpaceEngineersVR.Input
             public bool Jetpack;
             public MyCharacter Character;
             public MyGuiControlTextbox Box;
+            public MyGuiScreenMessageBox MessageBox;
+            public string MessageText;
         }
 
         private static readonly Queue<string> queue = new Queue<string>();
@@ -109,8 +119,9 @@ namespace SpaceEngineersVR.Input
 
         // The shot, between the game thread and the render thread.
         private static readonly object shotGate = new object();
-        private static string shotWanted, shotTaken, shotError, shotGeometry;
+        private static string shotWanted, shotTaken, shotError, shotGeometry, shotNote;
         private static int shotSerial;
+        private static bool shotWhole;
         private static bool shotHooked;
 
         private static readonly List<MyGuiControlBase> underCursor = new List<MyGuiControlBase>();
@@ -413,19 +424,95 @@ namespace SpaceEngineersVR.Input
                 case "wait": return Wait(c);
                 case "recentre": return Recentre(c);
                 case "sit": return Sit(c);
+                case "view": return View(c);
+                case "turret": return Turret(c);
+                case "respawn": return Respawn(c);
+                case "answer": return Answer(c);
                 case "head": return Done(c, HeadReport());
+                case "uses": return Uses(c);
+                case "touch":
+                case "reach":
+                case "screens":
+                    return ScreenTest(c);
+                case "content":
+                    return Gui.TouchToolbar.DriveContent(c.Args, out string content) ? Done(c, content) : Fail(c, content);
+                case "quickmenu":
+                    return QuickMenu(c);
+                case "edit":
+                case "keyboard":
+                    return TextEntryTest(c);
+                case "wheel":
+                    return Wheel(c);
+                case "mouth":
+                    return Done(c, MouthReport());
+                case "setting": return SettingCommand(c);
                 case "":
                     return Fail(c, "no command");
                 default:
-                    return Fail(c, $"unknown command '{c.Verb}' (load, quit-to-menu, control, key, escape, move, look, gui, type, shot, wait, recentre, sit, head)");
+                    return Fail(c, $"unknown command '{c.Verb}' (load, quit-to-menu, control, key, escape, move, look, gui, type, shot, wait, recentre, sit, view, turret, respawn, answer, head, uses, touch, reach, screens, content, quickmenu, edit, keyboard, wheel, mouth, setting)");
             }
+        }
+
+        /// <summary>The typing test aids (<see cref="Gui.TextEntryTest"/>): edit text|data|code [name|lines], keyboard [state|press|where].</summary>
+        private static bool TextEntryTest(Command c)
+        {
+            if (!Gui.TextEntryTest.Step(c.Verb, c.Args, c.Frames, out bool ok, out string detail))
+                return false;
+            return ok ? Done(c, detail) : Fail(c, detail);
+        }
+
+        /// <summary>The actions wheel's test aid (<see cref="Gui.ActionsWheelDrive"/>): open [left|right], state, pick &lt;name&gt;, close.</summary>
+        private static bool Wheel(Command c)
+        {
+            if (!Gui.ActionsWheelDrive.Step(c.Args, c.Frames, out bool ok, out string detail))
+                return false;
+            return ok ? Done(c, detail) : Fail(c, detail);
+        }
+
+        /// <summary>
+        /// Push to talk's mouth (<see cref="Hands.VoiceTalk.Mouth"/>) in tracking space, where a fake left grip goes to talk, and how
+        /// far the left grip is from it now.
+        /// </summary>
+        private static string MouthReport()
+        {
+            if (!Tracking.GameHead.Take())
+                return "no tracked head";
+            Vector3 mouth = Vector3.Transform(Hands.VoiceTalk.Mouth, Tracking.GameHead.TrackingPose);
+            string left = Hands.VoiceTalk.TryDistance(Hand.Left, out float distance) ? $"{distance * 100:0.0} cm" : "not tracked";
+            return $"mouth at ({mouth.X:0.000}, {mouth.Y:0.000}, {mouth.Z:0.000}) in tracking space; left grip {left} from it (talks within {Hands.VoiceTalk.MouthReach * 100:0} cm)";
+        }
+
+        /// <summary>The wrist panel's test aid (<see cref="Gui.QuickActionsScreen.Test"/>): open, state, press &lt;label&gt;, close.</summary>
+        private static bool QuickMenu(Command c)
+        {
+            if (!Gui.QuickActionsScreen.Test(c.Args, c.Frames, out bool ok, out string detail))
+                return false;
+            return ok ? Done(c, detail) : Fail(c, detail);
+        }
+
+        /// <summary>The screens' test aids (<see cref="Hands.ScreenTest"/>).</summary>
+        private static bool ScreenTest(Command c)
+        {
+            if (!Hands.ScreenTest.Step(c.Verb, c.Args, c.Frames, out bool ok, out string detail))
+                return false;
+            return ok ? Done(c, detail) : Fail(c, detail);
+        }
+
+        /// <summary>"setting key=value": one VR setting for this run, as the settings file would have it; the file is not written.</summary>
+        private static bool SettingCommand(Command c)
+        {
+            string args = c.Args ?? string.Empty;
+            int equals = args.IndexOf('=');
+            if (equals <= 0)
+                return Fail(c, "expected setting key=value");
+            return VRSettings.TrySetForRun(args.Substring(0, equals), args.Substring(equals + 1).Trim(), out string detail) ? Done(c, detail) : Fail(c, detail);
         }
 
         private static MyCockpit sitIn;
 
         /// <summary>
         /// Seats the character in a cockpit as the cockpit's door does when used (<see cref="MyCockpit.RequestUse"/>,
-        /// Manipulate), from wherever it is: the nearest empty one whose grid's name or own name has the text in it, or the
+        /// Manipulate), from wherever it is: the nearest empty one whose grid's name, own name or subtype has the text in it, or the
         /// nearest of all without a text. For the seated tests in the disposable worlds; it does not walk there.
         /// </summary>
         private static bool Sit(Command c)
@@ -444,6 +531,7 @@ namespace SpaceEngineersVR.Input
                     .ToList();
                 bool Named(MyCockpit cockpit) => name.Length == 0
                     || cockpit.CubeGrid.DisplayName?.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0
+                    || cockpit.BlockDefinition.Id.SubtypeName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0
                     || cockpit.CustomName?.ToString().IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
                 string Describe(MyCockpit cockpit) =>
                     $"{cockpit.BlockDefinition.Id.SubtypeName} '{cockpit.CustomName}' on '{cockpit.CubeGrid.DisplayName}', {Vector3D.Distance(cockpit.PositionComp.GetPosition(), at):F0} m";
@@ -457,6 +545,151 @@ namespace SpaceEngineersVR.Input
             if (sitIn != null && sitIn.Pilot == character)
                 return Done(c, $"seated in the {c.Path}");
             return Elapsed(c) > 5.0 && Fail(c, $"not seated in the {c.Path} after 5 s");
+        }
+
+        private static MyCubeBlock lookThrough, controlIn;
+
+        /// <summary>
+        /// "view [name]": looks through the nearest working camera block (named or not, as <see cref="Sit"/> picks a cockpit), as the
+        /// terminal's View button does (MyCameraBlock.RequestSetView), from the character or the seat. Left as in the game: USE or
+        /// escape. For the camera view tests (switching and zoom); it does not walk there.
+        /// </summary>
+        private static bool View(Command c)
+        {
+            if (c.Frames == 0)
+            {
+                if (MySession.Static?.ControlledEntity == null)
+                    return Fail(c, "nothing is controlled (no character or seat)");
+                lookThrough = Nearest(c, block => block is MyCameraBlock camera && camera.IsWorking, "working camera block", out string error);
+                if (lookThrough == null)
+                    return Fail(c, error);
+                ((MyCameraBlock)lookThrough).RequestSetView();
+                return false;
+            }
+            if (lookThrough != null && MySession.Static?.CameraController == lookThrough)
+                return Done(c, $"looking through the {c.Path}");
+            return Elapsed(c) > 5.0 && Fail(c, $"not looking through the {c.Path} after 5 s");
+        }
+
+        /// <summary>
+        /// "turret [name]": takes control of the nearest turret, searchlight or turret control block (named or not), as the
+        /// terminal's Control button does (IMyTurretTerminalControlReceiver.RequestControl, which the game allows only when its
+        /// CanControl says so: working, not already controlled, and in antenna reach). Left as in the game: USE or escape.
+        /// </summary>
+        private static bool Turret(Command c)
+        {
+            if (c.Frames == 0)
+            {
+                if (MySession.Static?.ControlledEntity == null)
+                    return Fail(c, "nothing is controlled (no character or seat)");
+                controlIn = Nearest(c, block => block is Sandbox.Game.Entities.Interfaces.IMyTurretTerminalControlReceiver,
+                    "turret, searchlight or turret control block", out string error);
+                if (controlIn == null)
+                    return Fail(c, error);
+                var turret = (Sandbox.Game.Entities.Interfaces.IMyTurretTerminalControlReceiver)controlIn;
+                if (!turret.CanControl())
+                    return Fail(c, $"the game will not hand over the {c.Path} (CanControl: not working, already controlled, or out of antenna reach)");
+                turret.RequestControl();
+                return false;
+            }
+            if (controlIn != null && MySession.Static?.ControlledEntity?.Entity == controlIn)
+                return Done(c, $"controlling the {c.Path}, the view {MySession.Static.CameraController?.GetType().Name}");
+            return Elapsed(c) > 5.0 && Fail(c, $"not controlling the {c.Path} after 5 s");
+        }
+
+        /// <summary>
+        /// The nearest block that <paramref name="fits"/>, to the controlled character or seat, whose grid's name, own name or
+        /// subtype has the command's text in it (the nearest of all without a text). <see cref="Command.Path"/> describes it;
+        /// null, with the nearest few in <paramref name="error"/>, when none has the text.
+        /// </summary>
+        private static MyCubeBlock Nearest(Command c, Func<MyCubeBlock, bool> fits, string what, out string error)
+        {
+            error = null;
+            string name = Unquote(c.Args ?? string.Empty);
+            Vector3D at = MySession.Static.ControlledEntity.Entity.PositionComp.GetPosition();
+            List<MyCubeBlock> blocks = MyEntities.GetEntities().OfType<MyCubeGrid>()
+                .SelectMany(grid => grid.GetFatBlocks())
+                .Where(fits)
+                .OrderBy(block => Vector3D.Distance(block.PositionComp.GetPosition(), at))
+                .ToList();
+            bool Named(MyCubeBlock block) => name.Length == 0
+                || block.CubeGrid.DisplayName?.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0
+                || block.BlockDefinition.Id.SubtypeName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0
+                || (block as Sandbox.Game.Entities.Cube.MyTerminalBlock)?.CustomName?.ToString().IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
+            string Describe(MyCubeBlock block) =>
+                $"{block.BlockDefinition.Id.SubtypeName} '{(block as Sandbox.Game.Entities.Cube.MyTerminalBlock)?.CustomName}' on '{block.CubeGrid.DisplayName}', {Vector3D.Distance(block.PositionComp.GetPosition(), at):F0} m";
+            MyCubeBlock found = blocks.FirstOrDefault(Named);
+            if (found == null)
+            {
+                error = $"no {what}{(name.Length > 0 ? $" named '{name}'" : "")}" + (blocks.Count > 0 ? $"; the nearest: {string.Join("; ", blocks.Take(6).Select(Describe))}" : " in the world");
+                return null;
+            }
+            c.Path = Describe(found);
+            return found;
+        }
+
+        /// <summary>
+        /// "respawn": once the respawn screen (MyGuiScreenMedicals) is up with its Respawn button enabled, presses it as a click
+        /// does, for the respawn point the screen has chosen, and ends when the character is alive and the screen has gone. Die
+        /// first with "control SUICIDE" (the game's own: Backspace on a keyboard, MyGuiScreenGamePlay, controlledEntity.Die).
+        /// </summary>
+        private static bool Respawn(Command c)
+        {
+            bool inScreen = Sandbox.Game.Multiplayer.Sync.Players?.RespawnComponent?.IsInRespawnScreen() == true;
+            if (c.Phase == 0)
+            {
+                SpaceEngineers.Game.GUI.MyGuiScreenMedicals screen = SpaceEngineers.Game.GUI.MyGuiScreenMedicals.Static;
+                if (inScreen && screen?.GetControlByName("Respawn") is MyGuiControlButton button && button.Enabled)
+                {
+                    button.PressButton();
+                    c.Phase = 1;
+                    c.Since = Now();
+                    return false;
+                }
+                return Elapsed(c) > 30.0 && Fail(c, inScreen ? "the respawn screen's Respawn button was not enabled in 30 s (no respawn point chosen?)" : "no respawn screen in 30 s");
+            }
+            MyCharacter character = MySession.Static?.LocalCharacter;
+            if (character != null && !character.IsDead && !inScreen)
+                return Done(c, $"alive again, {Now() - c.Since:0.0} s after Respawn was pressed");
+            return Now() - c.Since > 30.0 && Fail(c, "Respawn was pressed, but there is no living character 30 s later");
+        }
+
+        /// <summary>
+        /// "answer yes|no|ok": the message box that has the focus (MyGuiScreenMessageBox: the confirm box control SUICIDE opens, a
+        /// warning, a question) is answered by its own button's handler, as a click on that button runs it: Yes and OK are
+        /// OnYesClick, No is OnNoClick. Only a button the box has can be answered. Ends once the box has closed, with its text.
+        /// </summary>
+        private static bool Answer(Command c)
+        {
+            if (c.Phase == 0)
+            {
+                string word = c.Args.Trim().ToLowerInvariant();
+                string button = word == "yes" ? "Yes" : word == "no" ? "No" : word == "ok" ? "OK" : null;
+                if (button == null)
+                    return Fail(c, "answer what: yes, no or ok");
+                if (!(MyScreenManager.GetScreenWithFocus() is MyGuiScreenMessageBox box) || box.State != MyGuiScreenState.OPENED)
+                    return Fail(c, $"no message box has the focus (focus {Focus()})");
+                string text = string.Join(" ", (box.MessageText?.ToString() ?? string.Empty)
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
+                if (box.GetControlByName(button) == null)
+                {
+                    string has = string.Join(", ", new[] { "Yes", "No", "OK", "Cancel" }.Where(b => box.GetControlByName(b) != null));
+                    return Fail(c, $"the message box has no {button} button (it has: {(has.Length == 0 ? "none" : has)}); its text: \"{text}\"");
+                }
+                c.MessageBox = box;
+                c.MessageText = text;
+                c.Phase = 1;
+                c.Since = Now();
+                Log.Info($"Drive: {c.Label}: answering the message box \"{text}\" with {button}, as its own button does");
+                if (button == "No")
+                    MySandboxGame.Static.Invoke(() => box.OnNoClick(null), "SpaceEngineersVR drive answer");
+                else
+                    MySandboxGame.Static.Invoke(() => box.OnYesClick(null), "SpaceEngineersVR drive answer");
+                return false;
+            }
+            if (c.MessageBox.State != MyGuiScreenState.OPENED || MyScreenManager.GetScreenWithFocus() != c.MessageBox)
+                return Done(c, $"answered \"{c.MessageText}\"; focus {Focus()}");
+            return Now() - c.Since > 5.0 && Fail(c, $"answered \"{c.MessageText}\", but the box was still open 5 s later");
         }
 
         /// <summary>Recentres the head on all axes, as the Options button does, and once it is taken reports where the eye is.</summary>
@@ -501,6 +734,22 @@ namespace SpaceEngineersVR.Input
             return report + $"; focus {Focus()}";
         }
 
+        /// <summary>
+        /// "uses [metres] [count]": lists the use objects near the character (default 4 m, the nearest 30), how grab to use
+        /// takes each from where the player is, and where each is in the tracking space, to place a fake hand on it.
+        /// </summary>
+        private static bool Uses(Command c)
+        {
+            string[] words = c.Args.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            double radius = 4.0;
+            int count = 30;
+            if (words.Length > 0 && !double.TryParse(words[0], NumberStyles.Float, CultureInfo.InvariantCulture, out radius))
+                return Fail(c, "uses takes metres and a count, e.g. 'uses 4 30'");
+            if (words.Length > 1 && !int.TryParse(words[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out count))
+                return Fail(c, "uses takes metres and a count, e.g. 'uses 4 30'");
+            return Done(c, Hands.GrabUse.Survey(radius, count));
+        }
+
         private static bool Wait(Command c)
         {
             if (c.Frames == 0 && !TrySeconds(c.Args, out c.Hold))
@@ -536,6 +785,18 @@ namespace SpaceEngineersVR.Input
                     double loading = Now() - c.Since;
                     if (Loaded())
                         return Done(c, $"loaded in {loading:0.0} s; focus {Focus()}");
+                    // A save with no binary cache (.sbsB5; one edited as XML) stops on the box MyGuiScreenLoading.RunLoad raises for
+                    // MyLoadingNeedXMLException (MySession.Load, allowXml false). Its OK button runs OnYesClick, whose callback
+                    // starts the load again with XML allowed; that is called here, as the button does. Once per load, and only this box.
+                    if (c.Mark == 0 && MySession.Static == null && MyScreenManager.GetScreenWithFocus() is MyGuiScreenMessageBox xmlBox
+                        && xmlBox.State == MyGuiScreenState.OPENED && IsNeedXmlBox(xmlBox))
+                    {
+                        c.Mark = 1;
+                        c.Since = Now();
+                        Log.Info($"Drive: {c.Label}: the game asked to load the world from its XML (no binary cache); answered Yes as its own button does");
+                        MySandboxGame.Static.Invoke(() => xmlBox.OnYesClick(null), "SpaceEngineersVR drive load from XML");
+                        return false;
+                    }
                     if (loading > 5 && MySession.Static == null && !MyScreenManager.ExistsScreenOfType(typeof(MyGuiScreenLoading))
                         && MyScreenManager.GetScreenWithFocus() is MyGuiScreenMessageBox)
                         return Fail(c, "the game showed a message box instead of loading (shot it to read it)");
@@ -544,6 +805,16 @@ namespace SpaceEngineersVR.Input
                     return false;
             }
         }
+
+        /// <summary>The "file format of this world is outdated" box (MyCommonTexts.LoadingNeedsXML), by its text, ignoring line breaks.</summary>
+        private static bool IsNeedXmlBox(MyGuiScreenMessageBox box)
+        {
+            string text = box.MessageText?.ToString();
+            return !string.IsNullOrEmpty(text)
+                && WithoutSpace(text) == WithoutSpace(VRage.MyTexts.GetString(MyCommonTexts.LoadingNeedsXML));
+        }
+
+        private static string WithoutSpace(string text) => new string(text.Where(ch => !char.IsWhiteSpace(ch)).ToArray());
 
         private static bool Quit(Command c)
         {
@@ -722,9 +993,9 @@ namespace SpaceEngineersVR.Input
                 guiHeld = guiButton = false;
                 return Done(c, "cursor let go");
             }
-            bool click = what == "click";
-            if (!click && what != "hover")
-                return Fail(c, "gui needs click x,y, hover x,y or release (x,y in pixels of a shot)");
+            bool click = what == "click", press = what == "press";
+            if (!click && !press && what != "hover")
+                return Fail(c, "gui needs click x,y, hover x,y, press x,y or release (x,y in pixels of a shot)");
             switch (c.Phase)
             {
                 case 0:
@@ -745,6 +1016,11 @@ namespace SpaceEngineersVR.Input
                     if (c.Frames < 2)
                         return false;
                     c.Under = Under();
+                    if (press)
+                    {
+                        guiButton = true;
+                        return Done(c, $"GUI {c.Gui.X:0},{c.Gui.Y:0}; held down on {c.Under}");
+                    }
                     if (!click)
                         return Done(c, $"GUI {c.Gui.X:0},{c.Gui.Y:0}; over {c.Under}");
                     guiButton = true;
@@ -802,7 +1078,9 @@ namespace SpaceEngineersVR.Input
                 case 0:
                     if (!shotHooked)
                         return Fail(c, "the renderer could not be hooked at start");
-                    string path = Unquote(c.Args);
+                    string args = (c.Args ?? string.Empty).Trim();
+                    bool whole = args.StartsWith("both ", StringComparison.OrdinalIgnoreCase);
+                    string path = Unquote(whole ? args.Substring(5) : args);
                     if (path.Length == 0)
                         return Fail(c, "shot needs a file path, e.g. 'shot C:\\temp\\menu.png'");
                     if (!Path.IsPathRooted(path))
@@ -813,22 +1091,24 @@ namespace SpaceEngineersVR.Input
                     lock (shotGate)
                     {
                         shotWanted = c.Path;
-                        shotTaken = shotError = null;
+                        shotWhole = whole;
+                        shotTaken = shotError = shotNote = null;
                         shotSerial++;
                     }
                     c.Phase = 1;
                     return false;
                 default:
-                    string taken, error;
+                    string taken, error, note;
                     lock (shotGate)
                     {
                         taken = shotTaken;
                         error = shotError;
+                        note = shotNote;
                     }
                     if (error != null)
                         return Fail(c, error);
                     if (taken != null)
-                        return Done(c, $"{PngSize(taken)} {taken}");
+                        return Done(c, $"{PngSize(taken)} {taken}; {note}");
                     return Elapsed(c) > ShotSeconds && Fail(c, $"the renderer did not present a frame in {ShotSeconds:0} s");
             }
         }
@@ -842,18 +1122,26 @@ namespace SpaceEngineersVR.Input
         {
             string path;
             int serial;
+            bool whole;
             lock (shotGate)
             {
                 path = shotWanted;
                 shotWanted = null;
                 serial = shotSerial;
+                whole = shotWhole;
             }
             if (path == null)
                 return;
+            string note = Rendering.FullView.ShotNote();
+            lock (shotGate)
+            {
+                if (serial == shotSerial)
+                    shotNote = note;
+            }
             string error = null;
             try
             {
-                DriveShot.Pixels pixels = DriveShot.Read(out error);
+                DriveShot.Pixels pixels = DriveShot.Read(whole, out error);
                 if (pixels != null)
                 {
                     ThreadPool.QueueUserWorkItem(_ => EncodeShot(serial, path, pixels));

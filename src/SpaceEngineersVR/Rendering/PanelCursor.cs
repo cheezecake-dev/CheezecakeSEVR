@@ -90,6 +90,9 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>A point in the window (a pixel of the mirror's back buffer) to the GUI pixel the real mouse there would point at.</summary>
         internal static Vector2 WindowToGui(Vector2 window) => ToGui(window);
 
+        /// <summary>A GUI pixel to the window pixel (of the drive's shot) that points at it: the other way from <see cref="WindowToGui"/>.</summary>
+        internal static Vector2 GuiToWindow(Vector2 onGui) => ToWindow(onGui);
+
         /// <summary>A point on the GUI to where it shows in the window, in the part the cursor was last in.</summary>
         private static Vector2 ToWindow(Vector2 onGui)
         {

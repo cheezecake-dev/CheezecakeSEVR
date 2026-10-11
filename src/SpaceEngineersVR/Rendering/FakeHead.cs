@@ -28,9 +28,17 @@ namespace SpaceEngineersVR.Rendering
 
         private static float yaw, pitch, roll, shift, x, z;
         private static float? height;
+        private static bool overrideLive;
         private static string lastText;
 
         public static bool Active { get; private set; }
+
+        /// <summary>
+        /// override=1 in the control file: the fake head is the game's head even with a headset live, in place of the headset's own
+        /// (the eyes are still the headset's). For checking what the real controllers do against a head put where the test wants it
+        /// while the headset sits still. Without it a live headset's head wins and the file does nothing.
+        /// </summary>
+        public static bool Overrides => Active && overrideLive;
 
         /// <summary>The fake origin's height above the floor, metres; null (floor unknown) without a height= in the control file.</summary>
         public static float? OriginAboveFloor => Active && height.HasValue ? OriginHeight : (float?)null;
@@ -91,6 +99,7 @@ namespace SpaceEngineersVR.Rendering
             Active = text != null;
             yaw = pitch = roll = shift = x = z = 0f;
             height = null;
+            overrideLive = false;
             foreach (string part in (text ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 string[] pair = part.Split('=');
@@ -105,10 +114,11 @@ namespace SpaceEngineersVR.Rendering
                     case "height": height = value; break;
                     case "x": x = value; break;
                     case "z": z = value; break;
+                    case "override": overrideLive = value != 0f; break;
                 }
             }
             Log.Info(Active ? $"Fake head: yaw {yaw}, pitch {pitch}, roll {roll}, field of view shifted {shift}, {x} m right, {z} m back, " +
-                              (height.HasValue ? $"{height.Value} m above the floor" : "no floor") : "Fake head off");
+                              (height.HasValue ? $"{height.Value} m above the floor" : "no floor") + (overrideLive ? ", replaces a live headset's head" : string.Empty) : "Fake head off");
         }
     }
 }

@@ -17,6 +17,7 @@ using VRage.Game.Components;
 using VRage.Game.Entity;
 using VRage.Game.Entity.UseObject;
 using VRageMath;
+using VRageRender.Animations;
 
 namespace SpaceEngineersVR.Hands
 {
@@ -75,12 +76,13 @@ namespace SpaceEngineersVR.Hands
         };
 
         /// <summary>Whether a fingertip may press this use object: it is a push-button of the allow-list, or <see cref="All"/> is on.</summary>
-        internal static bool IsPressSwitch(object use)
+        internal static bool IsPressSwitch(object use) => use != null && (All || IsPushButton(use));
+
+        /// <summary>Whether this use object is one of the push-buttons the fingertip owns, whatever <see cref="All"/> says (<see cref="GrabUse"/> leaves them alone).</summary>
+        internal static bool IsPushButton(object use)
         {
             if (use == null)
                 return false;
-            if (All)
-                return true;
             foreach (Type type in PressSwitches)
             {
                 if (type.IsInstanceOfType(use))
@@ -90,13 +92,13 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// Metres from the controller's grip pose, along its aim, to the tip of the index finger. The grip pose is the
-        /// middle of the closed hand; the avatar's palm bone sits <c>HandIK.WristBack</c> (0.08 m) behind it and a hand
-        /// is about 0.17 m from the wrist to the index fingertip, which puts the tip 0.09 m ahead of the grip.
+        /// Metres from the index finger's last joint (SE_Rig?_Index_3) to the glove's fingertip, along the bone (a finger
+        /// points along its bones' -X): the furthest of the 65 glove vertices skinned at least half to that bone
+        /// (RightGlove and LeftGlove in SE_astronaut_LOD0.mwm, bind pose), which lie within 0.3 cm of the bone's line.
         /// </summary>
         public static double FingertipReach => ReachDebug > 0.0 ? ReachDebug : DefaultFingertipReach;
 
-        public const double DefaultFingertipReach = 0.09;
+        public const double DefaultFingertipReach = 0.033;
 
         /// <summary>RenderDebug FingerReach=&lt;millimetres&gt;: <see cref="FingertipReach"/> to try, for fitting the tip to the glove (0 = the default).</summary>
         internal static double ReachDebug;
@@ -217,7 +219,7 @@ namespace SpaceEngineersVR.Hands
                 return;
             try
             {
-                bool live = !Off && VRSettings.FingerPress && VRInput.Active && HandTools.IsLocalOnFoot(__instance)
+                bool live = !Off && VRSettings.FingerPress && VRInput.Active && (HandTools.IsLocalOnFoot(__instance) || SeatedFirstPerson(__instance))
                             && !__instance.Closed && __instance.PositionComp != null;
                 if (!live)
                 {
@@ -226,15 +228,19 @@ namespace SpaceEngineersVR.Hands
                 }
 
                 // Nothing is pressed up a ladder (Use there lets go of it) or while a menu has the focus; a hand with a tool
-                // or the builder in it does not press either.
+                // or the builder in it does not press either. Seated, the tool is the ship's, not in the hand (as screen touch has it).
                 object focused = MyScreenManager.GetScreenWithFocus();
                 bool building = (MyCubeBuilder.Static != null && MyCubeBuilder.Static.IsActivated)
                                 || (MyClipboardComponent.Static != null && MyClipboardComponent.Static.IsActive);
-                bool holdsTool = __instance.CurrentWeapon != null || building;
+                bool holdsTool = (__instance.CurrentWeapon != null && !__instance.IsSitting) || building;
                 MatrixD bodyFromWorld = __instance.PositionComp.WorldMatrixNormalizedInv;
                 MatrixD bodyToWorld = MatrixD.Invert(bodyFromWorld);
                 foreach (Hand hand in bothHands)
-                    Step(hand, __instance, MayPress(__instance.IsOnLadder, focused, holdsTool, hand, VRSettings.DominantHand), bodyFromWorld, bodyToWorld);
+                {
+                    // A hand holding the seat's stick or throttle is drawn on it, not where the controller is: it presses nothing.
+                    bool onControl = __instance.IsSitting && ControlGrip.Holds(hand);
+                    Step(hand, __instance, !onControl && MayPress(__instance.IsOnLadder, focused, holdsTool, hand, VRSettings.DominantHand), bodyFromWorld, bodyToWorld);
+                }
             }
             catch (Exception e)
             {
@@ -246,11 +252,77 @@ namespace SpaceEngineersVR.Hands
         /// <summary>
         /// Whether a hand may press now. Not up a ladder (Use there lets go of it), not unless the game screen has the
         /// focus (any menu, the terminal, the toolbar config and the chat all take it), and not the hand that holds a tool
-        /// or the builder (the dominant one: <see cref="HandTools"/> holds a tool in it). Seated is out before this: no hand is
-        /// looked at unless the player is on foot (<see cref="HandTools.IsLocalOnFoot"/>).
+        /// or the builder (the dominant one: <see cref="HandTools"/> holds a tool in it). Only on foot or seated in first
+        /// person (<see cref="SeatedFirstPerson"/>), where the hands are drawn on the controllers, is a hand looked at at all.
         /// </summary>
         internal static bool MayPress(bool onLadder, object focusedScreen, bool holdsTool, Hand hand, Hand dominant) =>
             !onLadder && focusedScreen is MyGuiScreenGamePlay && !(holdsTool && hand == dominant);
+
+        /// <summary>
+        /// The local character sits in the seat it controls and sees from it in first person, so its arms are on the
+        /// controllers in the cab (as Grab to use reaches from a seat): a camera block, a remote control, a turret or the
+        /// seat's third-person camera is no place to press from.
+        /// </summary>
+        internal static bool SeatedFirstPerson(MyCharacter character)
+        {
+            MySession session = MySession.Static;
+            return character != null && session != null && character == session.LocalCharacter && character.IsSitting && !character.IsDead
+                   && session.ControlledEntity is MyCockpit cockpit && cockpit.Pilot == character
+                   && session.CameraController == cockpit && (cockpit.IsInFirstPersonView || cockpit.ForceFirstPersonCamera);
+        }
+
+        /// <summary>
+        /// A use object the fingertip may press for this character: a push-button (<see cref="IsPressSwitch"/>) that does
+        /// something, not the character's own, and not the seat it sits in (the hands rest in it; Use there would get up).
+        /// </summary>
+        private static bool Pressable(IMyUseObject use, MyCharacter character) =>
+            IsPressSwitch(use) && use.SupportedActions != UseActionEnum.None && !ReferenceEquals(use.Owner, character)
+            && !(use.Owner is MyCockpit seat && seat.Pilot == character);
+
+        private static readonly List<MyEntity> nearButton = new List<MyEntity>();
+
+        /// <summary>
+        /// Whether <paramref name="point"/> is within <paramref name="range"/> metres of the box of a push-button the
+        /// fingertip presses (not the character's own), and which (<paramref name="what"/>). Game thread.
+        /// </summary>
+        internal static bool NearButton(MyCharacter character, Vector3D point, double range, out string what)
+        {
+            what = null;
+            nearButton.Clear();
+            var sphere = new BoundingSphereD(point, GatherRadius);
+            MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, nearButton);
+            try
+            {
+                foreach (MyEntity entity in nearButton)
+                {
+                    if (entity == null || entity.Closed || entity.MarkedForClose || entity.PositionComp == null || entity.Components == null)
+                        continue;
+                    if (!entity.Components.TryGet(out MyUseObjectsComponentBase found) || !(found is MyUseObjectsComponent component))
+                        continue;
+                    MatrixD world = entity.PositionComp.WorldMatrixRef;
+                    var detectors = component.DetectorInteractiveObjects;
+                    lock (detectors)
+                    {
+                        foreach (KeyValuePair<uint, MyUseObjectsComponent.DetectorData> pair in detectors)
+                        {
+                            IMyUseObject use = pair.Value.UseObject;
+                            if (!Pressable(use, character))
+                                continue;
+                            double distance = DistanceToBox((MatrixD)pair.Value.Matrix * world, point);
+                            if (distance > range)
+                                continue;
+                            what = $"'{use.Dummy?.Name ?? pair.Value.DetectorName}' {use.GetType().Name} on {Describe(use.Owner)}, {distance * 100:0} cm from its box";
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            finally
+            {
+                nearButton.Clear();
+            }
+        }
 
         private static void ForgetAll(MyCharacter character)
         {
@@ -266,7 +338,7 @@ namespace SpaceEngineersVR.Hands
         {
             HandTouch state = hands[(int)hand];
             // This frame's head, not the previous draw's camera: a body in motion would leave the tip a frame behind the hand.
-            if (!HandWorld.TryGetNow(character, hand, out MatrixD grip, out MatrixD aim, out _))
+            if (!HandWorld.TryGetNow(character, hand, out MatrixD grip, out _, out _))
             {
                 if (state.Held != null)
                     Finish(character, state.Held);
@@ -274,7 +346,7 @@ namespace SpaceEngineersVR.Hands
                 return;
             }
 
-            Vector3D tip = Fingertip(grip, aim);
+            Vector3D tip = Fingertip(hand, grip);
             Tracking.HandResidual.NotePress(hand, tip);
             long now = Stopwatch.GetTimestamp();
             if (state.SeenAt == 0 || now - state.SeenAt > GapSeconds * Stopwatch.Frequency)
@@ -335,7 +407,7 @@ namespace SpaceEngineersVR.Hands
                     foreach (KeyValuePair<uint, MyUseObjectsComponent.DetectorData> pair in detectors)
                     {
                         IMyUseObject use = pair.Value.UseObject;
-                        if (!IsPressSwitch(use) || use.SupportedActions == UseActionEnum.None || ReferenceEquals(use.Owner, character))
+                        if (!Pressable(use, character))
                             continue;
                         MatrixD box = (MatrixD)pair.Value.Matrix * world;
                         double distance = SweptDistanceToBox(box, from, tip);
@@ -440,15 +512,87 @@ namespace SpaceEngineersVR.Hands
                 : owner.GetType().Name;
         }
 
-        // ---- The maths: no game state, so it can be run on its own ----
+        // ---- The index fingertip: the drawn glove's ----
+        // The touches, the presses and the hand stop all take the fingertip to be the drawn glove's: the index finger's
+        // last joint as the arm solve left it (HandIK.SolveArm, after the fingers are curled), FingertipReach on along the
+        // bone, kept relative to the palm bone; and the palm bone where the arm solve is asked to put it for the hand's
+        // pose (HandIK.PalmTarget: on the runtime's palm pose, or on the grip pose where there is none). So the tip is the
+        // one the player sees, wherever the runtime's grip and aim poses are, before anything holds the drawn hand back
+        // (the hand stop's push, the arm's reach, the pull back onto a seat's control).
 
-        /// <summary>The tip of the index finger in the world: the grip pose's position, <see cref="FingertipReach"/> along the aim.</summary>
-        internal static Vector3D Fingertip(in MatrixD grip, in MatrixD aim)
+        /// <summary>The right index finger's last joint in the right palm bone's frame at the bind pose (SE_astronaut.mwm), metres (the left: Z mirrored).</summary>
+        private static readonly Vector3 BindJointInRightPalm = new Vector3(-0.1911f, 0.0083f, 0.0288f);
+
+        /// <summary>That bone's -X (the way the finger points) in the right palm bone's frame at the bind pose (the left: Z mirrored).</summary>
+        private static readonly Vector3 BindAlongInRightPalm = new Vector3(-0.9954f, -0.0873f, -0.0392f);
+
+        private static readonly Vector3[] drawnTip = new Vector3[2];
+        private static readonly bool[] drawnTipNoted = new bool[2];
+
+        /// <summary>
+        /// The drawn index fingertip in the hand's palm bone's frame, metres (the frame of <see cref="HandIK.PalmTarget"/>):
+        /// as the arm solve last posed the finger (<see cref="NoteDrawnFinger"/>); before it has, the glove's at the bind pose,
+        /// the finger straight (right hand (-0.224, +0.006, +0.030)).
+        /// </summary>
+        internal static Vector3 TipInPalm(Hand hand)
         {
-            Vector3D forward = aim.Forward;
-            double length = forward.Length();
-            return length > 1e-9 ? grip.Translation + forward * (FingertipReach / length) : grip.Translation;
+            int i = (int)hand;
+            if (drawnTipNoted[i])
+                return drawnTip[i];
+            float mirror = hand == Hand.Left ? -1f : 1f;
+            Vector3 joint = new Vector3(BindJointInRightPalm.X, BindJointInRightPalm.Y, BindJointInRightPalm.Z * mirror);
+            Vector3 along = new Vector3(BindAlongInRightPalm.X, BindAlongInRightPalm.Y, BindAlongInRightPalm.Z * mirror);
+            return joint + along * (float)FingertipReach;
         }
+
+        /// <summary>
+        /// Game thread, from the arm solve, once the hand's fingers are posed (<see cref="HandIK"/>): keeps where the index
+        /// fingertip is drawn relative to the palm bone. <paramref name="palm"/> and <paramref name="indexTip"/> index
+        /// <paramref name="bones"/>: the palm bone and the index finger's last joint (-1 when the model has none: the tip
+        /// stays as it was).
+        /// </summary>
+        internal static void NoteDrawnFinger(Hand hand, MyCharacterBone[] bones, int palm, int indexTip)
+        {
+            if (bones == null || palm < 0 || indexTip < 0 || palm >= bones.Length || indexTip >= bones.Length)
+                return;
+            Matrix joint = bones[indexTip].AbsoluteTransform;
+            Vector3 back = joint.Right;
+            float length = back.Length();
+            if (length < 1e-6f)
+                return;
+            Vector3 tip = joint.Translation - back * ((float)FingertipReach / length);
+            Vector3 inPalm = Vector3.Transform(tip, Matrix.Invert(bones[palm].AbsoluteTransform));
+            if (!inPalm.IsValid() || inPalm.Length() > 0.5f)
+                return;
+            drawnTip[(int)hand] = inPalm;
+            drawnTipNoted[(int)hand] = true;
+        }
+
+        /// <summary>The index fingertip in the tracking space, for this hand state (see the remarks above <see cref="TipInPalm"/>).</summary>
+        internal static Vector3 FingertipInTracking(Hand hand, in HandState state) =>
+            Vector3.Transform(TipInPalm(hand), HandIK.PalmTarget(hand, state));
+
+        /// <summary>
+        /// The index fingertip where <paramref name="trackingTo"/> takes the tracking space (the world, or the body's model
+        /// space), for this hand state.
+        /// </summary>
+        internal static Vector3D Fingertip(Hand hand, in HandState state, in MatrixD trackingTo) =>
+            Vector3D.Transform((Vector3D)FingertipInTracking(hand, state), trackingTo);
+
+        /// <summary>
+        /// The index fingertip, from the hand's grip pose placed in the world (or any space) as <see cref="HandWorld.TryGet"/>
+        /// and <see cref="HandWorld.TryGetNow"/> place it from <see cref="VRInput.Get"/>: the tip is held where it is
+        /// relative to the grip pose (the palm and grip poses are on the one controller), and carried by
+        /// <paramref name="grip"/>.
+        /// </summary>
+        internal static Vector3D Fingertip(Hand hand, in MatrixD grip)
+        {
+            HandState state = VRInput.Get(hand);
+            Vector3 inGrip = Vector3.Transform(FingertipInTracking(hand, state), Matrix.Invert(state.Grip));
+            return Vector3D.Transform((Vector3D)inGrip, grip);
+        }
+
+        // ---- The maths: no game state, so it can be run on its own ----
 
         /// <summary>
         /// Metres from a point to an oriented box, 0 when it is inside. The box is given as the game keeps a detector: a

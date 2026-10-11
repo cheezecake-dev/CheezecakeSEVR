@@ -225,8 +225,7 @@ namespace SpaceEngineersVR.Tracking
                     HandState press = RenderTimeHand((Hand)i);
                     if (frame.HasPress[i] && press.Tracked)
                     {
-                        MatrixD grip = ((MatrixD)press.Grip * fromCamera) * cameraWorld, aim = ((MatrixD)press.Aim * fromCamera) * cameraWorld;
-                        Add(ref pressStats[i], Hands.FingerPress.Fingertip(grip, aim) - frame.PressAt[i]);
+                        Add(ref pressStats[i], Hands.FingerPress.Fingertip((Hand)i, press, (MatrixD)fromCamera * cameraWorld) - frame.PressAt[i]);
                     }
                 }
             }
@@ -376,8 +375,7 @@ namespace SpaceEngineersVR.Tracking
                     if (Handle)
                     {
                         // Where the finger press takes the index fingertip to be (HandGhost=2): it should meet the glove's tip.
-                        MatrixD aim = (MatrixD)state.Aim * toWorld;
-                        MyTransparentGeometry.AddPointBillboard(LineMaterial, Cyan, Hands.FingerPress.Fingertip(grip, aim), 0.008f, 0f);
+                        MyTransparentGeometry.AddPointBillboard(LineMaterial, Cyan, Hands.FingerPress.Fingertip(hand, state, toWorld), 0.008f, 0f);
                     }
                 }
             }

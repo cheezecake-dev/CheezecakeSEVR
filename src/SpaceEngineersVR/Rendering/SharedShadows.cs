@@ -28,7 +28,7 @@ namespace SpaceEngineersVR.Rendering
     /// </remarks>
     internal static class SharedShadows
     {
-        /// <summary>Each eye fits and draws its own cascades, as the renderer does. On until the shared fit is checked in game; <see cref="RenderDebug"/> SharedShadows=1 shares.</summary>
+        /// <summary>Each eye fits and draws its own cascades, as the renderer does. On until the shared fit is checked in game (a 2026-10-10 run froze 2 s after it, with SharedSpotShadows and ProbeOnce, was turned on; not yet separated from the known driver freeze); <see cref="RenderDebug"/> SharedShadows=1 shares.</summary>
         public static bool Off { get; set; } = true;
 
         private static object env;

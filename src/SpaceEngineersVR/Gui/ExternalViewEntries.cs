@@ -8,10 +8,11 @@ namespace SpaceEngineersVR.Gui
     /// <summary>
     /// The actions wheel's own entries for the external view (<see cref="ExternalView"/>), after the game's:
     /// <list type="bullet">
-    /// <item>"External view" (a page): Off, Third person (the chase view behind and above the ship), and each camera block the
-    /// player may view from where they are, by its custom name (<see cref="ExternalViewSource.Reachable"/>). Choosing one shows
-    /// that source on the dash screen at once, turns the screen on if it was off, and closes the wheel. Under the entry's name
-    /// is what the screen shows now.</item>
+    /// <item>"External view" (a page): Off, Third person (the chase view behind and above the ship), Adjust view, and each camera
+    /// block the player may view from where they are, by its custom name (<see cref="ExternalViewSource.Reachable"/>). Choosing
+    /// a source shows it on the dash screen at once, turns the screen on if it was off, and closes the wheel. Adjust view
+    /// closes the wheel and opens the wrist panel on its External view page (<see cref="ExternalViewPage"/>): the camera's
+    /// orbit and distance, the screen's size. Under the entry's name is what the screen shows now.</item>
     /// <item>"Next camera": steps to the next source (third person, each camera, third person again) and leaves the wheel up for
     /// another step when a trigger is pulled, as the game's switches do. Unavailable where there is no camera to step to.</item>
     /// </list>
@@ -21,10 +22,15 @@ namespace SpaceEngineersVR.Gui
     internal static class ExternalViewEntries
     {
         private const string PageIcon = "Textures\\GUI\\Icons\\HUD 2017\\CameraSpectator.png";
-        private const string NextIcon = "Textures\\GUI\\Icons\\HUD 2017\\SwitchCamera.png";
         private const string OffIcon = "Textures\\GUI\\Icons\\HUD 2017\\ToggleHud.png";
         private const string CameraIcon = "Textures\\GUI\\Icons\\Camera.dds";
+
+        /// <summary>The game's camera block picture, not its "Toggle Camera Mode" icon (HUD 2017\SwitchCamera.png), which the wheel's first ring already has.</summary>
+        private const string NextIcon = CameraIcon;
         private const string BackIcon = "Textures\\GUI\\Icons\\HUD 2017\\RotateCounterClockWise.png";
+
+        /// <summary>The game's block-turning picture (a cube with an arrow round it): the camera going round what it follows.</summary>
+        private const string AdjustIcon = "Textures\\GUI\\Icons\\HUD 2017\\Autorotate.png";
 
         private const string Showing = "Showing now";
 
@@ -53,6 +59,15 @@ namespace SpaceEngineersVR.Gui
                     Run = ExternalViewSource.UseThirdPerson,
                     CanUse = usable,
                     StateText = () => ExternalView.On && !VRSettings.ExternalViewIsCamera ? Showing : "Behind and above you",
+                },
+                // In a seat Y does not open the wrist panel, so its External view page is reached from here.
+                new ActionsWheel.Entry
+                {
+                    Name = "Adjust view",
+                    Icon = AdjustIcon,
+                    Run = QuickActionsScreen.OpenExternalViewPage,
+                    CanUse = usable,
+                    StateText = () => "Orbit, distance, size",
                 },
             };
             for (int i = 0; i < cameras.Count; i++)

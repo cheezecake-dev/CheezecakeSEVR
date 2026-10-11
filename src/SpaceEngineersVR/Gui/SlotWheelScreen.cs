@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using Sandbox;
 using Sandbox.Game;
 using Sandbox.Game.Screens.Helpers;
 using Sandbox.Graphics;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Rendering;
+using VRage;
+using VRage.Audio;
 using VRage.Game;
 using VRage.Game.ObjectBuilders;
 using VRage.Input;
@@ -27,10 +31,20 @@ namespace SpaceEngineersVR.Gui
     /// game's own <c>SwitchToPage</c> and this screen shows whatever page the toolbar is on, so the HUD's toolbar and the
     /// wheel always agree. The carousel's own paging controls are not answered.</item>
     /// <item>It does not hide the HUD (CanHideOthers off), so the toolbar bar stays on screen behind it.</item>
+    /// <item>Under the ring is the external view switch (<see cref="ExternalView"/>): its camera icon and "External view: On"
+    /// or "Off". Pushing the right stick down (<see cref="ToolbarWheel"/>) turns the screen on with what it showed last
+    /// (third person, or the camera last chosen) or turns it off, with the wheel left up: the switch lights as the tabs do
+    /// while the stick is down, the right hand gets a tick and the words change. The bottom slots' names move out to clear
+    /// it. It is there while the VR radial menus are (<see cref="VRRadialMenus.Active"/>) and the external view works.</item>
     /// </list>
+    /// The middle of the ring is the empty hand: the game's put-the-weapon-away icon (the HideWeapon cell the HUD toolbar ends
+    /// with, and the base wheel's centre) named with the game's word for the 0 key, "Unequip". Dim until the stick has chosen
+    /// something and come back to the middle, then lit with the centre circle and named outside the ring
+    /// (<see cref="UpdateHighlight"/>, <see cref="UpdateTooltip"/>); letting go there empties the hand (<see cref="ToolbarWheel"/>).
     /// What it does not do is act: <see cref="ToolbarWheel"/> reads the hands, and activates the slot with
-    /// <c>ActivateItemAtSlot</c> and closes the screen with the game's CANCEL. <see cref="SlotWheelItem.Activate"/> does the
-    /// same call for a gamepad's confirm, which the base screen turns into an item activation.
+    /// <c>ActivateItemAtSlot</c> (the empty hand with the holster slot's) and closes the screen with the game's CANCEL.
+    /// <see cref="SlotWheelItem.Activate"/> does the same call for a gamepad's confirm, which the base screen turns into an
+    /// item activation (at the middle it is the base's own <c>Cancel</c>, MyGuiControlRadialMenuBase.cs:263).
     /// </summary>
     internal sealed class SlotWheelScreen : MyGuiControlRadialMenuBase
     {
@@ -38,6 +52,33 @@ namespace SpaceEngineersVR.Gui
         private const string CentreTexture = "Textures\\GUI\\Controls\\RadialCentralCircle.dds";
         private const string CentreSelectedTexture = "Textures\\GUI\\Controls\\RadialCentralCircleSelected.dds";
         private const string HolsterIcon = "Textures\\GUI\\Icons\\HideWeapon.dds";
+
+        /// <summary>The empty hand's icon before the stick has chosen it (the centre circle is dim then too).</summary>
+        private static readonly Vector4 EmptyHandDim = new Vector4(1f, 1f, 1f, 0.5f);
+
+        /// <summary>Where the empty hand's name goes: over the ring, centred, as the top slot's name does.</summary>
+        private static readonly Vector2 EmptyHandNameAt = new Vector2(0f, -0.275f);
+
+        // The external view switch: the actions wheel's External view icon on the plate the bottom line's hints sit on, lit
+        // with the plate the base gives its tabs.
+        private const string ViewIcon = "Textures\\GUI\\Icons\\HUD 2017\\CameraSpectator.png";
+        private const string PlateTexture = "Textures\\GUI\\Controls\\button_default_outlineless.dds";
+        private const string PlateLitTexture = "Textures\\GUI\\Controls\\button_default_outlineless_active.dds";
+        private const string ViewOn = "External view: On", ViewOff = "External view: Off";
+
+        /// <summary>Where the switch is, GUI units from the middle: under the ring's outer circle, over the bottom line.</summary>
+        private const float ViewY = 0.3f;
+
+        private const float ViewHeight = 0.042f, ViewPad = 0.012f, ViewGap = 0.008f, ViewTextScale = 0.7f;
+
+        /// <summary>The switch's icon, 40 pixels square in the GUI's 1600 by 1200.</summary>
+        private static readonly Vector2 ViewIconSize = new Vector2(40f) / MyGuiConstants.GUI_OPTIMAL_SIZE;
+
+        /// <summary>The bottom slots' names keep this far, GUI units, from the switch's side.</summary>
+        private const float ViewClearance = 0.012f;
+
+        /// <summary>The right hand's tick when the switch is pressed (the actions wheel's use).</summary>
+        private const float PressAmplitude = 0.35f, PressSeconds = 0.03f;
 
         /// <summary>
         /// The base's sector is a 45 degree wedge in a 288 pixel square; a 40 degree one is the same wedge squeezed across
@@ -54,15 +95,24 @@ namespace SpaceEngineersVR.Gui
         private readonly string[][] shownIcons = new string[SlotWheel.Positions][];
         private readonly MyGuiControlLabel[] numbers = new MyGuiControlLabel[SlotWheel.Positions];
         private MyGuiControlImageRotatable highlight;
+        private MyGuiControlImage emptyHandIcon;
+        private MyGuiControlImage viewPlate, viewIcon;
+        private MyGuiControlLabel viewLabel;
+        private bool? viewShownOn;
+        private bool viewShownLit;
+        private bool touched;
 
         public SlotWheelScreen(MyToolbar toolbar)
             : base(BuildData(toolbar), MyControlsSpace.SYSTEM_RADIAL_MENU, null)
         {
             this.toolbar = toolbar;
             CanHideOthers = false;
-            HideHolster();
+            ShowEmptyHand();
+            bool view = ViewSwitchUsable;
+            if (view)
+                AddViewSwitch();
             SwitchSection(toolbar.CurrentPage, forceStop: true);
-            VRRadialMenus.Relabel(this, tools: true);
+            VRRadialMenus.Relabel(this, tools: true, view ? VRRadialMenus.ToolsCentreView : null);
         }
 
         public override string GetFriendlyName() => "SlotWheel";
@@ -140,23 +190,107 @@ namespace SpaceEngineersVR.Gui
             AddControl(highlight);
         }
 
-        /// <summary>The centre of the base's wheel has the put-the-weapon-away icon (the centred stick); here it only closes the wheel.</summary>
-        private void HideHolster()
+        /// <summary>
+        /// The centre of the base's wheel has the put-the-weapon-away icon (the centred stick; the game's HideWeapon). It stays,
+        /// dim, as the empty hand's: <see cref="UpdateHighlight"/> lights it with the centre circle.
+        /// </summary>
+        private void ShowEmptyHand()
         {
             foreach (MyGuiControlBase control in Controls)
             {
                 if (control is MyGuiControlImage image && image.Textures != null && image.Textures.Length > 0 && image.Textures[0].Texture == HolsterIcon)
-                    image.Visible = false;
+                {
+                    emptyHandIcon = image;
+                    image.ColorMask = EmptyHandDim;
+                }
             }
+        }
+
+        // ---- The external view switch. ----
+
+        /// <summary>The switch is offered: the VR radial menus are on and the external view's pass works.</summary>
+        internal static bool ViewSwitchUsable => VRRadialMenus.Active && ExternalView.Usable;
+
+        /// <summary>
+        /// The right stick pushed down on the slot wheel (<see cref="ToolbarWheel"/>): the external view on or off
+        /// (<see cref="ExternalViewSource.Toggle"/>), a tick in the right hand and the game's click. Nothing when the switch
+        /// is not there.
+        /// </summary>
+        internal static void PressViewSwitch()
+        {
+            if (!ViewSwitchUsable)
+                return;
+            ExternalViewSource.Toggle();
+            Hands.Haptics.Pulse(Hand.Right, PressAmplitude, PressSeconds);
+            MyGuiSoundManager.PlaySound(GuiSounds.MouseClick);
+        }
+
+        /// <summary>
+        /// The switch under the ring: the plate, the icon and the words. The plate is as wide as the longer words need, so it
+        /// keeps its size as they change.
+        /// </summary>
+        private void AddViewSwitch()
+        {
+            viewLabel = new MyGuiControlLabel(null, null, ViewOff, null, ViewTextScale, "Blue", MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER);
+            float width = ViewPad + ViewIconSize.X + ViewGap + viewLabel.GetTextSize().X + ViewPad;
+            float left = -width / 2f;
+            viewPlate = new MyGuiControlImage(position: new Vector2(0f, ViewY), size: new Vector2(width, ViewHeight),
+                backgroundColor: new Vector4(1f, 1f, 1f, 0.8f), textures: new[] { PlateTexture });
+            viewIcon = new MyGuiControlImage(position: new Vector2(left + ViewPad + ViewIconSize.X / 2f, ViewY), size: ViewIconSize);
+            viewIcon.SetTexture(ViewIcon);
+            viewLabel.Position = new Vector2(left + ViewPad + ViewIconSize.X + ViewGap, ViewY);
+            AddControl(viewPlate);
+            AddControl(viewIcon);
+            AddControl(viewLabel);
+            RefreshViewSwitch();
+        }
+
+        /// <summary>The switch says whether the screen is on, and is lit while the right stick is down on it.</summary>
+        private void RefreshViewSwitch()
+        {
+            if (viewPlate == null)
+                return;
+            bool usable = ViewSwitchUsable;
+            viewPlate.Visible = viewIcon.Visible = viewLabel.Visible = usable;
+            if (!usable)
+                return;
+            bool on = ExternalView.On;
+            if (viewShownOn != on)
+            {
+                viewShownOn = on;
+                viewLabel.Text = on ? ViewOn : ViewOff;
+                viewIcon.ColorMask = on ? Vector4.One : new Vector4(1f, 1f, 1f, 0.5f);
+            }
+            bool lit = ToolbarWheel.ViewSwitchHeld;
+            if (lit != viewShownLit)
+            {
+                viewShownLit = lit;
+                viewPlate.SetTexture(lit ? PlateLitTexture : PlateTexture);
+            }
+        }
+
+        /// <summary>The switch's textures are loaded with the wheel's, so it does not appear a frame late the first time.</summary>
+        public override void GetTexturesForPreload(HashSet<string> textures)
+        {
+            base.GetTexturesForPreload(textures);
+            textures.Add(ViewIcon);
+            textures.Add(PlateLitTexture);
         }
 
         protected override void UpdateHighlight(int oldIndex, int newIndex)
         {
-            if (oldIndex == -1)
-                m_cancelButton.SetTexture(CentreTexture);
+            // The centre is dim as the ring comes up and lit only once the stick has chosen a slot and come back to the middle,
+            // as the actions wheel's is (ActionsWheelScreen.Refresh): lit, it says "let go here and the hand is emptied"
+            // (ToolbarWheel), which is not so before the stick has moved: let go then and the wheel only closes. The base
+            // calls this once from its constructor with (-1, -1).
+            if (newIndex >= 0)
+                touched = true;
+            bool centre = newIndex == -1 && touched;
+            m_cancelButton.SetTexture(centre ? CentreSelectedTexture : CentreTexture);
+            if (emptyHandIcon != null)
+                emptyHandIcon.ColorMask = centre ? Vector4.One : EmptyHandDim;
             if (newIndex == -1)
             {
-                m_cancelButton.SetTexture(CentreSelectedTexture);
                 if (highlight != null)
                     highlight.Visible = false;
                 return;
@@ -210,6 +344,7 @@ namespace SpaceEngineersVR.Gui
                 else
                     UpdateIcon();
             }
+            RefreshViewSwitch();
             return base.Update(hasFocus);
         }
 
@@ -217,6 +352,17 @@ namespace SpaceEngineersVR.Gui
         protected override void UpdateTooltip()
         {
             int slot = m_selectedButton;
+            if (toolbar != null && slot == -1 && touched)
+            {
+                // The middle, chosen: the empty hand, named with the game's word for the 0 key, over the ring's top.
+                m_tooltipName.Text = MyTexts.GetString(MyCommonTexts.ControlName_Slot0);
+                m_tooltipName.RecalculateSize();
+                m_tooltipName.Position = EmptyHandNameAt;
+                m_tooltipName.OriginAlign = MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_BOTTOM;
+                m_tooltipName.Visible = true;
+                m_tooltipState.Visible = m_tooltipShortcut.Visible = false;
+                return;
+            }
             if (toolbar == null || slot < 0 || slot >= SlotWheel.Positions || m_currentSection < 0 || m_currentSection >= m_data.CurrentSections.Count)
             {
                 m_tooltipName.Visible = m_tooltipState.Visible = m_tooltipShortcut.Visible = false;
@@ -235,6 +381,13 @@ namespace SpaceEngineersVR.Gui
             Vector2 at = m_icons[slot].Position * 1.92f;
             int side = Math.Abs(at.X) < 0.05f ? 0 : Math.Sign(at.X);
             int level = Math.Abs(at.Y) < 0.05f ? 0 : Math.Sign(at.Y);
+            // The bottom slots' words start beside the external view switch, not over it.
+            if (viewPlate != null && viewPlate.Visible && level > 0 && side != 0)
+            {
+                float clear = viewPlate.Size.X / 2f + ViewClearance;
+                if (Math.Abs(at.X) < clear)
+                    at.X = side * clear;
+            }
             var align = (MyGuiDrawAlignEnum)(3 * (1 - side) + (1 - level));
             const float Line = 0.025f;
             float nameY = level < 0 ? -Line : level == 0 ? -Line / 2f : 0f;

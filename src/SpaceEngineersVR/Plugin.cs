@@ -55,6 +55,8 @@ namespace SpaceEngineersVR
         public void Dispose()
         {
             Log.Info("Plugin.Dispose");
+            // The game is closing: have the last lines on disk before anything else goes.
+            Log.Flush();
         }
     }
 }

@@ -84,6 +84,7 @@ namespace SpaceEngineersVR.Hands
             harmony.Patch(pasteMatrix, postfix: new HarmonyMethod(typeof(HandPlacement), nameof(AfterPasteMatrix)));
 
             Hooked = true;
+            BuildMode.HookBuilder(harmony);
             Log.Info($"Hand tools: building from the hand hooked (placement ray, paste ray, {redirected} camera reads rewritten)");
         }
 
@@ -140,13 +141,24 @@ namespace SpaceEngineersVR.Hands
                 __result = direction;
         }
 
-        /// <summary>Postfix of <c>MyGridClipboard.GetPasteMatrix()</c>: a pose at the hand, facing where it points (the game's is the head's).</summary>
+        /// <summary>
+        /// Postfix of <c>MyGridClipboard.GetPasteMatrix()</c>: a pose at the hand, facing where it points (the game's is the
+        /// head's). While the right grip turns the paste, the ray it had when the grip closed (<see cref="BuildMode"/>).
+        /// </summary>
         private static void AfterPasteMatrix(ref MatrixD __result)
         {
             try
             {
-                if (!HandTools.IsLocalOnFoot(MySession.Static?.LocalCharacter) || !HandTools.TryGetHand(out _, out MatrixD aim)
-                    || !HandTools.Ray(aim, out Vector3D origin, out Vector3D forward))
+                Sandbox.Game.Entities.Character.MyCharacter character = MySession.Static?.LocalCharacter;
+                if (!HandTools.IsLocalOnFoot(character))
+                    return;
+                if (BuildMode.TryFrozenRay(character, out Vector3D heldOrigin, out Vector3D heldForward))
+                {
+                    Vector3D up = Math.Abs(Vector3D.Dot(heldForward, character.WorldMatrix.Up)) > 0.99 ? character.WorldMatrix.Backward : character.WorldMatrix.Up;
+                    __result = HandTools.CameraLike(heldOrigin, heldForward, up);
+                    return;
+                }
+                if (!HandTools.TryGetHand(out _, out MatrixD aim) || !HandTools.Ray(aim, out Vector3D origin, out Vector3D forward))
                     return;
                 __result = HandTools.CameraLike(origin, forward, aim.Up);
             }
@@ -163,7 +175,11 @@ namespace SpaceEngineersVR.Hands
             origin = direction = Vector3D.Zero;
             try
             {
-                return HandTools.IsLocalOnFoot(MySession.Static?.LocalCharacter) && HandTools.TryGetRay(out origin, out direction);
+                Sandbox.Game.Entities.Character.MyCharacter character = MySession.Static?.LocalCharacter;
+                if (!HandTools.IsLocalOnFoot(character))
+                    return false;
+                // While the right grip turns the block the ray stays where it was when the grip closed (BuildMode).
+                return BuildMode.TryFrozenRay(character, out origin, out direction) || HandTools.TryGetRay(out origin, out direction);
             }
             catch (Exception e)
             {

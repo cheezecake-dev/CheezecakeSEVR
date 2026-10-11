@@ -56,7 +56,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The name the grip is claimed under (<see cref="GripClaim"/>).</summary>
         public const string Name = "Items";
 
-        /// <summary>Asked after holsters and the helmet, before grab-to-use and the hull.</summary>
+        /// <summary>Asked after the helmet, before grab-to-use and the hull.</summary>
         public const int Priority = 20;
 
         /// <summary>Debug: no grabbing (<see cref="Rendering.RenderDebug"/> GrabItems=0).</summary>

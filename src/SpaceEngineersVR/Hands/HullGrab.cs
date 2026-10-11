@@ -33,7 +33,7 @@ namespace SpaceEngineersVR.Hands
     /// anchor and the hand. Two hands on: the gaps and the grid velocities are averaged. The ladder climbs by the game's
     /// own steps (MyCharacterLadderComponent.ProceedLadderMovement): the hand's pull is banked, and a step up or down is
     /// asked for once half a step is owed. The grip is claimed through <see cref="GripClaim"/> at
-    /// <see cref="Priority"/>, after the holsters, floating items and grab-to-use, so a grip on a door stays the door's.
+    /// <see cref="Priority"/>, after the helmet, floating items and grab-to-use, so a grip on a door stays the door's.
     /// </remarks>
     internal static class HullGrab
     {

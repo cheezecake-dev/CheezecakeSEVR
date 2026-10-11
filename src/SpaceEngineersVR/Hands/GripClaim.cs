@@ -6,7 +6,7 @@ namespace SpaceEngineersVR.Hands
 {
     /// <summary>
     /// Which physical interaction holds each hand's grip. A grip that starts with the hand on something a feature can take
-    /// (a hull to pull along, a holster, a door, a floating item) belongs to that feature until it is let go; meanwhile the
+    /// (a hull to pull along, the helmet, a door, a floating item) belongs to that feature until it is let go; meanwhile the
     /// grip's meaning in empty air (Use on the right hand, the toolbar wheel on the left on foot) is skipped.
     /// </summary>
     /// <remarks>

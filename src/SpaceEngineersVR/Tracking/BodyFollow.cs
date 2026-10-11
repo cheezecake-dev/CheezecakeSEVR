@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using HarmonyLib;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.World;
@@ -17,10 +18,19 @@ namespace SpaceEngineersVR.Tracking
         private static readonly float NeckLimit = MathHelper.ToRadians(50f);
         private static readonly float MaxTurnPerFrame = MathHelper.ToRadians(9f); // 540 deg/s at 60 Hz
 
+        /// <summary>The turns are reported at most once a second (<see cref="Note"/>).</summary>
+        private static readonly long NoteEvery = Stopwatch.Frequency;
+
         private static bool turning;
         private static float share;
         private static float followed;
         private static Vector3D forwardBefore;
+
+        // The turns not reported yet.
+        private static long lastNote;
+        private static int heldTurns;
+        private static float heldRadians;
+        private static bool heldWalking;
 
         public static void Patch(Harmony harmony)
         {
@@ -34,6 +44,8 @@ namespace SpaceEngineersVR.Tracking
         private static void Request(MyCharacter __instance, Vector3 moveIndicator, ref Vector2 rotationIndicator)
         {
             turning = false;
+            if (heldTurns > 0)
+                Report();
             if (__instance != MySession.Static?.LocalCharacter || __instance.IsSitting || __instance.IsDead)
                 return;
             if (!__instance.IsInFirstPersonView && !__instance.ForceFirstPersonCamera)
@@ -48,7 +60,7 @@ namespace SpaceEngineersVR.Tracking
             if (Math.Abs(turn) < 1e-4f || perUnit <= 0f)
             {
                 if (followed != 0f)
-                    Log.Info($"Body followed the head by {MathHelper.ToDegrees(followed):F1} deg ({(moveIndicator != Vector3.Zero ? "walking" : "neck limit")})");
+                    Note(followed, moveIndicator != Vector3.Zero);
                 followed = 0f;
                 return;
             }
@@ -61,6 +73,32 @@ namespace SpaceEngineersVR.Tracking
             rotationIndicator.Y = total;
             forwardBefore = BodyForward(__instance);
             turning = true;
+        }
+
+        /// <summary>
+        /// A stretch of turning has ended. While walking, the head and the body trade a fraction of a degree every other
+        /// frame (twenty such turns a second, nearly all 0.0 to 0.3 deg), so the turns add up and one line a second says
+        /// their total and how many there were.
+        /// </summary>
+        private static void Note(float radians, bool walking)
+        {
+            heldTurns++;
+            heldRadians += radians;
+            heldWalking |= walking;
+            Report();
+        }
+
+        private static void Report()
+        {
+            long now = Stopwatch.GetTimestamp();
+            if (lastNote != 0 && now - lastNote < NoteEvery)
+                return;
+            lastNote = now;
+            Log.Info($"Body followed the head by {MathHelper.ToDegrees(heldRadians):F1} deg ({(heldWalking ? "walking" : "neck limit")})"
+                + (heldTurns > 1 ? $" ({heldTurns} turns)" : string.Empty));
+            heldTurns = 0;
+            heldRadians = 0f;
+            heldWalking = false;
         }
 
         /// <summary>How far the body turned, of which the follow's share goes to the anchor.</summary>

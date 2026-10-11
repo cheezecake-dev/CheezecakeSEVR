@@ -38,6 +38,9 @@ namespace SpaceEngineersVR.Input
 
         private static PropertyInfo backbuffer, backbufferResource, renderContext, deviceContext;
 
+        /// <summary>The longest the render thread waits for the GPU to finish a shot's copy; past it the shot fails and the frame goes on.</summary>
+        private const int MapWaitMilliseconds = 1000;
+
         /// <summary>Finds the back buffer and the game's immediate context; false when this game version has other names.</summary>
         public static bool Hook(Type render)
         {
@@ -52,9 +55,9 @@ namespace SpaceEngineersVR.Input
         /// Render thread, with the frame to show in the back buffer: copies the left eye's part of it (<see cref="PanelCursor.LeftArea"/>:
         /// the left half of the window on the desktop, all of it with a headset or in a menu, never more than the texture
         /// holds) into a managed array. A pixel of the shot is the window's pixel at its offset, so <c>gui</c> can use it.
-        /// Null with <paramref name="error"/> set when it cannot.
+        /// Null with <paramref name="error"/> set when it cannot. <paramref name="whole"/>: the whole window instead (both eyes on the desktop).
         /// </summary>
-        public static Pixels Read(out string error)
+        public static Pixels Read(bool whole, out string error)
         {
             error = null;
             object buffer = backbuffer.GetValue(null);
@@ -102,7 +105,7 @@ namespace SpaceEngineersVR.Input
             // The left eye's part of the window, cut to the texture (a headset's eye is taller than the window, so it hangs over).
             MyViewport eye = PanelCursor.LeftArea();
             int left = 0, top = 0, width = real.Width, height = real.Height;
-            if (eye.Width > 0f && eye.Height > 0f)
+            if (!whole && eye.Width > 0f && eye.Height > 0f)
             {
                 int right = (int)Math.Min(real.Width, Math.Ceiling(eye.OffsetX + eye.Width));
                 int bottom = (int)Math.Min(real.Height, Math.Ceiling(eye.OffsetY + eye.Height));
@@ -139,11 +142,35 @@ namespace SpaceEngineersVR.Input
             }))
             {
                 context.CopySubresourceRegion(source, 0, new ResourceRegion(left, top, 0, left + width, top + height, 1), staging, 0);
-                SharpDX.DataBox box = context.MapSubresource(staging, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
+                context.Flush();
+                // Never a plain Map: with the headset asleep the runtime can hold the GPU queue until the next frame is ended,
+                // and a Map that waits then holds the render thread, which would end it, for good (09:25 on 2026-10-11).
+                SharpDX.DataBox box;
+                var waited = System.Diagnostics.Stopwatch.StartNew();
+                while (true)
+                {
+                    try
+                    {
+                        // An unfinished copy comes back as an empty box (SharpDX swallows WAS_STILL_DRAWING under DoNotWait),
+                        // or as that error from a build that does not: both mean try again, and neither is mapped.
+                        box = context.MapSubresource(staging, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.DoNotWait);
+                        if (box.DataPointer != IntPtr.Zero)
+                            break;
+                    }
+                    catch (SharpDX.SharpDXException e) when (e.ResultCode == SharpDX.DXGI.ResultCode.WasStillDrawing)
+                    {
+                    }
+                    if (waited.ElapsedMilliseconds > MapWaitMilliseconds)
+                    {
+                        error = $"the GPU had not finished the copy after {MapWaitMilliseconds} ms";
+                        return null;
+                    }
+                    System.Threading.Thread.Sleep(1);
+                }
                 try
                 {
                     int row = width * 4;
-                    if (box.DataPointer == IntPtr.Zero || box.RowPitch < row)
+                    if (box.RowPitch < row)
                     {
                         error = $"the staging texture mapped with a row pitch of {box.RowPitch} for rows of {row} bytes";
                         return null;

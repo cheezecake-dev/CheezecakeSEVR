@@ -3,6 +3,7 @@ using HarmonyLib;
 using Sandbox;
 using Sandbox.Game.Entities;
 using Sandbox.Game.SessionComponents.Clipboard;
+using Sandbox.Game.Weapons;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
 using VRage.Game;
@@ -17,7 +18,9 @@ namespace SpaceEngineersVR.Hands
     /// player can see what the hand is pointing at. Drawn as the game draws its own lines, as billboards in the world,
     /// from the gameplay screen's draw; never while a menu is up (the laser pointer is the line then, see
     /// <see cref="Laser"/>). The dot is where the builder's own ray cast hits (MyCubeBuilder.GetCurrentRayIntersection),
-    /// the same ray the builder and the use detectors are given.
+    /// the same ray the builder and the use detectors are given. Drawn for the empty hand and for placing blocks (the block
+    /// placer, the cube builder, a paste), where it shows where a block goes; never while a hand tool or weapon is held
+    /// (<see cref="HoldsToolOrWeapon"/>): the tool itself shows where it points, and a line off it breaks the immersion.
     /// </summary>
     internal static class HandRay
     {
@@ -57,13 +60,19 @@ namespace SpaceEngineersVR.Hands
                 // A menu is up (the game shows its cursor): the pointer is the laser's, not a tool's.
                 if (MySandboxGame.Static == null || MySandboxGame.Static.IsCursorVisible)
                     return;
+                if (HoldsToolOrWeapon())
+                    return;
                 if (!HandPlacement.TryRay(out Vector3D origin, out Vector3D direction))
                     return;
 
-                double reach = Reach();
+                // With a block in hand the ray ends where the block goes: on what it hits, or at the builder's distance out
+                // in the open (A and B move it), with the dot on that point either way.
+                bool block = BuildMode.Active;
+                double reach = block ? MyBlockBuilderBase.IntersectionDistance : Reach();
                 double? hit = MyCubeBuilder.Static != null ? MyCubeBuilder.GetCurrentRayIntersection() : null;
-                bool dot = hit.HasValue && hit.Value <= reach;
-                double length = dot ? hit.Value : reach;
+                bool onHit = hit.HasValue && hit.Value <= reach;
+                bool dot = onHit || block;
+                double length = onHit ? hit.Value : reach;
                 if (length < 0.02)
                     return;
 
@@ -79,11 +88,20 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>How far the ray is drawn: the builder's reach while it builds or pastes, the use reach otherwise.</summary>
-        private static double Reach()
+        private static double Reach() => Building() ? Math.Max(MyBlockBuilderBase.IntersectionDistance, (float)UseReach) : UseReach;
+
+        /// <summary>The cube builder is on, or a paste is being placed.</summary>
+        private static bool Building() => (MyCubeBuilder.Static != null && MyCubeBuilder.Static.IsActivated)
+                                          || (MyClipboardComponent.Static != null && MyClipboardComponent.Static.IsActive);
+
+        /// <summary>
+        /// The local character has a hand tool or weapon in hand (a grinder, welder or drill, a rifle, pistol or launcher):
+        /// anything in hand but the block placer, while no block or paste is being placed.
+        /// </summary>
+        private static bool HoldsToolOrWeapon()
         {
-            bool building = (MyCubeBuilder.Static != null && MyCubeBuilder.Static.IsActivated)
-                            || (MyClipboardComponent.Static != null && MyClipboardComponent.Static.IsActive);
-            return building ? Math.Max(MyBlockBuilderBase.IntersectionDistance, (float)UseReach) : UseReach;
+            var held = MySession.Static?.LocalCharacter?.CurrentWeapon;
+            return held != null && !(held is MyBlockPlacerBase) && !BuildMode.Active && !Building();
         }
     }
 }

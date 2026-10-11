@@ -42,6 +42,7 @@ namespace SpaceEngineersVR.Rendering
         private static MethodInfo borrowRtv;
         private static MethodInfo release;
         private static MethodInfo copyResource;
+        private static MethodInfo copySubresourceRegion;
         private static MethodInfo clearRtv;
         private static PropertyInfo device;
         private static PropertyInfo renderContext;
@@ -91,6 +92,8 @@ namespace SpaceEngineersVR.Rendering
                 new[] { typeof(string), typeof(int), typeof(int), typeof(Format), typeof(int), typeof(int) });
             release = AccessTools.Method(BorrowedTexture, "Release");
             copyResource = AccessTools.Method(RenderContext, "CopyResource", new[] { Resource, typeof(SharpDX.Direct3D11.Resource) });
+            copySubresourceRegion = AccessTools.Method(RenderContext, "CopySubresourceRegion",
+                new[] { Resource, typeof(int), typeof(SharpDX.Direct3D11.ResourceRegion?), typeof(SharpDX.Direct3D11.Resource), typeof(int), typeof(int), typeof(int), typeof(int) });
             clearRtv = AccessTools.Method(RenderContext, "ClearRtv", new[] { RtvBindable, typeof(SharpDX.Mathematics.Interop.RawColor4) });
             device = AccessTools.Property(Render, "DeviceInstance");
             renderContext = AccessTools.Property(Render, "RC");
@@ -124,6 +127,9 @@ namespace SpaceEngineersVR.Rendering
             ? new Vector2I(XrSession.EyeWidth, XrSession.EyeHeight)
             : new Vector2I(Math.Max(windowSize.X / 2, 1), Math.Max(windowSize.Y, 1));
 
+        /// <summary>The size the eyes are drawn at (m_resolution): the eye image size at <see cref="DynamicResolution.Scale"/>.</summary>
+        internal static Vector2I RenderResolution => DynamicResolution.Size(EyeResolution);
+
         private static void RecordWindowSize(int width, int height)
         {
             Trace(ref resizeCalls, $"ResizeSwapchain {width}x{height}");
@@ -155,11 +161,12 @@ namespace SpaceEngineersVR.Rendering
                 StartHeadset();
             }
 
-            Vector2I eye = EyeResolution;
+            Vector2I eye = RenderResolution;
             if ((Vector2I)resolution.GetValue(null) != eye)
             {
                 resolution.SetValue(null, eye);
-                Log.Info($"Render resolution set to the eye size {eye.X}x{eye.Y} (window {windowSize.X}x{windowSize.Y})");
+                if (!DynamicResolution.Resizing)
+                    Log.Info($"Render resolution set to {eye.X}x{eye.Y} (eye images {EyeResolution.X}x{EyeResolution.Y}, window {windowSize.X}x{windowSize.Y})");
             }
         }
 
@@ -202,9 +209,13 @@ namespace SpaceEngineersVR.Rendering
             Trace(ref drawCalls, "DrawScene");
             if (XrSession.InFrame)
                 EndHeadsetFrame(false, null); // a frame the GUI step never finished
+            PerfMeter.FrameBegin();
+            DynamicResolution.Apply();
             bool headset = BeginHeadsetFrame();
+            PerfMeter.GpuStart();
             object window = backbuffer.GetValue(null);
-            Vector2I eye = EyeResolution;
+            Vector2I eye = RenderResolution, image = EyeResolution;
+            bool partial = eye != image;
             object pool = texturesPool.GetValue(null);
             EnvMatrices.Snapshot head = EnvMatrices.Save(environmentMatrices);
             object debugAmbientOcclusion = null;
@@ -216,7 +227,7 @@ namespace SpaceEngineersVR.Rendering
             FakeHead.Update(drawCalls);
             RenderDebug.Update(drawCalls);
             Matrix desktopHead = FakeHead.Active ? FakeHead.Head : Matrix.Identity;
-            if (headset)
+            if (headset && !FakeHead.Overrides)
                 HeadTracker.Set(ToMatrix(XrSession.Head), XrSession.OriginAboveFloor);
             else if (FakeHead.Active)
                 HeadTracker.Set(desktopHead, FakeHead.OriginAboveFloor);
@@ -225,12 +236,22 @@ namespace SpaceEngineersVR.Rendering
             Matrix? headInCamera = CameraHeadLink.HeadInCamera;
             Matrix fromCamera = headInCamera.HasValue ? Matrix.Invert(headInCamera.Value) : Matrix.Identity;
             HandResidual.Measure(fromCamera, head.InvViewD);
+
+            // Dead, or choosing where to respawn: the game's camera moves by itself, so it is not the view (DeathView).
+            if (ExternalView.Find(environmentMatrices, headset) == ExternalView.Kind.Death && DrawDead(window, head, fromCamera))
+                return false;
+            DeathView.Drawing = false;
             object fullView = null;
 
             try
             {
                 fullView = FullView.Draw(GuiLayout.Size);
                 int billboards = OnceBillboards.Mark();
+
+                // The camera and what carries it, moved together by how much older this frame's game frame is than usual
+                // (MotionExtrapolation), so the world goes by at the headset's rate; put back after the eyes.
+                Vector3D shift = MotionExtrapolation.Begin();
+                Matrix shiftInCamera = Matrix.CreateTranslation((Vector3)Vector3D.TransformNormal(shift, head.ViewD));
 
                 // Both eyes' placements first: the sun shadow cascades are fitted once, round both eyes.
                 for (int i = 0; i < 2; i++)
@@ -239,7 +260,7 @@ namespace SpaceEngineersVR.Rendering
                     {
                         XrView view = XrSession.View(i);
                         Matrix pose = ToMatrix(view.Pose);
-                        eyeFromHead[i] = pose * fromCamera;
+                        eyeFromHead[i] = pose * fromCamera * shiftInCamera;
                         eyeFov[i] = ToTangents(view.Fov);
                         eyeInHead[i] = pose * Matrix.Invert(ToMatrix(XrSession.Head));
                     }
@@ -247,12 +268,15 @@ namespace SpaceEngineersVR.Rendering
                     {
                         float halfIpd = (RenderDebug.DesktopIpd ?? VRSettings.FallbackIpd) * 0.5f;
                         Matrix inHead = Matrix.CreateTranslation(i == 0 ? -halfIpd : halfIpd, 0f, 0f);
-                        eyeFromHead[i] = inHead * desktopHead * fromCamera;
+                        eyeFromHead[i] = inHead * desktopHead * fromCamera * shiftInCamera;
                         eyeFov[i] = FakeHead.Fov(head.Projection);
                         eyeInHead[i] = inHead;
                     }
                 }
                 SharedShadows.Fit(environmentMatrices, head, eyeFromHead, eyeFov);
+                SceneOnce.BeginFrame();
+                if (headset && partial)
+                    XrSession.SetEyeRect(eye.X, eye.Y);
 
                 for (int n = 0; n < 2; n++)
                 {
@@ -268,21 +292,36 @@ namespace SpaceEngineersVR.Rendering
 
                     object[] args = { eyeTargets[i], null };
                     SharedShadows.BeginEye(n);
-                    drawGameScene.Invoke(null, args);
+                    ScenePass.Current = n == 0 ? ScenePass.FirstEye : ScenePass.SecondEye;
+                    try
+                    {
+                        drawGameScene.Invoke(null, args);
+                    }
+                    finally
+                    {
+                        ScenePass.Current = ScenePass.None;
+                    }
                     SharedShadows.EndEye();
                     if (debugAmbientOcclusion != null)
                         release.Invoke(debugAmbientOcclusion, null);
                     debugAmbientOcclusion = args[1];
                     if (fullView != null)
+                    {
+                        FullView.BeforeBlend(eyeTargets[i], i);
                         Blend(eyeTargets[i], fullView, new MyViewport(eye.X, eye.Y));
+                        FullView.Laid(eyeTargets[i], i);
+                    }
                     Vignette.Draw(eyeTargets[i], n, eye, Eyes[i].Projection);
 
                     if (headset)
                     {
-                        SharpDX.Direct3D11.Texture2D image = XrSession.AcquireImage(i);
+                        SharpDX.Direct3D11.Texture2D xrImage = XrSession.AcquireImage(i);
                         try
                         {
-                            copyResource.Invoke(renderContext.GetValue(null), new[] { eyeTargets[i], image });
+                            if (partial)
+                                copySubresourceRegion.Invoke(renderContext.GetValue(null), new object[] { eyeTargets[i], 0, null, xrImage, 0, 0, 0, 0 });
+                            else
+                                copyResource.Invoke(renderContext.GetValue(null), new[] { eyeTargets[i], xrImage });
                         }
                         finally
                         {
@@ -294,11 +333,14 @@ namespace SpaceEngineersVR.Rendering
                     EnvMatrices.Restore(environmentMatrices, head);
                 }
 
+                MotionExtrapolation.End();
+
                 // The chase camera's picture, after both eyes (it puts the head camera back itself).
                 if (drawn == 2)
                 {
                     OnceBillboards.Rewind(billboards);
-                    ExternalView.Render(environmentMatrices, head, drawCalls);
+                    // Without the extrapolation's shift: the carrier went back where the game put it (MotionExtrapolation.End above).
+                    ExternalView.Render(environmentMatrices, head, drawCalls, fromCamera);
                 }
 
                 if (headset)
@@ -329,6 +371,7 @@ namespace SpaceEngineersVR.Rendering
             }
             finally
             {
+                MotionExtrapolation.End();
                 SharedShadows.EndEye();
                 EnvMatrices.Restore(environmentMatrices, head);
                 if (fullView != null)
@@ -345,6 +388,53 @@ namespace SpaceEngineersVR.Rendering
             // Debug drawing (and the per-frame debug message queue) stays on the head camera, in the window.
             drawDebugScene.Invoke(null, new[] { debugAmbientOcclusion });
             return false;
+        }
+
+        /// <summary>
+        /// The death view's frame (<see cref="DeathView"/>) in place of the eyes: both black with the laser's beam, as the main
+        /// menu's (<see cref="MainMenu.DrawBackdrop"/>), and the game's own camera - the death camera, or the respawn screen's -
+        /// drawn by the external view's pass onto its screen, which stands still in the tracking space; then the game's debug
+        /// drawing, as after the eyes. False, after a failure, leaves this frame to the eyes.
+        /// </summary>
+        private static bool DrawDead(object window, in EnvMatrices.Snapshot head, in Matrix fromCamera)
+        {
+            object ambientOcclusion = null;
+            try
+            {
+                // Taken as every frame's is, and not shown: no eye sees the body the blood tint is for.
+                object fullView = FullView.Draw(GuiLayout.Size);
+                if (fullView != null)
+                    release.Invoke(fullView, null);
+
+                ExternalView.Render(environmentMatrices, head, drawCalls, fromCamera);
+                bool drawn = MainMenu.DrawBackdrop(out bool toHeadset);
+                if (drawn)
+                {
+                    ExternalView.ShowInWindow(window, windowSize);
+                    if (toHeadset)
+                        ExternalView.ShowInHeadset(ToMatrix(XrSession.Head));
+                }
+                eyesDrawn = drawn;
+                headsetEyes = drawn && toHeadset;
+                DeathView.Drawing = true;
+                // The debug drawing releases the scene's ambient occlusion after it; this frame has none of its own to give.
+                ambientOcclusion = borrowRtv.Invoke(texturesPool.GetValue(null), new object[] { "VR death AO", 8, 8, windowFormat, 1, 0 });
+            }
+            catch (Exception e)
+            {
+                DeathView.DrawFailed(e);
+                DeathView.Drawing = false;
+                eyesDrawn = headsetEyes = false;
+                if (ambientOcclusion != null)
+                    release.Invoke(ambientOcclusion, null);
+                return false;
+            }
+            finally
+            {
+                EnvMatrices.Restore(environmentMatrices, head);
+            }
+            drawDebugScene.Invoke(null, new[] { ambientOcclusion });
+            return true;
         }
 
         /// <summary>True when this frame goes to the headset. Any OpenXR failure turns the headset off for the rest of the run.</summary>
@@ -448,8 +538,11 @@ namespace SpaceEngineersVR.Rendering
         {
             bool eyes = eyesDrawn, headset = headsetEyes;
             eyesDrawn = headsetEyes = false;
+            PerfMeter.FrameBeginIfClosed(); // menus and loading screens have no scene
             if (!XrSession.InFrame && XrSession.Exists && HudPanel.Pending)
                 BeginHeadsetFrame();
+            PerfMeter.GpuStart();
+            PerfMeter.Mark(GpuPass.Gui, ScenePass.None);
             // No scene (main menu): both eyes without one, so the panel is placed in each as in game (MainMenu).
             bool menu = false;
             if (!eyes && HudPanel.Pending && MainMenu.Wanted)
@@ -463,7 +556,9 @@ namespace SpaceEngineersVR.Rendering
             }
             finally
             {
+                PerfMeter.GpuEnd();
                 EndHeadsetFrame(headset, panel);
+                PerfMeter.FrameEnd();
             }
         }
 
@@ -491,6 +586,9 @@ namespace SpaceEngineersVR.Rendering
 
         // For ExternalView: a pass of its own through the same scene drawing the eyes use.
         internal static Format WindowFormat => windowFormat;
+
+        /// <summary>The game's D3D11 device (MyRender11.DeviceInstance), for <see cref="PerfMeter"/>'s timestamp queries.</summary>
+        internal static SharpDX.Direct3D11.Device D3DDevice => (SharpDX.Direct3D11.Device)device.GetValue(null);
 
         /// <summary>The renderer's immediate render context (MyRender11.RC).</summary>
         internal static object Context => renderContext.GetValue(null);

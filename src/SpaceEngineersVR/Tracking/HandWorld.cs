@@ -172,10 +172,30 @@ namespace SpaceEngineersVR.Tracking
             }
             if (!TryGetTrackingToBody(body, out MatrixD trackingToModel, out why))
                 return false;
+            Place(body, state, trackingToModel, out grip, out aim);
+            return true;
+        }
+
+        /// <summary>
+        /// <see cref="TryGetNow"/>, placed by a tracking-to-body move the caller already holds (<see cref="HandIK"/>'s, the
+        /// one the arms are solved by) rather than one taken again here: what is placed from these poses and the arms are
+        /// then in one frame. False when the hand is not tracked.
+        /// </summary>
+        internal static bool TryGetIn(MyCharacter body, Hand hand, in MatrixD trackingToModel, out MatrixD grip, out MatrixD aim)
+        {
+            grip = aim = MatrixD.Identity;
+            HandState state = VRInput.Get(hand);
+            if (!VRInput.Active || !state.Tracked || body?.PositionComp == null)
+                return false;
+            Place(body, state, trackingToModel, out grip, out aim);
+            return true;
+        }
+
+        private static void Place(MyCharacter body, in HandState state, in MatrixD trackingToModel, out MatrixD grip, out MatrixD aim)
+        {
             MatrixD toWorld = trackingToModel * MatrixD.Invert(body.PositionComp.WorldMatrixNormalizedInv);
             grip = (MatrixD)state.Grip * toWorld;
             aim = (MatrixD)state.Aim * toWorld;
-            return true;
         }
 
         /// <summary>
@@ -209,7 +229,7 @@ namespace SpaceEngineersVR.Tracking
             if (!PreviousCamera && view.HeadTracked && TryGetHeadCamera(body, out MatrixD head))
             {
                 LastBodySource = BodySource.Head;
-                trackingToModel = (MatrixD)Matrix.Invert(view.HeadTracking) * head * modelFromWorld;
+                trackingToModel = InvertPose(view.HeadTracking) * head * modelFromWorld;
                 return true;
             }
             if (!PreviousCamera && cameraInBodyOf == body)
@@ -385,6 +405,24 @@ namespace SpaceEngineersVR.Tracking
         /// the identity in the first case, the inverse of the head's tracking pose in the second.
         /// </summary>
         internal static MatrixD Compose(in Matrix headTracking, in Matrix headFromCamera, in MatrixD cameraWorld) =>
-            (MatrixD)(Matrix.Invert(headTracking) * Matrix.Invert(headFromCamera)) * cameraWorld;
+            InvertPose(headTracking) * InvertPose(headFromCamera) * cameraWorld;
+
+        /// <summary>
+        /// The inverse of a pose (a turn and a move: the tracked head), in double precision and with its last column exactly
+        /// (0, 0, 0, 1), so a move built on it stays a turn and a move. The float <see cref="Matrix.Invert(Matrix)"/> does not
+        /// keep that column: its M44 is the determinant times the determinant's reciprocal, each rounded to float, and with
+        /// a head that turns at all it comes out 0.99999994 (1 - 2^-24) on about a third of poses and 1 on the rest. A
+        /// point taken through such a move and then out through a world matrix (<see cref="Place"/>: model space to the
+        /// world) gets 2^-24 of the world position added: 11.7 cm at the test save's 1961 km from the origin. That was
+        /// the held tool, and the arm on it, switching between two spots 11.7 cm apart on alternate frames, along the line
+        /// from the world's origin. What is placed through <see cref="Compose"/> (the lasers) takes the same kind of path.
+        /// </summary>
+        internal static MatrixD InvertPose(in Matrix pose)
+        {
+            MatrixD inverse = MatrixD.Invert((MatrixD)pose);
+            inverse.M14 = inverse.M24 = inverse.M34 = 0.0;
+            inverse.M44 = 1.0;
+            return inverse;
+        }
     }
 }

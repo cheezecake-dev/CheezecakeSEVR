@@ -95,6 +95,22 @@ namespace SpaceEngineersVR.Input
         public static float Roll(float leftGrip, float rightGrip, GamepadFeel feel, float sensitivity) =>
             (Curve(GripLevel(rightGrip), feel) - Curve(GripLevel(leftGrip), feel)) * sensitivity;
 
+        /// <summary>Tilting the held stick sideways (<see cref="ControlGrip"/>): no roll up to this, full roll from this, degrees.</summary>
+        public const float TiltRollDeadzoneDegrees = 10f, TiltRollFullDegrees = 35f;
+
+        /// <summary>
+        /// What tilting the held stick sideways adds to MyInputExtensions.GetRoll, + right: the tilt past its deadzone, scaled
+        /// so <see cref="TiltRollFullDegrees"/> is a full push, through the pad's curve, as the grips' roll is.
+        /// </summary>
+        public static float TiltRoll(float tiltRadians, GamepadFeel feel, float sensitivity)
+        {
+            float size = MathHelper.ToDegrees(Math.Abs(tiltRadians));
+            if (!(size > TiltRollDeadzoneDegrees))
+                return 0f;
+            float level = Math.Min(1f, (size - TiltRollDeadzoneDegrees) / (TiltRollFullDegrees - TiltRollDeadzoneDegrees));
+            return Math.Sign(tiltRadians) * Curve(level, feel) * sensitivity;
+        }
+
         /// <summary>The squeeze past its deadzone, 0 to 1.</summary>
         private static float GripLevel(float squeeze) =>
             squeeze <= GripDeadzone ? 0f : (Math.Min(squeeze, 1f) - GripDeadzone) / (1f - GripDeadzone);

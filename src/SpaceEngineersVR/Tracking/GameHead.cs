@@ -45,6 +45,16 @@ namespace SpaceEngineersVR.Tracking
         private static bool inSeat;
         private static Vector3 seatCentre;
 
+        // On foot, the head lock's pushed edge (PushOnFoot): the reach it was last used with and the snapshot frame it was
+        // used in, and what the pushes have moved the on-foot centre by since the last log line (body basis, metres).
+        private static float pushReach;
+        private static ulong pushFrame = ulong.MaxValue;
+        private const ulong PushFrames = 2; // the centre is pushed while an on-foot head used the edge within this many frames
+        private static Vector3 pushedWay;
+        private static float pushedSinceLog;
+        private static ulong pushLogFrame = ulong.MaxValue;
+        private const ulong PushLogFrames = 120; // at most one push line in this many frames (2 s)
+
         // The head was lost and the game's own head has taken over; see Lose and Resume.
         private static bool resume, foldPending, resumed;
         private static float foldYaw, foldPitch, gameYaw;
@@ -72,6 +82,16 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>Head yaw relative to the body this frame, radians, + left.</summary>
         public static float Yaw => yaw;
+
+        /// <summary>A head was tracked in the last snapshot taken (this frame's once a head matrix has been built in it), for the logs.</summary>
+        public static bool Tracked
+        {
+            get
+            {
+                lock (gate)
+                    return tracked;
+            }
+        }
 
         /// <summary>Takes this frame's snapshot if it has not been taken yet. False when nothing is tracked.</summary>
         public static bool Take()
@@ -159,6 +179,24 @@ namespace SpaceEngineersVR.Tracking
                 bool fromFloor = !VRSettings.SeatedPlay && originAboveFloor.HasValue && VRSettings.EyeHeight.HasValue;
                 Log.Info($"Got up: the eye is placed from the on-foot centre again, {(fromFloor ? "its height from the floor" : "its height from the last on-foot recentre")}; " +
                          $"eye was ({before.X:F2}, {before.Y:F2}, {before.Z:F2}) m from the seat's eye, now ({head.Translation.X:F2}, {head.Translation.Y:F2}, {head.Translation.Z:F2}) from the character's eye (the yaw unchanged)");
+            }
+        }
+
+        /// <summary>
+        /// On foot, the head lock is the pushed edge with this reach (<see cref="BodyGuard"/>, <see cref="BodyVolume.PushEdge"/>).
+        /// From the next head placed, a head past the edge moves the on-foot centre with it, by as far as it is past, so the
+        /// head is placed on the edge, where that frame's view was already stopped: the view does not move, and as soon as
+        /// the head comes back the view follows it one to one. Without this the centre stays where the last recentre put it
+        /// (before any, the tracking space's origin), and a head far from it (a seated player leaning back after getting up
+        /// from a seat) is held off the view by all of that, with none of its movement reaching the view. Game thread, each
+        /// on-foot first-person head that used the edge.
+        /// </summary>
+        public static void PushOnFoot(float reach)
+        {
+            lock (gate)
+            {
+                pushReach = reach;
+                pushFrame = snapshotFrame;
             }
         }
 
@@ -323,6 +361,10 @@ namespace SpaceEngineersVR.Tracking
             float reference = inSeat ? seatCentre.Y : HeadCentre.HeightReference(seated, centre.Y, originAboveFloor, VRSettings.EyeHeight);
             head.Translation = HeadCentre.Place(raw.Translation, inSeat ? seatCentre : centre, anchor, reference) + new Vector3(0f, VRSettings.HeightOffset, 0f);
 
+            // On foot with the lock's pushed edge in use: a head past the edge moves the on-foot centre with it (PushOnFoot).
+            if (!inSeat && pushReach > 0f && snapshotFrame >= pushFrame && snapshotFrame - pushFrame <= PushFrames)
+                Push(reference);
+
             if (switched && inSeat)
                 Log.Info($"Play position now {(seated ? "seated" : "standing")}: in a seat the eye stays at the sit-down's; on foot it follows the new play position");
             else if (switched)
@@ -334,6 +376,42 @@ namespace SpaceEngineersVR.Tracking
                 Log.Info($"Play position now {(seated ? "seated" : "standing")}: {height}; the eye was {was.Y:F2} m from the character's eye height, " +
                          $"now {head.Translation.Y:F2} (x, z and the yaw unchanged)");
             }
+        }
+
+        /// <summary>
+        /// Moves the on-foot centre by as far as the placed head is past the lock's edge (<see cref="BodyVolume.PushEdge"/>), on
+        /// the floor's plane, and places the head again from it: it is then on the edge. Logs what it moved, at most once in
+        /// 2 s. Caller holds the gate.
+        /// </summary>
+        private static void Push(float reference)
+        {
+            Vector3 at = head.Translation;
+            Vector3 edge = BodyVolume.PushEdge(at, pushReach);
+            var past = new Vector3(at.X - edge.X, 0f, at.Z - edge.Z);
+            float by = past.Length();
+            if (by < 0.0001f)
+                return;
+            // Place turns the offset from the centre by -anchor into the body's basis; the move goes back by +anchor.
+            Vector3 move = Vector3.Transform(past, Matrix.CreateRotationY(anchor));
+            centre.X += move.X;
+            centre.Z += move.Z;
+            head.Translation = HeadCentre.Place(raw.Translation, centre, anchor, reference) + new Vector3(0f, VRSettings.HeightOffset, 0f);
+
+            pushedWay += past;
+            pushedSinceLog += by;
+            bool first = pushLogFrame == ulong.MaxValue || snapshotFrame < pushLogFrame;
+            if (pushedSinceLog < 0.02f || (!first && snapshotFrame - pushLogFrame < PushLogFrames))
+                return;
+            string back = Math.Abs(pushedWay.Z) > 0.01f ? (pushedWay.Z > 0f ? "back" : "forward") : null;
+            string side = Math.Abs(pushedWay.X) > 0.01f ? (pushedWay.X > 0f ? "right" : "left") : null;
+            string way = back != null && side != null ? back + " and " + side : back ?? side ?? "to and fro";
+            string over = first ? "" : $", in {(snapshotFrame - pushLogFrame) / 60f:F0} s";
+            Log.Info($"Head lock: the on-foot centre moved {pushedSinceLog * 100f:F0} cm with the head past the edge ({way}{over}), " +
+                     $"so the view stays on the head; the head is now {head.Translation.X:F2} right, {head.Translation.Z:F2} back of the character's eye " +
+                     $"(reach {pushReach * 100f:F0} cm forward, {BodyVolume.LockBack * 100f:F0} back; RenderDebug HeadPush=0 holds it instead)");
+            pushLogFrame = snapshotFrame;
+            pushedSinceLog = 0f;
+            pushedWay = Vector3.Zero;
         }
 
         /// <summary>

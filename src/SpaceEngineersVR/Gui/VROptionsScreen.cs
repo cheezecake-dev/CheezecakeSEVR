@@ -15,17 +15,20 @@ namespace SpaceEngineersVR.Gui
 {
     /// <summary>
     /// Options > VR. Generated from <see cref="VRSettings.All"/>: a slider (with its value and unit) for every number,
-    /// a checkbox for every on/off setting, a drop-down for every choice, grouped under the setting's section, flowing into two columns
-    /// inside a list that scrolls (the mouse wheel, the dominant hand's thumbstick under the laser, or dragging its bar).
-    /// A new setting declared in VRSettings appears here with no change to this file. Settings apply live as they are moved
-    /// (those marked "(restart)" are stored and only take effect after a restart). Every way out keeps what you set and saves
-    /// it: OK, Back (B or the Menu button), Escape and the close button. Undo changes puts everything back as it was when the
-    /// screen opened (it stays open), and Defaults sets everything to its default for you to look at.
+    /// a checkbox for every on/off setting, a drop-down for every choice, in tabs (the game's own tab control, as in the
+    /// terminal), each tab's settings under their group captions, flowing into two columns inside a list that scrolls if it
+    /// has to (the mouse wheel, the dominant hand's thumbstick under the laser, or dragging its bar). Which tab and group a
+    /// setting is in is one line in <see cref="VROptionsTabs"/>; nothing in this file changes for a new setting. The screen
+    /// opens on the tab it was left on. Settings apply live as they are moved (those marked "(restart)" are stored and only
+    /// take effect after a restart). Every way out keeps what you set and saves it: OK, Back (B or the Menu button), Escape
+    /// and the close button. Undo changes puts everything back as it was when the screen opened (it stays open), and Defaults
+    /// sets everything, on every tab, to its default for you to look at.
     /// </summary>
     /// <remarks>
     /// The measures are the GUI's normalised ones (1.0 is the width of the 4:3 area in the middle of the 1920x1080
-    /// layout, and the height of the screen). Only the settings scroll. What must always be reachable stays outside the list:
-    /// the height calibration's status and buttons, the recentre button, and Defaults, OK and Undo changes.
+    /// layout, and the height of the screen). The screen is sized for the tallest tab, so it keeps its size as the tabs
+    /// change; only past <see cref="MaxHeight"/> does a tab's list scroll. What must always be reachable stays outside the
+    /// tabs: the height calibration's status and buttons, the recentre button, and Defaults, OK and Undo changes.
     /// </remarks>
     internal sealed class VROptionsScreen : MyGuiScreenBase, ISmoothWheelScreen
     {
@@ -36,23 +39,32 @@ namespace SpaceEngineersVR.Gui
         private const float HeaderHeight = 0.09f, FooterHeight = 0.19f, MaxHeight = 0.96f;
         private const float ButtonWidth = 0.176f, ButtonGap = 0.012f, StatusWidth = 0.52f;
 
-        private sealed class Section
-        {
-            public string Name;
-            public readonly List<Setting> Rows = new List<Setting>();
+        /// <summary>Between the tab buttons and the list; and the tab names' size, that of the buttons on this screen.</summary>
+        private const float TabGap = 0.01f, TabTextScale = 0.8f;
 
-            public int Lines => 1 + Rows.Count;
+        /// <summary>The tab that was showing when the screen was last left, so it opens there again.</summary>
+        private static string lastTab;
+
+        /// <summary>One tab's groups in two columns, and what holds them, as tall as they need.</summary>
+        private sealed class Page
+        {
+            public VROptionsTabs.Tab Tab;
+            public readonly List<List<VROptionsTabs.Group>> Columns = new List<List<VROptionsTabs.Group>>();
+            public Vector2 Content;
         }
 
         private sealed class Layout
         {
-            public readonly List<List<Section>> Columns = new List<List<Section>>();
+            public readonly List<Page> Pages = new List<Page>();
 
             /// <summary>The screen.</summary>
             public Vector2 Size;
 
-            /// <summary>The scrolling list, with its bar; and what is inside it, which is as tall as the settings need.</summary>
-            public Vector2 Panel, Content;
+            /// <summary>Each tab's scrolling list, with its bar: the same for every tab, as tall as the tallest needs (up to the screen's limit).</summary>
+            public Vector2 Panel;
+
+            /// <summary>The tab buttons' scale (1 unless they need less to fit side by side) and their height.</summary>
+            public float TabScale, TabHeight;
         }
 
         /// <summary>A setting's control, to put the setting's value back in it.</summary>
@@ -93,73 +105,67 @@ namespace SpaceEngineersVR.Gui
 
         // ---- What goes on the screen, and where. ----
 
-        /// <summary>The sections, in the order the settings first use them, with the settings that belong to them.</summary>
-        private static List<Section> Describe()
-        {
-            var sections = new List<Section>();
-            foreach (Setting setting in VRSettings.All)
-            {
-                if (setting.Hidden)
-                    continue;
-                Section found = null;
-                foreach (Section existing in sections)
-                {
-                    if (existing.Name == setting.Section)
-                        found = existing;
-                }
-                if (found == null)
-                {
-                    found = new Section { Name = setting.Section };
-                    sections.Add(found);
-                }
-                found.Rows.Add(setting);
-            }
-            return sections;
-        }
+        /// <summary>The shown settings in their tabs and groups (<see cref="VROptionsTabs"/>).</summary>
+        private static List<VROptionsTabs.Tab> Describe() => VROptionsTabs.Arrange(VRSettings.All);
 
         /// <summary>
-        /// Splits the sections into two columns (in order) as evenly as they go, and sizes the list to hold them at the full
-        /// row spacing. The screen is as tall as that needs, up to <see cref="MaxHeight"/>; past that the list scrolls.
+        /// Splits each tab's groups into two columns (in order) as evenly as they go, and sizes its list to hold them at the
+        /// full row spacing. The screen is as tall as the tallest tab needs, up to <see cref="MaxHeight"/>; past that a list scrolls.
         /// </summary>
-        private static Layout Measure(List<Section> sections)
+        private static Layout Measure(List<VROptionsTabs.Tab> tabs)
         {
             var layout = new Layout();
-            // Where to cut the list so the taller column is as short as it can be. Both columns get something if there are two sections.
-            int first = sections.Count >= 2 ? 1 : sections.Count;
-            int last = sections.Count >= 2 ? sections.Count - 1 : sections.Count;
-            int best = first;
-            float shortest = float.MaxValue;
-            for (int split = first; split <= last; split++)
-            {
-                float taller = Math.Max(Height(sections.GetRange(0, split)), Height(sections.GetRange(split, sections.Count - split)));
-                if (taller < shortest)
-                {
-                    shortest = taller;
-                    best = split;
-                }
-            }
-            layout.Columns.Add(sections.GetRange(0, best));
-            if (best < sections.Count)
-                layout.Columns.Add(sections.GetRange(best, sections.Count - best));
-
+            float width = 2f * PanelPadX + 2f * ColumnWidth + ColumnGap;
             float tallest = 0f;
-            foreach (List<Section> column in layout.Columns)
-                tallest = Math.Max(tallest, Height(column));
-            int columns = Math.Max(1, layout.Columns.Count);
-            layout.Content = new Vector2(2f * PanelPadX + columns * ColumnWidth + (columns - 1) * ColumnGap, tallest + 2f * PanelPadY);
-            float height = Math.Min(MaxHeight, HeaderHeight + layout.Content.Y + FooterHeight);
-            layout.Panel = new Vector2(layout.Content.X + ScrollbarWidth, height - HeaderHeight - FooterHeight);
-            layout.Size = new Vector2(layout.Panel.X + 2f * ScreenMargin, height);
+            foreach (VROptionsTabs.Tab tab in tabs)
+            {
+                var page = new Page { Tab = tab };
+                List<VROptionsTabs.Group> groups = tab.Groups;
+                // Where to cut the groups so the taller column is as short as it can be. Both columns get something if there are two groups.
+                int first = groups.Count >= 2 ? 1 : groups.Count;
+                int last = groups.Count >= 2 ? groups.Count - 1 : groups.Count;
+                int best = first;
+                float shortest = float.MaxValue;
+                for (int split = first; split <= last; split++)
+                {
+                    float taller = Math.Max(Height(groups.GetRange(0, split)), Height(groups.GetRange(split, groups.Count - split)));
+                    if (taller < shortest)
+                    {
+                        shortest = taller;
+                        best = split;
+                    }
+                }
+                page.Columns.Add(groups.GetRange(0, best));
+                if (best < groups.Count)
+                    page.Columns.Add(groups.GetRange(best, groups.Count - best));
+
+                float height = 0f;
+                foreach (List<VROptionsTabs.Group> column in page.Columns)
+                    height = Math.Max(height, Height(column));
+                page.Content = new Vector2(width, height + 2f * PanelPadY);
+                tallest = Math.Max(tallest, page.Content.Y);
+                layout.Pages.Add(page);
+            }
+
+            // The game's tab buttons, as wide as its default button, side by side; smaller only if that many would not fit.
+            Vector2 button = MyGuiConstants.TEXTURE_BUTTON_DEFAULT_NORMAL.MinSizeGui;
+            float panelWidth = width + ScrollbarWidth;
+            layout.TabScale = tabs.Count == 0 ? 1f : Math.Min(1f, panelWidth / (tabs.Count * button.X));
+            layout.TabHeight = button.Y * layout.TabScale;
+            float above = HeaderHeight + layout.TabHeight + TabGap;
+            float screenHeight = Math.Min(MaxHeight, above + tallest + FooterHeight);
+            layout.Panel = new Vector2(panelWidth, screenHeight - above - FooterHeight);
+            layout.Size = new Vector2(panelWidth + 2f * ScreenMargin, screenHeight);
             return layout;
         }
 
-        /// <summary>How tall these sections stand in one column.</summary>
-        private static float Height(List<Section> sections)
+        /// <summary>How tall these groups stand in one column: a caption line each, a line a setting, a gap between groups.</summary>
+        private static float Height(List<VROptionsTabs.Group> groups)
         {
             int lines = 0;
-            foreach (Section section in sections)
-                lines += section.Lines;
-            return lines * Pitch + Math.Max(0, sections.Count - 1) * SectionGap;
+            foreach (VROptionsTabs.Group group in groups)
+                lines += 1 + group.Rows.Count;
+            return lines * Pitch + Math.Max(0, groups.Count - 1) * SectionGap;
         }
 
         /// <summary>The list's bar: the game's own, so the list's inside is as wide as the panel less this.</summary>
@@ -183,44 +189,43 @@ namespace SpaceEngineersVR.Gui
             lines.AddHorizontal(new Vector2(-size.X * 0.45f, size.Y / 2f - 0.1f), size.X * 0.9f);
             Controls.Add(lines);
 
-            // The settings, in a list of their own: positions inside it are from its centre.
-            var content = new MyGuiControlParent(null, layout.Content);
-            var inside = new MyGuiControlSeparatorList();
-            content.Controls.Add(inside);
-            into = content.Controls;
-            Vector2 centre = layout.Content / 2f;
-            for (int c = 0; c < layout.Columns.Count; c++)
+            // The tabs: the game's tab control, its buttons along the top and under them the page of the tab chosen, which
+            // holds that tab's list. Positions in a page are from its centre.
+            var tabs = new MyGuiControlTabControl(new Vector2(-layout.Panel.X / 2f, -size.Y / 2f + HeaderHeight),
+                new Vector2(layout.Panel.X, layout.TabHeight + TabGap + layout.Panel.Y))
             {
-                float x = PanelPadX + c * (ColumnWidth + ColumnGap) - centre.X;
-                float y = PanelPadY - centre.Y;
-                foreach (Section section in layout.Columns[c])
-                {
-                    AddText(section.Name, x, y + Pitch / 2f, "White", 0.85f, ColumnWidth);
-                    inside.AddHorizontal(new Vector2(x, y + Pitch - 0.006f), ColumnWidth);
-                    y += Pitch;
-                    foreach (Setting setting in section.Rows)
-                    {
-                        AddSetting(setting, x, y + Pitch / 2f);
-                        y += Pitch;
-                    }
-                    y += SectionGap;
-                }
-            }
-            into = Controls;
-
-            var panel = new MyGuiControlScrollablePanel(content)
-            {
-                Name = "VROptionsList",
+                Name = "VROptionsTabs",
                 OriginAlign = MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_TOP,
-                ScrollbarVEnabled = true,
-                Size = layout.Panel,
-                Position = new Vector2(-layout.Panel.X / 2f, -size.Y / 2f + HeaderHeight),
-                BackgroundTexture = MyGuiConstants.TEXTURE_SCROLLABLE_LIST,
-                BorderEnabled = true,
-                BorderColor = MyGuiConstants.DISABLED_BUTTON_COLOR,
-                BorderSize = 1,
+                // As the terminal's: a click on a tab leaves the focus where it was.
+                CanAutoFocusOnInputHandling = false,
+                // Its LB/RB hints are a gamepad's; the controllers have no such buttons here.
+                ShowGamepadHelp = false,
             };
-            Controls.Add(panel);
+            tabs.TabButtonScale = layout.TabScale;
+            int open = 0;
+            for (int i = 0; i < layout.Pages.Count; i++)
+            {
+                Page page = layout.Pages[i];
+                MyGuiControlTabPage tab = tabs.GetTabSubControl(i);
+                tab.Text = new StringBuilder(page.Tab.Name);
+                tab.TextScale = TabTextScale;
+                var groups = new List<string>();
+                foreach (VROptionsTabs.Group group in page.Tab.Groups)
+                    groups.Add(group.Name);
+                tab.SetToolTip(string.Join(", ", groups));
+                tab.Controls.Add(MakeList(page, layout.Panel, new Vector2(-layout.Panel.X / 2f, -(TabGap + layout.Panel.Y) / 2f + TabGap)));
+                if (page.Tab.Name == lastTab)
+                    open = i;
+            }
+            Controls.Add(tabs);
+            if (layout.Pages.Count > 0)
+                tabs.SelectedPage = open;
+            tabs.OnPageChanged += () => Guard("tab", () =>
+            {
+                int shown = tabs.SelectedPage;
+                if (shown >= 0 && shown < layout.Pages.Count)
+                    lastTab = layout.Pages[shown].Tab.Name;
+            });
 
             // What has to stay in reach however far the list is scrolled: the height calibration and the recentre, then the
             // way out. The first group is level with the list's left edge, the last with its right.
@@ -240,7 +245,7 @@ namespace SpaceEngineersVR.Gui
                 "Puts your view at your character's eyes (in a seat, at the seat's eyes) from where your head is now, and makes the way you face now the way your character faces. Sit or stand as you play and look straight ahead. Standing play with a calibrated height keeps the height from the floor. Use it after moving or turning your chair, or switching play position. Sitting down in a seat does it for you. Anywhere, hold the left Menu button for a moment to do the same (a tap still opens the menu).",
                 new Vector2(right, buttonsY), MyGuiDrawAlignEnum.HORISONTAL_RIGHT_AND_VERTICAL_CENTER, OnRecentre);
             float firstX = -size.X / 2f + ScreenMargin + PanelPadX;
-            AddButton("Defaults", "Sets every setting here to its default so you can see it. Leaving this screen keeps them; Undo changes brings back what you opened it with.",
+            AddButton("Defaults", "Sets every setting, on every tab, to its default so you can see it. Leaving this screen keeps them; Undo changes brings back what you opened it with.",
                 new Vector2(firstX, buttonsY), MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER, OnDefaults);
             MyGuiControlButton ok = AddButton("OK", "Saves the settings and closes. Back, Escape and the close button save them too.",
                 new Vector2(-ButtonGap / 2f, buttonsY), MyGuiDrawAlignEnum.HORISONTAL_RIGHT_AND_VERTICAL_CENTER, OnOk);
@@ -249,6 +254,58 @@ namespace SpaceEngineersVR.Gui
 
             CloseButtonEnabled = true;
             FocusedControl = ok;
+        }
+
+        /// <summary>
+        /// One tab's settings in a list of their own, <paramref name="size"/> with its top left at <paramref name="topLeft"/>,
+        /// that scrolls if they do not fit: their groups in columns, each under its caption and line. Positions inside the
+        /// list are from its centre.
+        /// </summary>
+        private MyGuiControlScrollablePanel MakeList(Page page, Vector2 size, Vector2 topLeft)
+        {
+            var content = new MyGuiControlParent(null, page.Content);
+            var inside = new MyGuiControlSeparatorList();
+            content.Controls.Add(inside);
+            MyGuiControls was = into;
+            into = content.Controls;
+            try
+            {
+                Vector2 centre = page.Content / 2f;
+                for (int c = 0; c < page.Columns.Count; c++)
+                {
+                    float x = PanelPadX + c * (ColumnWidth + ColumnGap) - centre.X;
+                    float y = PanelPadY - centre.Y;
+                    foreach (VROptionsTabs.Group group in page.Columns[c])
+                    {
+                        AddText(group.Name, x, y + Pitch / 2f, "White", 0.85f, ColumnWidth);
+                        inside.AddHorizontal(new Vector2(x, y + Pitch - 0.006f), ColumnWidth);
+                        y += Pitch;
+                        foreach (Setting setting in group.Rows)
+                        {
+                            AddSetting(setting, x, y + Pitch / 2f);
+                            y += Pitch;
+                        }
+                        y += SectionGap;
+                    }
+                }
+            }
+            finally
+            {
+                into = was;
+            }
+
+            return new MyGuiControlScrollablePanel(content)
+            {
+                Name = "VROptionsList " + page.Tab.Name,
+                OriginAlign = MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_TOP,
+                ScrollbarVEnabled = true,
+                Size = size,
+                Position = topLeft,
+                BackgroundTexture = MyGuiConstants.TEXTURE_SCROLLABLE_LIST,
+                BorderEnabled = true,
+                BorderColor = MyGuiConstants.DISABLED_BUTTON_COLOR,
+                BorderSize = 1,
+            };
         }
 
         private void AddSetting(Setting setting, float x, float y)

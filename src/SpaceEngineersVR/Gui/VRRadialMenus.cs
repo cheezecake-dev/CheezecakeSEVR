@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Sandbox.Game;
+using Sandbox.Game.Gui;
+using Sandbox.Game.GUI;
 using Sandbox.Game.Screens.Helpers;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Input;
@@ -16,8 +18,9 @@ namespace SpaceEngineersVR.Gui
     /// "(A) Confirm" in Xbox symbols, the page tabs have LB and RB beside them, the centre says "(Y) Quick Actions", and
     /// each entry of the game's actions wheel names its gamepad shortcut. Here
     /// <list type="bullet">
-    /// <item>the bottom line says how the hands close the wheel and use what it points at: let go of the left grip on foot
-    /// and on the jetpack (with the stick centred it closes), the right trigger in a seat and B or Y to close;</item>
+    /// <item>the bottom line says how the hands close the wheel and use what it points at: either trigger, or letting go of
+    /// the left grip on foot and on the jetpack (with the stick centred it closes; on the toolbar's wheel the middle is the
+    /// empty hand once the stick has chosen something and come back to it), either trigger in a seat and B or Y to close;</item>
     /// <item>the page tabs say the right stick turns them, and the centre says what the left stick does;</item>
     /// <item>an entry's shortcut is the controller's way to it (<see cref="VRPrompts"/>), or nothing;</item>
     /// <item>the game's actions wheel (MyGuiControlRadialMenuSystem, opened from the tools wheel by clicking the left stick)
@@ -25,6 +28,14 @@ namespace SpaceEngineersVR.Gui
     /// move it with: <see cref="VRControls"/>), and the camera switch while third person is off
     /// (<see cref="VRSettings.ThirdPerson"/>; the game's third person is refused then). Their places are left empty, so
     /// the rest keep the positions the game gives them.</item>
+    /// <item>the HUD keeps the layout it has for the hands while a wheel is up. The game's HUD has a gamepad layout (the
+    /// D-pad quick-select, MyGuiControlDPad, below and right of the middle of the screen, and the plate with the ring it sits
+    /// on, in place of the toolbar and its plate), shown while its controller_mode stat is 1 (MyStatControllerMode: the pad
+    /// was the last device used). The wheels tell the game the pad is in use (<see cref="ToolbarWheel"/>), which put the
+    /// D-pad at the bottom right of the ring; in VR the stat reads 0.</item>
+    /// <item>the HUD is not drawn at all while a wheel is up (<see cref="RadialShowing"/>), as it is not for the custom actions
+    /// wheel: it draws onto the same GUI panel, so its readouts, the markers' distances and the game's notifications showed
+    /// faintly through the ring and behind the labels. They come back when the wheel has closed.</item>
     /// </list>
     /// Off with the VR radial menus setting (<see cref="VRSettings.VRRadialMenu"/>) or RenderDebug VRRadial=0.
     /// </summary>
@@ -36,12 +47,36 @@ namespace SpaceEngineersVR.Gui
         /// <summary>The wheels are the hands' now.</summary>
         public static bool Active => !Off && VRSettings.VRRadialMenu && VRInput.Active;
 
+        /// <summary>
+        /// One of the game's radial screens is on the GUI panel now (the toolbar's wheel, <see cref="SlotWheelScreen"/>, or the
+        /// game's own actions wheel): it has the focus, or it is fading out over the gameplay screen. The HUD is not drawn then
+        /// (<see cref="ActionsWheel"/>), or its readouts, the markers' distances, the notifications and the toolbar's lines would
+        /// show faintly through the ring and behind its labels.
+        /// </summary>
+        internal static bool RadialShowing()
+        {
+            if (!Active)
+                return false;
+            MyGuiScreenBase focus = MyScreenManager.GetScreenWithFocus();
+            if (focus is MyGuiControlRadialMenuBase)
+                return true;
+            if (focus != null && !(focus is MyGuiScreenGamePlay))
+                return false;
+            foreach (MyGuiScreenBase screen in MyScreenManager.Screens)
+            {
+                if (screen is MyGuiControlRadialMenuBase && screen.State != MyGuiScreenState.CLOSED)
+                    return true;
+            }
+            return false;
+        }
+
         private const string SystemScreenType = "Sandbox.Game.Screens.Helpers.MyGuiControlRadialMenuSystem";
         private const string SystemItemType = "Sandbox.Game.Screens.Helpers.MyRadialMenuItemSystem";
         private const string EmptyItemType = "Sandbox.Game.Screens.Helpers.MyRadialMenuItemEmpty";
 
         private static FieldInfo cancelLabel, confirmLabel, cancelImage, confirmImage, centerHint, leftHint, rightHint;
         private static FieldInfo data, currentSection, selectedButton, tooltipShortcut, systemAction;
+        private static Action<MyStatBase, float> setStat;
         private static Type emptyType;
         private static bool loggedFailure;
 
@@ -50,24 +85,29 @@ namespace SpaceEngineersVR.Gui
 
         // ---- What the labels say. ----
 
-        /// <summary>The bottom line: how the hands close the wheel, and how they use the entry it points at.</summary>
-        internal static void BottomLine(VRContext where, out string close, out string use)
+        /// <summary>
+        /// The bottom line: how the hands close the wheel, and how they use the entry it points at. On the toolbar's wheel
+        /// (<paramref name="slots"/>) the middle is the empty hand once the stick has chosen something and come back to it, so
+        /// that is said beside "use" in a seat, where B or Y close; on foot B closes and is said with the empty hand.
+        /// </summary>
+        internal static void BottomLine(VRContext where, bool slots, out string close, out string use)
         {
             if (VRControls.IsSeated(where))
             {
                 close = "B or Y: close";
-                use = "Right trigger: use";
+                use = slots ? "Either trigger: use or unequip" : "Either trigger: use";
             }
             else
             {
-                close = "Stick centred, let go: close";
-                use = "Let go of grip: use";
+                close = slots ? "Middle: unequip, B: close" : "Stick centred, let go: close";
+                use = "Trigger, or let go: use";
             }
         }
 
         public const string PageLeft = "< Right stick";
         public const string PageRight = "Right stick >";
         public const string ToolsCentre = "Left stick: choose\nClick it: game actions";
+        public const string ToolsCentreView = ToolsCentre + "\nRight stick down: external view";
         public const string ActionsCentre = "Left stick: choose";
 
         /// <summary>Whether the hands have no use for one of the game's system actions, so its entry is left out.</summary>
@@ -107,29 +147,30 @@ namespace SpaceEngineersVR.Gui
         /// <summary>
         /// Says the hands' controls on a wheel just made: the bottom line, the page hints and the centre.
         /// <paramref name="tools"/> is the toolbar's wheel (<see cref="SlotWheelScreen"/>), whose stick click opens the
-        /// game's actions wheel.
+        /// game's actions wheel; <paramref name="toolsCentre"/> is its centre line (<see cref="ToolsCentre"/> when null).
         /// </summary>
-        public static void Relabel(MyGuiControlRadialMenuBase screen, bool tools)
+        public static void Relabel(MyGuiControlRadialMenuBase screen, bool tools, string toolsCentre = null)
         {
             if (!Active || screen == null)
                 return;
             try
             {
-                BottomLine(VRControls.Context, out string close, out string use);
+                BottomLine(VRControls.Context, tools, out string close, out string use);
                 SetButton(screen, cancelLabel, cancelImage, close);
                 SetButton(screen, confirmLabel, confirmImage, use);
                 SetText(screen, leftHint, PageLeft);
                 SetText(screen, rightHint, PageRight);
 
+                string centreText = tools ? toolsCentre ?? ToolsCentre : ActionsCentre;
                 var centre = centerHint?.GetValue(screen) as MyGuiControlLabel;
                 if (centre != null)
-                    centre.Text = tools ? ToolsCentre : ActionsCentre;
+                    centre.Text = centreText;
                 else if (tools)
                 {
                     // The toolbar's wheel has no centre line of its own; the game's actions wheel puts its one here.
                     var confirm = confirmImage?.GetValue(screen) as MyGuiControlImage;
                     float y = confirm != null ? confirm.Position.Y : 0.365f;
-                    centre = new MyGuiControlLabel(new Vector2(0f, y), null, ToolsCentre, null, 0.7f, "Blue", MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_CENTER);
+                    centre = new MyGuiControlLabel(new Vector2(0f, y), null, centreText, null, 0.7f, "Blue", MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_CENTER);
                     screen.Controls.Add(centre);
                 }
             }
@@ -189,6 +230,37 @@ namespace SpaceEngineersVR.Gui
             Hook(harmony, "the actions wheel's entries", made, prefix: nameof(Filter));
             Hook(harmony, "the actions wheel's labels", made, postfix: nameof(Made));
             Hook(harmony, "the actions wheel's shortcuts", system == null ? null : AccessTools.DeclaredMethod(system, "UpdateTooltip"), postfix: nameof(Shortcut));
+
+            try
+            {
+                setStat = AccessTools.MethodDelegate<Action<MyStatBase, float>>(AccessTools.PropertySetter(typeof(MyStatBase), nameof(MyStatBase.CurrentValue)));
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "VR radial menus: the HUD's stats cannot be set; the HUD's gamepad layout (the D-pad) shows while a wheel is up");
+            }
+            if (setStat != null)
+                Hook(harmony, "the HUD's gamepad layout", AccessTools.DeclaredMethod(typeof(MyStatControllerMode), nameof(MyStatControllerMode.Update)), prefix: nameof(ControllerMode));
+        }
+
+        /// <summary>
+        /// Prefix of the HUD's controller_mode stat: 0 in VR, whatever the pad's last-used says, so the HUD's gamepad layout
+        /// (the D-pad and its plate) does not come up while a wheel tells the game the pad is in use.
+        /// </summary>
+        private static bool ControllerMode(MyStatControllerMode __instance)
+        {
+            if (!Active)
+                return true;
+            try
+            {
+                setStat(__instance, 0f);
+                return false;
+            }
+            catch (Exception e)
+            {
+                Failed(e, "the HUD's controller mode could not be set; it keeps the game's");
+                return true;
+            }
         }
 
         private static void Hook(Harmony harmony, string what, MethodBase target, string prefix = null, string postfix = null)

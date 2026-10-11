@@ -16,8 +16,8 @@ namespace SpaceEngineersVR.Hands
 {
     /// <summary>
     /// The held tool or gun taken in both hands. The other hand closes its grip on the spot where the game's own animation
-    /// puts the astronaut's left hand (the item definition's LeftHand, as <see cref="HeldItem"/> uses its RightHand for the
-    /// tool hand), and from then on the tool points along the line between the two hands: the item's own line from its
+    /// puts the astronaut's left hand (the middle of the hand held as the item definition's LeftHand has the palm, as
+    /// <see cref="HeldItem"/> uses its RightHand for the tool hand), and from then on the tool points along the line between the two hands: the item's own line from its
     /// RightHand spot to its LeftHand spot is turned onto the line from the tool hand's grip to the other hand's grip, by
     /// the smallest turn that does it, about the tool hand's grip, so the tool hand keeps its place on the tool and the
     /// roll about that line is the tool hand's. The turn goes into the tool hand's pose itself
@@ -26,7 +26,7 @@ namespace SpaceEngineersVR.Hands
     /// </summary>
     /// <remarks>
     /// <para>Grab: a grip pressed with the other hand within <see cref="GrabReach"/> of the tool's grip, claimed through
-    /// <see cref="GripClaim"/> at <see cref="ClaimPriority"/>, ahead of the holsters and the helmet, floating items, grab to use
+    /// <see cref="GripClaim"/> at <see cref="ClaimPriority"/>, ahead of the helmet, floating items, grab to use
     /// and hulls: the hand is on the tool it holds, the one thing it is surely reaching for. Anywhere else the claim
     /// declines and the grip keeps its old meaning (the toolbar wheel on foot). A light tick on the other hand marks it coming
     /// into reach; the grab is a tick on both hands.</para>
@@ -35,10 +35,13 @@ namespace SpaceEngineersVR.Hands
     /// counts as far as the item's grip line runs along the tool (<see cref="AimShare"/>): a pistol's support hand cups the
     /// tool hand from the side, a line that would roll the gun rather than aim it, so a pistol is steadied but aims with the
     /// tool hand.</para>
-    /// <para>Release: letting go, or the other hand more than <see cref="ReleaseOff"/> off the grip line (the line from the tool
-    /// hand's grip through the tool's grip as the tool hand alone holds it, measured across it and along it); also putting
-    /// the tool away or switching it, leaving the feet, and the other hand untracked for longer than <see cref="TrackingGrace"/>.
-    /// The aim eases back to the tool hand and the arm back to its controller.</para>
+    /// <para>Release: letting go; with <see cref="Stays"/> off, also the other hand more than <see cref="ReleaseOff"/> off the
+    /// grip line (the line from the tool hand's grip through the tool's grip as the tool hand alone holds it, measured across
+    /// it and along it); either way putting the tool away or switching it, leaving the feet, and the other hand untracked for
+    /// longer than <see cref="TrackingGrace"/>. With <see cref="Stays"/> on (the default) the astronaut's hand stays on the
+    /// grip however far the real hand goes; past <see cref="ReleaseOff"/> the real hand's pull on the aim eases off, to none at
+    /// <see cref="DriftNone"/>, so a drifting hand does not swing the tool. The aim eases back to the tool hand and the arm
+    /// back to its controller.</para>
     /// <para>The settle is for the right-handed rig only: the game's character holds items in its right hand, so with
     /// Left-handed on the aim and the claim work for the right controller but the astronaut's arms stay as they were.</para>
     /// </remarks>
@@ -47,10 +50,28 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Debug: no two-handed hold (<see cref="Rendering.RenderDebug"/> TwoHand=0); the other grip opens the wheel as before.</summary>
         public static bool Off { get; set; }
 
+        /// <summary>Debug: overrides <see cref="VRSettings.TwoHandGripStays"/> (<see cref="Rendering.RenderDebug"/> TwoHandStay=0/1); null follows the setting.</summary>
+        public static bool? StaysDebug { get; set; }
+
+        /// <summary>The other hand stays on the tool's grip while its grip button is held, however far it moves; off, it also lets go <see cref="ReleaseOff"/> off the grip line.</summary>
+        internal static bool Stays => StaysDebug ?? VRSettings.TwoHandGripStays;
+
+        /// <summary>
+        /// Debug: the most the other hand turns round the handle it holds to suit its forearm, each way, degrees
+        /// (<see cref="Rendering.RenderDebug"/> TwoHandRoll). 0, the default: the hand is held exactly as the game's LeftHand
+        /// spot has it. See <see cref="OnGrip"/>.
+        /// </summary>
+        public static float RollMost { get; set; } = DefaultRollMost;
+
+        internal const float DefaultRollMost = 0f;
+
+        /// <summary>Debug: the other hand moved along the handle it holds, metres, toward its little finger (<see cref="Rendering.RenderDebug"/> TwoHandSlide, mm).</summary>
+        public static float SlideDebug { get; set; }
+
         /// <summary>The name the grip is claimed under (<see cref="GripClaim"/>).</summary>
         public const string ClaimName = "TwoHand";
 
-        /// <summary>Asked before the holsters (10): a hand on the tool's own grip is reaching for the tool, not the helmet behind it.</summary>
+        /// <summary>Asked before the helmet (10): a hand on the tool's own grip is reaching for the tool, not the helmet behind it.</summary>
         public const int ClaimPriority = 5;
 
         /// <summary>A grip this close to the tool's grip (metres, from the other controller's grip) takes it.</summary>
@@ -71,11 +92,14 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The grab: a firm tick on both hands.</summary>
         public const float GrabAmplitude = 0.45f, GrabPulseSeconds = 0.03f;
 
-        /// <summary>The other hand comes into reach of the grip: light, like a holster's.</summary>
+        /// <summary>The other hand comes into reach of the grip: light, like the helmet's.</summary>
         public const float HintAmplitude = 0.2f, HintSeconds = 0.02f;
 
         /// <summary>Let go: the lightest tick on the other hand.</summary>
         public const float LetGoAmplitude = 0.15f, LetGoSeconds = 0.015f;
+
+        /// <summary>A grip this near the tool's grip that is still out of reach is logged (metres).</summary>
+        private const double DeclineNoted = 0.30;
 
         /// <summary>Once in reach, the hint holds this much further out, so the edge does not tick over and over.</summary>
         private const double HintSlack = 1.3;
@@ -84,13 +108,20 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// How much of the tool's grip line has to run along the tool (the share of it along the tool's forward) for the line to
-        /// aim it: a rifle 0.95, a hand drill and a welder 0.85, a grinder 0.75 (its side handle), a pistol 0.37 (the support
-        /// hand under and beside the tool hand). From none at the first to all of it at the second.
+        /// aim it: a rifle 0.95, a hand drill 0.85, a grinder 0.75 (its side handle), a pistol 0.37 (the support hand under and
+        /// beside the tool hand). From none at the first to all of it at the second.
         /// </summary>
         private const double AimShareNone = 0.45, AimShareFull = 0.65;
 
         /// <summary>The turn fades out as the other hand comes back along the line toward the tool hand: none at this share of the grip's distance, all of it at the second.</summary>
         private const double SeparationNone = 0.3, SeparationFull = 0.6;
+
+        /// <summary>
+        /// A hand that stays on the grip (<see cref="Stays"/>) while the real one drifts off it: up to <see cref="ReleaseOff"/>
+        /// off the grip line it aims the tool as ever, from there its pull eases off, to none this far off (metres), and the tool
+        /// points where the tool hand alone points it.
+        /// </summary>
+        internal const double DriftNone = 0.30;
 
         /// <summary>Two grips closer than this on an item (metres) are not two places to hold it.</summary>
         private const double ShortestGrip = 0.03;
@@ -105,6 +136,9 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The tool held (or, while the aim eases back, last held) in both hands, and its grip spots in its own space.</summary>
         private static MyEntity weapon;
         private static MyHandItemDefinition heldItem;
+
+        /// <summary>The other hand holds this tool's grip now (<see cref="Kickback"/>: held in both hands it adds nothing).</summary>
+        internal static bool Holds(MyEntity tool) => held && tool != null && ReferenceEquals(tool, weapon);
         private static Vector3 rightSpot, leftSpot;
 
         /// <summary>How far the tool's grip line aims it (<see cref="AimShare"/>), for the item held.</summary>
@@ -116,6 +150,16 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The other palm's place on the tool, in the character's model space, for the arm (<see cref="Settle"/>).</summary>
         private static Matrix supportModel;
         private static bool supportValid;
+
+        /// <summary>How far the other hand is turned round the handle (<see cref="OnGrip"/>), radians; and whether it was on the tool last frame.</summary>
+        private static float roll;
+        private static bool rolled;
+
+        /// <summary>The most the hand turns round the handle in one frame once on it, radians (3 degrees).</summary>
+        private const float RollStep = 0.0524f;
+
+        /// <summary>Below this (the squared sine of the forearm's angle to the handle, about 12 degrees) the forearm lies along the handle and gives no way to turn.</summary>
+        private const float RollFloor = 0.04f;
 
         /// <summary>The other hand's grip in the tool hand's aim space, as last tracked, for a moment of lost tracking.</summary>
         private static Vector3D offInMain;
@@ -159,23 +203,34 @@ namespace SpaceEngineersVR.Hands
             && !character.IsOnLadder && !character.Closed && character.PositionComp != null;
 
         /// <summary>
-        /// The tool in hand and its two grip spots (the item definition's RightHand and LeftHand translations, in the item's
-        /// own space). False with nothing in hand, for the block builder (a ray, not a tool), and for an item with no
-        /// LeftHand spot.
+        /// The tool in hand and its two grip spots, in the item's own space: where each hand closes on it, the middle of the
+        /// hand held as the item definition's RightHand and LeftHand have the palms (<see cref="HeldItem.GraspInItem"/>), which is
+        /// where a controller's grip goes. The palm bones' own spots are the wrists, 9 cm back: a hand on the front handle was
+        /// measured from its wrist spot and was never in reach. False with nothing in hand, for the block builder (a ray, not a
+        /// tool), and for an item the game holds in one hand (<see cref="GameHasLeftHand"/>).
         /// </summary>
         private static bool TryItem(MyCharacter character, out MyEntity tool, out MyHandItemDefinition item, out Vector3 right, out Vector3 left)
         {
             tool = character.CurrentWeapon as MyEntity;
             item = character.HandItemDefinition;
             right = left = Vector3.Zero;
-            if (tool == null || item == null || tool is MyBlockPlacerBase)
+            if (tool == null || item == null || tool is MyBlockPlacerBase || !GameHasLeftHand(item))
                 return false;
-            right = item.RightHand.Translation;
-            left = item.LeftHand.Translation;
-            return left.LengthSquared() > 1e-8f && (left - right).Length() >= ShortestGrip;
+            right = HeldItem.GraspInItem(item.RightHand, false);
+            left = HeldItem.GraspInItem(item.LeftHand, true);
+            return (left - right).Length() >= ShortestGrip;
         }
 
-        /// <summary>How far an item's grip line aims it: the share of the line from its RightHand to its LeftHand that runs along its forward (-Z), eased from none to all.</summary>
+        /// <summary>
+        /// The game itself puts the left hand on this item, in one view or the other (MyCharacter.UpdateHandBones): only then is
+        /// its LeftHand spot a grip. The welders set SimulateLeftHand false (HandItems.sbc): the game holds them in one hand,
+        /// and their LeftHand data, a palm 22 cm ahead of the tool hand beside the tool and turned back on itself, is never
+        /// used; the other hand stays free on them and follows its controller.
+        /// </summary>
+        internal static bool GameHasLeftHand(MyHandItemDefinition item) =>
+            (item.SimulateLeftHand || item.SimulateLeftHandFps) && item.LeftHand.Translation.LengthSquared() > 1e-8f;
+
+        /// <summary>How far an item's grip line aims it: the share of the line from its RightHand to its LeftHand (the palm bones' spots, as the shares above were measured) that runs along its forward (-Z), eased from none to all.</summary>
         internal static double AimShare(Vector3 right, Vector3 left)
         {
             Vector3 line = left - right;
@@ -245,17 +300,27 @@ namespace SpaceEngineersVR.Hands
             double sin = axis.Length();
             lineAngle = Math.Atan2(sin, Vector3D.Dot(m.Along, to));
             // The separation fade is 0 before the other hand is a third of the way out, so the lines are never near opposite.
-            double w = weight * Smooth(SeparationNone * m.Base, SeparationFull * m.Base, m.T);
+            double w = weight * Smooth(SeparationNone * m.Base, SeparationFull * m.Base, m.T) * Pull(m);
             if (!(w > 0.0) || !(sin > 1e-9))
                 return false;
             pivot = MatrixD.CreateTranslation(-m.Grip) * MatrixD.CreateFromAxisAngle(axis / sin, lineAngle * w) * MatrixD.CreateTranslation(m.Grip);
             return true;
         }
 
-        /// <summary>The other hand's grip in the world: tracked now, or for a moment where it last was on the tool hand.</summary>
-        private static bool TryOffHand(MyCharacter character, in MatrixD mainAim, bool allowGrace, out Vector3D off)
+        /// <summary>How much the other hand still aims the tool: all of it on the grip, easing off past <see cref="ReleaseOff"/> to none at <see cref="DriftNone"/>.</summary>
+        private static double Pull(in Measure m) => 1.0 - Smooth(ReleaseOff, DriftNone, Math.Max(m.Across, Math.Abs(m.T - m.Base)));
+
+        /// <summary>
+        /// The other hand's grip in the world: tracked now, or for a moment where it last was on the tool hand. Placed by
+        /// <paramref name="frame"/> when given (the tool hand's own, <see cref="HandWorld.TryGetIn"/>), else by this frame's head.
+        /// </summary>
+        private static bool TryOffHand(MyCharacter character, in MatrixD mainAim, bool allowGrace, MatrixD? frame, out Vector3D off)
         {
-            if (HandWorld.TryGetNow(character, OffHand, out MatrixD offGrip, out _, out _))
+            MatrixD offGrip;
+            bool tracked = frame.HasValue
+                ? HandWorld.TryGetIn(character, OffHand, frame.Value, out offGrip, out _)
+                : HandWorld.TryGetNow(character, OffHand, out offGrip, out _, out _);
+            if (tracked)
             {
                 off = offGrip.Translation;
                 return true;
@@ -271,15 +336,16 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// Turns the tool hand's grip and aim poses (as <see cref="HandTools.TryGetHand"/> gives them, the tool hand's own) by the
-        /// two-handed turn, about the tool hand's grip; nothing when the tool is not held in both hands (nor easing back).
+        /// two-handed turn, about the tool hand's grip; nothing when the tool is not held in both hands (nor easing back). The
+        /// other hand is placed by <paramref name="frame"/> when given, the move the tool hand was placed by.
         /// </summary>
-        internal static void Apply(MyCharacter character, ref MatrixD grip, ref MatrixD aim)
+        internal static void Apply(MyCharacter character, ref MatrixD grip, ref MatrixD aim, MatrixD? frame = null)
         {
             if (!(aimProgress > 0.0) || !(aimShare > 0.0) || weapon == null || character == null || !ReferenceEquals(character.CurrentWeapon, weapon))
                 return;
             try
             {
-                if (!TryOffHand(character, aim, held, out Vector3D off) || !TryMeasure(grip, aim, rightSpot, leftSpot, off, out Measure m))
+                if (!TryOffHand(character, aim, held, frame, out Vector3D off) || !TryMeasure(grip, aim, rightSpot, leftSpot, off, out Measure m))
                     return;
                 if (TryTurn(m, Smooth01(aimProgress) * aimShare, out MatrixD pivot, out _))
                 {
@@ -312,7 +378,14 @@ namespace SpaceEngineersVR.Hands
                     return false;
                 // The grip where the tool is drawn: turned still, if it is easing back from a moment ago.
                 Apply(character, ref grip, ref aim);
-                return TryMeasure(grip, aim, right, left, offGrip.Translation, out Measure m) && m.Gap <= GrabReach;
+                if (!TryMeasure(grip, aim, right, left, offGrip.Translation, out Measure m))
+                    return false;
+                if (m.Gap <= GrabReach)
+                    return true;
+                // Near the tool but not on its grip: why the grip opened the wheel instead, for the log.
+                if (m.Gap <= DeclineNoted)
+                    Note($"Two-hand: {hand} grip {m.Gap * 100:0.0} cm from the {Name(character.HandItemDefinition)}'s grip (reach {GrabReach * 100:0} cm): not taken");
+                return false;
             }
             catch (Exception e)
             {
@@ -375,7 +448,7 @@ namespace SpaceEngineersVR.Hands
                 }
                 else
                 {
-                    offOk = TryOffHand(character, aim, held, out offPos);
+                    offOk = TryOffHand(character, aim, held, null, out offPos);
                 }
             }
             Measure m = default;
@@ -394,7 +467,7 @@ namespace SpaceEngineersVR.Hands
                     why = "the tool hand is not tracked";
                 else if (!offOk)
                     why = $"the {off.ToString().ToLowerInvariant()} hand lost tracking";
-                else if (measured && (m.Across > ReleaseOff || Math.Abs(m.T - m.Base) > ReleaseOff))
+                else if (!Stays && measured && (m.Across > ReleaseOff || Math.Abs(m.T - m.Base) > ReleaseOff))
                     why = $"pulled {m.Across * 100:0} cm across and {(m.T - m.Base) * 100:+0;-0} cm along the grip line";
                 if (why != null)
                     LetGo(off, holds, why);
@@ -415,11 +488,8 @@ namespace SpaceEngineersVR.Hands
 
             // The palm's place on the tool as placed this frame, in the body's own space (kept as it was while the hand
             // returns from a tool that went away).
-            if (handProgress > 0.0 && weapon != null && heldItem != null && ReferenceEquals(character.CurrentWeapon, weapon) && !weapon.Closed)
-            {
-                supportModel = (Matrix)((MatrixD)heldItem.LeftHand * weapon.WorldMatrix * character.PositionComp.WorldMatrixNormalizedInv);
+            if (TakeSupport(character))
                 supportValid = true;
-            }
             else if (!(handProgress > 0.0))
             {
                 supportValid = false;
@@ -431,6 +501,35 @@ namespace SpaceEngineersVR.Hands
                 Hint(off, item, m, measured && offTracked && main, now);
         }
 
+        /// <summary>The palm's place on the tool (its LeftHand) from where the tool is now, in the body's own space; false while the hand is not on it.</summary>
+        private static bool TakeSupport(MyCharacter character)
+        {
+            if (!(handProgress > 0.0) || weapon == null || heldItem == null || !ReferenceEquals(character.CurrentWeapon, weapon) || weapon.Closed)
+                return false;
+            supportModel = (Matrix)((MatrixD)heldItem.LeftHand * weapon.WorldMatrix * character.PositionComp.WorldMatrixNormalizedInv);
+            return true;
+        }
+
+        /// <summary>
+        /// The held tool was placed again after <see cref="Step"/>, in the frame the arms are solved in
+        /// (<see cref="HeldItem.PlaceForArms"/>): the other palm's place on it is taken again, so that hand goes where the tool is drawn.
+        /// </summary>
+        internal static void ToolPlaced(MyCharacter character)
+        {
+            if (errors >= 3 || character == null)
+                return;
+            try
+            {
+                if (TakeSupport(character))
+                    supportValid = true;
+            }
+            catch (Exception e)
+            {
+                if (errors++ < 3)
+                    Log.Error(e, "Two-handed tools could not take the grip from the placed tool" + (errors >= 3 ? "; they stay off for this run" : string.Empty));
+            }
+        }
+
         private static void Engage(Hand off, MyEntity tool, MyHandItemDefinition item, Vector3 right, Vector3 left, in Measure m)
         {
             if (!ReferenceEquals(tool, weapon))
@@ -440,13 +539,14 @@ namespace SpaceEngineersVR.Hands
             heldItem = item;
             rightSpot = right;
             leftSpot = left;
-            aimShare = AimShare(right, left);
+            aimShare = AimShare(item.RightHand.Translation, item.LeftHand.Translation);
             hinted = true;
             traceAt = Stopwatch.GetTimestamp();
             Haptics.Pulse(Hand.Left, GrabAmplitude, GrabPulseSeconds);
             Haptics.Pulse(Hand.Right, GrabAmplitude, GrabPulseSeconds);
             Note($"Two-hand: {off} hand took the {Name(item)} by its grip ({m.Gap * 100:0.0} cm from it, hands {Vector3D.Distance(m.Off, m.Grip) * 100:0.0} cm apart, " +
-                 $"grip {m.Base * 100:0.0} cm from the tool hand; aims by both hands {aimShare * 100:0}%)");
+                 $"grip {m.Base * 100:0.0} cm from the tool hand; aims by both hands {aimShare * 100:0}%; " +
+                 (Stays ? "stays on until the grip opens)" : $"lets go {ReleaseOff * 100:0} cm off the grip line)"));
         }
 
         private static void LetGo(Hand off, bool holds, string why)
@@ -490,27 +590,108 @@ namespace SpaceEngineersVR.Hands
             double turned = sensor.LengthSquared() > 1e-9 ? MathHelper.ToDegrees(Math.Acos(MathHelper.Clamp(Vector3D.Dot(own, Vector3D.Normalize(sensor)), -1.0, 1.0))) : double.NaN;
             TryTurn(m, 1.0, out _, out double line);
             Note($"Two-hand: {Name(heldItem)} held, the hands' line is {MathHelper.ToDegrees(line):0.0} deg off the tool hand's grip line, " +
-                 $"the sensors aim {turned:0.0} deg off the tool hand (share {aimShare * Smooth01(aimProgress):0.00}); " +
-                 $"sensor forward ({sensor.X:F3}, {sensor.Y:F3}, {sensor.Z:F3}), other hand {m.Across * 100:0.0} cm across and {(m.T - m.Base) * 100:+0.0;-0.0} cm along");
+                 $"the sensors aim {turned:0.0} deg off the tool hand (share {aimShare * Smooth01(aimProgress) * Pull(m):0.00}); " +
+                 $"sensor forward ({sensor.X:F3}, {sensor.Y:F3}, {sensor.Z:F3}), other hand {m.Across * 100:0.0} cm across and {(m.T - m.Base) * 100:+0.0;-0.0} cm along" +
+                 OffArmText());
+        }
+
+        /// <summary>The left arm on the grip as last drawn (<see cref="HandIK.LeftOnTool"/>), for the trace.</summary>
+        private static string OffArmText()
+        {
+            HandIK.OffArm arm = HandIK.LeftOnTool;
+            if (!(arm.OnTool > 0f))
+                return "";
+            return $"; the left arm x{arm.Stretch:F3}, the drawn palm {arm.Spot * 100f:0.0} cm and {arm.SpotTurn:0.0} deg off the game's grip spot " +
+                   $"(the wrist {arm.Short * 100f:0.0} cm off its target), the hand pointing {arm.PointOff:0} deg off the grip, " +
+                   $"the wrist bent {arm.WristBend:0} deg, the forearm twisted {arm.Twist:+0;-0} deg, the hand turned {RollDegrees:+0;-0} deg round the handle";
         }
 
         // ---- The arm ----
 
         /// <summary>
         /// For the arm solver (<see cref="HandIK"/>): moves the other palm's target onto the tool's grip, as far as the hand has
-        /// settled there, in the character's model space. Only the left arm of a right-handed player (the rig holds items in
-        /// its right hand).
+        /// settled there, in the character's model space, and returns that share (0: not on the tool) and the grip's place.
+        /// The arm stays on the grip by that share (<see cref="ArmSolver.Settings.Pin"/>, <see cref="ArmSolver.Settings.PinAt"/>):
+        /// only the grip is pinned, not the way back to the real hand, so letting go of a grip at the arm's limit eases the arm
+        /// from the stretch it held to its normal limit as the hand returns, never past it. Only the left arm of a
+        /// right-handed player (the rig holds items in its right hand).
         /// </summary>
-        internal static bool Settle(Hand hand, ref Matrix palm)
+        internal static float Settle(Hand hand, ref Matrix palm, out Vector3 grip)
         {
+            grip = Vector3.Zero;
             if (!supportValid || !(handProgress > 0.0) || hand != Hand.Left || VRSettings.DominantHand != Hand.Right)
-                return false;
+            {
+                if (hand == Hand.Left)
+                    rolled = false;
+                return 0f;
+            }
             float w = (float)Smooth01(handProgress);
-            Quaternion from = Quaternion.CreateFromRotationMatrix(palm), to = Quaternion.CreateFromRotationMatrix(supportModel);
+            Matrix onGrip = OnGrip(supportModel);
+            Quaternion from = Quaternion.CreateFromRotationMatrix(palm), to = Quaternion.CreateFromRotationMatrix(onGrip);
             Matrix settled = Matrix.CreateFromQuaternion(Quaternion.Slerp(from, to, w));
-            settled.Translation = Vector3.Lerp(palm.Translation, supportModel.Translation, w);
+            settled.Translation = Vector3.Lerp(palm.Translation, onGrip.Translation, w);
             palm = settled;
-            return true;
+            grip = onGrip.Translation;
+            return w;
+        }
+
+        /// <summary>The other hand's turn round the handle it holds, degrees (<see cref="OnGrip"/>).</summary>
+        internal static float RollDegrees => MathHelper.ToDegrees(roll);
+
+        /// <summary>The game's own spot for the other palm on the held tool (its LeftHand), as placed this frame, model space.</summary>
+        internal static bool GripSpot(out Matrix spot)
+        {
+            spot = supportModel;
+            return supportValid && handProgress > 0.0;
+        }
+
+        /// <summary>
+        /// The palm on the tool's grip: the game's LeftHand spot, in place and in turn, whatever the other controller does
+        /// (the controller only takes and lets go of the grip, and aims the tool, <see cref="TryTurn"/>). The spot also says
+        /// which way the handle runs: across the palm (the palm bone's Z) through the middle of the closed hand
+        /// (<see cref="HandGrip.HandleInPalm"/>). For a look at the wrist (debug only, off by default): with
+        /// <see cref="RollMost"/> set the hand turns round that line toward the way its forearm carried it at the last solve
+        /// (<see cref="HandIK.LeftCarried"/>, where the wrist would be straight), up to <see cref="RollMost"/> each way and
+        /// <see cref="RollStep"/> a frame once on the grip, the closed hand staying on the handle; and
+        /// <see cref="SlideDebug"/> moves it along the handle.
+        /// </summary>
+        private static Matrix OnGrip(in Matrix spot)
+        {
+            Vector3 axis = new Vector3(spot.M31, spot.M32, spot.M33);
+            if (axis.LengthSquared() < 1e-8f)
+                return spot;
+            axis.Normalize();
+            float most = MathHelper.ToRadians(Math.Max(0f, RollMost));
+            if (!(most > 0f))
+            {
+                roll = 0f;
+            }
+            else if (HandIK.LeftCarried(out Vector3 carried))
+            {
+                Vector3 x = spot.Right - axis * Vector3.Dot(spot.Right, axis), c = carried - axis * Vector3.Dot(carried, axis);
+                if (c.LengthSquared() > RollFloor && x.LengthSquared() > 1e-6f)
+                {
+                    float want = (float)Math.Atan2(Vector3.Dot(axis, Vector3.Cross(x, c)), Vector3.Dot(x, c));
+                    // Whichever way the matrix turns, take the way that brings the palm's X round onto the forearm's.
+                    if (Vector3.Dot(Vector3.TransformNormal(x, Matrix.CreateFromAxisAngle(axis, -want)), c) >
+                        Vector3.Dot(Vector3.TransformNormal(x, Matrix.CreateFromAxisAngle(axis, want)), c))
+                        want = -want;
+                    want = MathHelper.Clamp(want, -most, most);
+                    roll = rolled ? roll + MathHelper.Clamp(want - roll, -RollStep, RollStep) : want;
+                }
+            }
+            roll = MathHelper.Clamp(roll, -most, most);
+            rolled = true;
+
+            Matrix held = spot;
+            if (roll != 0f)
+            {
+                Vector3 pivot = Vector3.Transform(HandGrip.HandleInPalm(true), spot);
+                held = spot * Matrix.CreateTranslation(-pivot) * Matrix.CreateFromAxisAngle(axis, roll) * Matrix.CreateTranslation(pivot);
+            }
+            if (SlideDebug != 0f)
+                held.Translation += axis * SlideDebug;
+            return held;
         }
 
         // ---- Helpers ----

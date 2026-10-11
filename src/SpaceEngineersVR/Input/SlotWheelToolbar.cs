@@ -24,6 +24,9 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>Activates a slot of the page the toolbar is on, as pressing its number does.</summary>
         void ActivateSlot(int slot);
+
+        /// <summary>Empties the hand: the toolbar's holster slot, as the 0 key and the last cell of the HUD toolbar do.</summary>
+        void EmptyHand();
     }
 
     /// <summary>
@@ -55,6 +58,16 @@ namespace SpaceEngineersVR.Input
         public void SwitchToPage(int page) => Toolbar.SwitchToPage(page);
 
         public void ActivateSlot(int slot) => Toolbar.ActivateItemAtSlot(slot);
+
+        /// <summary>
+        /// The slot after the last is the toolbar's holster slot (MyToolbar.ShowHolsterSlot, the HideWeapon cell the HUD toolbar
+        /// draws at the end; the 0 key is the tenth slot, MyToolbarComponent.HandleInput :178). Activating it is
+        /// <c>Unselect</c> (MyToolbar.cs:854, :1197): the controlled entity's <c>SwitchToWeapon(null)</c> (:1209), which on foot
+        /// unequips the hand tool or item (and with it the block placer, so the cube builder goes), and in a seat clears the
+        /// ship's selected weapon group (MyShipController.SwitchToWeaponInternal, <c>GridSelectionSystem.SwitchTo(null)</c>);
+        /// then the toolbar's Unselected event, which turns the voxel hand off.
+        /// </summary>
+        public void EmptyHand() => Toolbar.ActivateItemAtSlot(Toolbar.SlotCount);
 
         public override bool Equals(object other) => other is GameToolbar game && ReferenceEquals(game.Toolbar, Toolbar);
 

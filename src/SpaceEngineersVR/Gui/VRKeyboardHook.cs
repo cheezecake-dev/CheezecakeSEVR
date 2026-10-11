@@ -5,6 +5,7 @@ using System.Reflection;
 using HarmonyLib;
 using Sandbox.Graphics;
 using Sandbox.Graphics.GUI;
+using SpaceEngineers.Game.GUI;
 using SpaceEngineersVR.Input;
 using VRage.Game;
 using VRage.Input;
@@ -24,6 +25,14 @@ namespace SpaceEngineersVR.Gui
     /// (search boxes) is not asked for a keyboard, so a click is the player saying they want to type. The text goes back
     /// through the text box's own members: Text (which raises TextChanged), the caret to the end, and EnterPressed, as the
     /// game's own virtual keyboard completes (MyGuiControlTextbox.HandleVirtualKeyboardInput).</item>
+    /// <item>A multi-line text is clicked (MyGuiControlMultilineEditableText, on its text and not its scroll bars: the LCD
+    /// and custom data editor, the programmable block's code, the GPS, faction and datapad descriptions). The editor has
+    /// put its caret where the click was; the keyboard then types there, key by key (<see cref="MultilineTyping"/>), and
+    /// does not hand a whole text back. The game's own path for a gamepad would (it replaces the text with what the
+    /// virtual keyboard returns), and a script can be thousands of lines.</item>
+    /// <item>A text box of an MVVM screen is clicked (the store's, ATM's and contracts' amounts, the store and trade
+    /// ledger searches: <see cref="MvvmTextEntry"/>). The text goes back as the game's own virtual keyboard gives it
+    /// (TextBox.OnVirtualKeyboardDataReceived), then the box's own Enter binding runs, as Enter on a keyboard would.</item>
     /// </list>
     /// Without a hand source nothing here acts: the original runs and a real keyboard types as ever.
     /// </summary>
@@ -56,6 +65,9 @@ namespace SpaceEngineersVR.Gui
                 return Stopwatch.GetTimestamp() - openedAt < Stopwatch.Frequency * 2 || MyScreenManager.ExistsScreenOfType(typeof(VRKeyboardScreen));
             }
         }
+
+        /// <summary>The keyboard that is open, for the drive's test aid; null when none is.</summary>
+        internal static VRKeyboardScreen Current => Showing ? current : null;
 
         /// <summary>Each hook on its own: a keyboard that cannot be hooked must not take the rest of the plugin down with it.</summary>
         public static void Patch(Harmony harmony)
@@ -150,16 +162,33 @@ namespace SpaceEngineersVR.Gui
                 if (focus == null || focus is VRKeyboardScreen || focus.State != MyGuiScreenState.OPENED)
                     return;
 
+                // An MVVM screen draws its own controls (EmptyKeys): none of them is a MyGuiControl.
+                if (focus is MyGuiScreenMvvmBase)
+                {
+                    if (MvvmTextEntry.Clicked(out string what, out string text, out int maxLength, out bool digitsOnly, out Action<string> onDone))
+                        Open(what, text, maxLength, false, digitsOnly, onDone, null);
+                    return;
+                }
+
                 // Every visible control under the cursor, nested ones included; the last is the one drawn on top.
                 underCursor.Clear();
                 focus.GetControlsUnderMouseCursor(MyGuiManager.MouseCursorPosition, underCursor, visibleOnly: true);
-                MyGuiControlTextbox box = null;
-                for (int i = underCursor.Count - 1; i >= 0 && box == null; i--)
-                    box = underCursor[i] as MyGuiControlTextbox;
+                MyGuiControlBase top = null;
+                for (int i = underCursor.Count - 1; i >= 0 && top == null; i--)
+                {
+                    if (underCursor[i] is MyGuiControlTextbox || underCursor[i] is MyGuiControlMultilineEditableText)
+                        top = underCursor[i];
+                }
                 underCursor.Clear();
-                if (box == null || !box.Enabled || !box.Visible)
+                if (top == null || !top.Enabled || !top.Visible)
                     return;
 
+                if (top is MyGuiControlMultilineEditableText editor)
+                {
+                    OpenOnText(focus, editor);
+                    return;
+                }
+                var box = (MyGuiControlTextbox)top;
                 Open("a text box was clicked", box.Text, box.MaxLength, box.Type == MyGuiControlTextboxType.Password,
                     box.Type == MyGuiControlTextboxType.DigitsOnly, typed => Write(box, typed), null);
             }
@@ -190,12 +219,38 @@ namespace SpaceEngineersVR.Gui
                      $"{(password ? ", password" : string.Empty)}{(digitsOnly ? ", digits" : string.Empty)}{(maxLength > 0 ? ", up to " + maxLength : string.Empty)})");
         }
 
-        /// <summary>From the keyboard screen, once, as it closes.</summary>
-        internal static void Closed(VRKeyboardScreen screen, bool handedBack)
+        /// <summary>
+        /// The keyboard that types into a multi-line text, for a click on its text (not its scroll bars) in an editor that
+        /// can be typed in. The editor put its caret at the click and started a drag selection this frame; the selection is
+        /// stopped, since the editor will not see the button let go while the keyboard has the focus.
+        /// </summary>
+        private static void OpenOnText(MyGuiScreenBase owner, MyGuiControlMultilineEditableText editor)
+        {
+            if (!editor.Selectable || !MultilineTyping.Ready)
+                return;
+            var typing = new MultilineTyping(editor);
+            if (!typing.OnText(MyGuiManager.MouseCursorPosition))
+                return;
+            typing.ResetSelection(true);
+            var screen = new VRKeyboardScreen(typing, owner);
+            current = screen;
+            openedAt = Stopwatch.GetTimestamp();
+            MyGuiSandbox.AddScreen(screen);
+            Log.Info($"On-screen keyboard opened (a multi-line text was clicked; {owner.GetFriendlyName()}; caret at {typing.Describe()}" +
+                     $"{(editor.MaxCharacters < int.MaxValue ? ", up to " + editor.MaxCharacters : string.Empty)}; keys type into the text at the caret; " +
+                     $"keyboard at the {(screen.AtTop ? "top" : "bottom")})");
+        }
+
+        /// <summary>From the keyboard screen, once, as it closes. <paramref name="typing"/> is the multi-line text it typed into, if it did.</summary>
+        internal static void Closed(VRKeyboardScreen screen, bool handedBack, MultilineTyping typing)
         {
             if (current == screen)
                 current = null;
-            Log.Info(handedBack ? "On-screen keyboard closed: text handed back" : "On-screen keyboard closed: cancelled");
+            if (typing != null)
+                Log.Info($"On-screen keyboard closed: {typing.Typed} typed, {typing.Newlines} new lines, {typing.Deleted} deleted, {typing.Moves} caret moves; " +
+                         $"the text now has the caret at {typing.Describe()}");
+            else
+                Log.Info(handedBack ? "On-screen keyboard closed: text handed back" : "On-screen keyboard closed: cancelled");
         }
     }
 }

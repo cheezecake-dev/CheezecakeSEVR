@@ -18,7 +18,8 @@ namespace SpaceEngineersVR.Tracking
     /// drawn. <see cref="BodyTable"/> is that body measured from the meshes, in the head frame: origin at HeadDummy, x right,
     /// y up, z BACK (as the tracking space and the body basis the offset is added in; the body's forward is -z). The upper
     /// body is taken as rigid under the head bone, the way the game's own first person keeps it (UpdateHeadAndWeapon moves
-    /// every bone so the head bone is over the character's origin).
+    /// every bone so the head bone is over the character's origin). On foot the body is drawn a little ahead of that
+    /// (<c>BodyShift</c>), so there the eye is that much behind the table's origin (<see cref="BodyEye.Offset"/>).
     /// </remarks>
     internal static class BodyVolume
     {
@@ -81,6 +82,21 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>How far <see cref="PushOut"/> moves the offset, metres.</summary>
         public static float PushDistance(Vector3 offset) => Vector3.Distance(offset, PushOut(offset));
+
+        /// <summary>
+        /// How far ahead of the head bone the body can be drawn, up to <paramref name="wanted"/>, with the eyes at this offset
+        /// (unmoved body's axes) still out of it: the room between them and the body's front at their height (metres, 0 or
+        /// more). A head bent down over the chest or sunk into the collar leaves less; a head with no body under it, all.
+        /// </summary>
+        public static float Room(Vector3 eye, float wanted)
+        {
+            if (!IsFinite(eye) || eye.Z >= Behind)
+                return wanted;
+            float stop = StopZ(eye.Y, eye.X);
+            if (stop >= BodyTable.None)
+                return wanted;
+            return Math.Max(0f, Math.Min(wanted, stop - eye.Z));
+        }
 
         /// <summary>The eyes at this offset are in the body, or within the table's margin of it.</summary>
         public static bool Blocked(Vector3 p)
@@ -150,6 +166,29 @@ namespace SpaceEngineersVR.Tracking
         }
 
         /// <summary>
+        /// The head's offset kept within the same ellipse as <see cref="LockHead"/> (forward <paramref name="reach"/>, to the side
+        /// <see cref="LockSideShare"/> of that, back <see cref="LockBack"/>), but one to one inside it and stopped at its edge:
+        /// outside, it is brought in along the same direction onto the edge. Height is left alone. This is the edge the
+        /// on-foot centre is pushed by (GameHead's push): with the centre moving with a head that goes past
+        /// the edge, the head is never held off the view by more than the frame it went past in, so a head that comes back
+        /// moves the view one to one at once, with no soft band to cross first.
+        /// </summary>
+        public static Vector3 PushEdge(Vector3 offset, float reach)
+        {
+            if (!IsFinite(offset))
+                return Vector3.Zero;
+            if (reach <= 0f)
+                return offset;
+            float side = reach * LockSideShare;
+            float along = offset.Z < 0f ? reach : LockBack;
+            float u = offset.X / side, v = offset.Z / along;
+            float r = (float)Math.Sqrt(u * u + v * v);
+            if (r <= 1f)
+                return offset;
+            return new Vector3(offset.X / r, offset.Y, offset.Z / r);
+        }
+
+        /// <summary>
         /// The head's offset in a seat, from the seated character's head (x right, y up, z back), held as on foot: on the
         /// floor's plane within the same ellipse (<see cref="LockHead"/>: <paramref name="reach"/> forward, <see cref="LockSideShare"/>
         /// of it to the side, <see cref="LockBack"/> back, where the head and the body are), and up and down within
@@ -192,13 +231,26 @@ namespace SpaceEngineersVR.Tracking
         /// <param name="crouch">The crouch is taken into account (BodyGuard's crouch is on).</param>
         /// <param name="clear">The offset is pushed out of the body (BodyGuard's clearance is on).</param>
         /// <param name="reach">The head is held to the body: how far forward it may go, metres (<see cref="BodyVolume.LockHead"/>); 0: not held.</param>
-        public static Vector3 Offset(Vector3 tracked, float bodyDrop, bool ours, bool crouch, bool clear, float reach = 0f)
+        /// <param name="ahead">
+        /// The body is drawn this far ahead of the head bone, metres (<c>BodyShift</c>): the table is the body around its own
+        /// HeadDummy, so the eye is that much further back in it.
+        /// </param>
+        /// <param name="extra">Added to the eye's height after the crouch made up (<see cref="EyeHold.Extra"/>): the dip of the head bone in an upright animation, made up.</param>
+        /// <param name="push">
+        /// The lock is the pushed edge (<see cref="BodyVolume.PushEdge"/>: one to one inside, stopped at the edge, the on-foot
+        /// centre moving with the head past it), not the soft hold (<see cref="BodyVolume.LockHead"/>).
+        /// </param>
+        public static Vector3 Offset(Vector3 tracked, float bodyDrop, bool ours, bool crouch, bool clear, float reach = 0f, float ahead = 0f, float extra = 0f, bool push = false)
         {
             // Held first, in the floor's plane, and the crouch and the push-out work on what is left.
-            Vector3 offset = reach > 0f ? BodyVolume.LockHead(tracked, reach) : tracked;
+            Vector3 offset = reach <= 0f ? tracked : push ? BodyVolume.PushEdge(tracked, reach) : BodyVolume.LockHead(tracked, reach);
             if (crouch)
                 offset.Y += CrouchDriver.Made(bodyDrop, Math.Max(0f, -tracked.Y), ours);
-            return clear ? BodyVolume.PushOut(offset) : offset;
+            offset.Y += extra;
+            if (!clear)
+                return offset;
+            Vector3 back = new Vector3(0f, 0f, ahead);
+            return BodyVolume.PushOut(offset + back) - back;
         }
     }
 }

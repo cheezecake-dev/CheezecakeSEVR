@@ -173,9 +173,10 @@ namespace SpaceEngineersVR.Rendering
         /// Where the panel lands in an eye's part of the window: its corners, from the panel into the eye and through
         /// the eye's projection, as the rectangle around them (the panel is a flat image, not drawn in perspective).
         /// The part of the panel closer than <see cref="EyeNear"/> is cut off first; none of it in front of the eye
-        /// gives a rectangle without size. The rectangle may reach past the eye's part of the window.
+        /// gives a rectangle without size. The rectangle may reach past the eye's part of the window. Render thread (the
+        /// screens standing in the tracking space use it too: <see cref="ExternalView"/>).
         /// </summary>
-        private static MyViewport InWindow(in EyeRenderer.EyeView eye, in Matrix panelInHead, float halfWidth, float halfHeight)
+        internal static MyViewport InWindow(in EyeRenderer.EyeView eye, in Matrix panelInHead, float halfWidth, float halfHeight)
         {
             Matrix toEye = panelInHead * Matrix.Invert(eye.InHead);
             for (int corner = 0; corner < 4; corner++)

@@ -17,7 +17,8 @@ namespace SpaceEngineersVR.Tracking
     /// The solve is analytic: the elbow is put on the circle the two lengths allow, at the point round that circle that
     /// a cost picks (the body's own hint, the forearm twist and the wrist bend that point needs, a step from last frame,
     /// the torso); the elbow is a hinge (no sideways bend, never backward); the forearm's twist is spread over the three
-    /// forearm bones; a far hand turns the collarbone a little, then stretches the arm, then stops short.
+    /// forearm bones; a far hand turns the collarbone a little, then stretches the arm, then stops short (a pinned hand,
+    /// <see cref="Settings.Pin"/>, stretches on to <see cref="Settings.Cap"/> before it stops short).
     /// </remarks>
     internal static class ArmSolver
     {
@@ -39,7 +40,40 @@ namespace SpaceEngineersVR.Tracking
             /// <summary>The most the elbow swings round the shoulder-to-wrist line in one solve, degrees (0: no limit).</summary>
             public float SwivelStep;
 
-            public static Settings Default => new Settings { HandSwivel = true, Stretch = 0.25f, Shrug = 20f, TwistShare = 1f, SwivelStep = 6f };
+            /// <summary>
+            /// 1: the hand is always put on its pinned point (a hand on a tool's handle never slides along it): the arm stretches
+            /// as far as that point needs, past <see cref="Stretch"/> if it must, and the soft reach still keeps the elbow from
+            /// snapping straight. 0: it stops short at <see cref="Stretch"/>. Between, the most the arm stretches goes that share
+            /// of the way from <see cref="Stretch"/> to what the pinned point needs, so a hand easing off a tool does not jump.
+            /// </summary>
+            public float Pin;
+
+            /// <summary>
+            /// The point <see cref="Pin"/> holds the hand to, in model space: a tool's grip the hand is easing onto or off, while
+            /// the target is partway between it and the real hand. Unset: the target itself. Only the grip is pinned, so an arm
+            /// letting go of a grip at its limit eases from the stretch it held to its normal limit, never past it.
+            /// </summary>
+            public Vector3? PinAt;
+
+            /// <summary>
+            /// The most any arm is drawn stretched, pinned or not (1.30: 30 % over its own length). Past it a pinned hand stops
+            /// short of its point as a hand out of reach does: the arm points straight at it and the glove keeps the pose it
+            /// holds the point with. 0: no cap.
+            /// </summary>
+            public float Cap;
+
+            /// <summary>
+            /// An arm easing its stretch (a hand taking or letting go of a grip, <see cref="HandIK"/>): the stretch drawn the frame
+            /// before; this solve's stretch goes toward what the hand asks (<see cref="Result.Goal"/>) by at most
+            /// <see cref="EaseStep"/>. Below what the hand needs, the hand stops short along the line from the shoulder; above
+            /// it, the hand is on its target and the elbow bends more. 0: no ease.
+            /// </summary>
+            public float EaseFrom;
+
+            /// <summary>The most the stretch moves in one solve while easing (<see cref="EaseFrom"/>).</summary>
+            public float EaseStep;
+
+            public static Settings Default => new Settings { HandSwivel = true, Stretch = 0.25f, Shrug = 30f, TwistShare = 1f, SwivelStep = 6f, Cap = 1.30f };
         }
 
         /// <summary>What an arm was solved to; for logging and the offline probe.</summary>
@@ -59,11 +93,23 @@ namespace SpaceEngineersVR.Tracking
             /// <summary>The arm's length over its own (1: not stretched), the collarbone's turn (degrees).</summary>
             public float Stretch, Shrug;
 
+            /// <summary>The most the arm could stretch in this solve (<see cref="Settings.Stretch"/>, or past it for a pinned hand, never past <see cref="Settings.Cap"/>).</summary>
+            public float Most;
+
+            /// <summary>The stretch the hand asked for in this solve, before the ease (<see cref="Settings.EaseFrom"/>).</summary>
+            public float Goal;
+
             /// <summary>Elbow bend (0 straight), the forearm twist from the neutral (thumb forward) hand, the wrist's bend; degrees.</summary>
             public float ElbowBend, Twist, WristBend;
 
             /// <summary>The way the elbow points from the line shoulder to wrist (model space, unit), and the way the cost wanted before the swing limit.</summary>
             public Vector3 Elbow, Wanted;
+
+            /// <summary>
+            /// The palm bone's X axis as the forearm carries it with the wrist straight (model space, unit): the way the hand
+            /// would lie with no wrist bend, which a hand free to turn round a handle turns toward (<see cref="Hands.TwoHand"/>).
+            /// </summary>
+            public Vector3 Carried;
         }
 
         /// <summary>One arm's bones and its rest-pose geometry; measured once per skeleton.</summary>
@@ -209,12 +255,32 @@ namespace SpaceEngineersVR.Tracking
             if (distance < 1e-4f)
                 return false;
             Vector3 along = toTarget / distance;
-            float softFrom = reach * (1f - Soft);
-            float eased = distance <= softFrom ? distance : reach - reach * Soft * (float)Math.Exp(-(distance - softFrom) / (reach * Soft));
-            float stretch = Math.Min(distance / eased, 1f + Math.Max(0f, settings.Stretch));
+            float eased = Eased(distance, reach);
+            float free = distance / eased, limit = 1f + Math.Max(0f, settings.Stretch);
+            // A pinned hand: the most the arm stretches goes the pin's share of the way from the limit to what the pinned
+            // point needs (the target itself, or the grip a hand is easing onto or off).
+            float most = limit, pin = MathHelper.Clamp(settings.Pin, 0f, 1f);
+            if (pin > 0f)
+            {
+                float needed = free;
+                if (settings.PinAt.HasValue)
+                {
+                    float pinned = Math.Max((settings.PinAt.Value - shoulder).Length(), 1e-4f);
+                    needed = pinned / Eased(pinned, reach);
+                }
+                most = limit + (needed - limit) * pin;
+            }
+            if (settings.Cap > 0f)
+                most = Math.Min(most, settings.Cap);
+            // An arm easing (a hand taking or letting go of a grip): its stretch goes toward the goal a step at a time.
+            float goal = Math.Min(free, most), stretch = goal;
+            if (settings.EaseFrom > 0f)
+                stretch = MathHelper.Clamp(goal, settings.EaseFrom - settings.EaseStep, settings.EaseFrom + settings.EaseStep);
             float solved = eased * stretch;
             Vector3 wrist = shoulder + along * Math.Min(distance, solved);
             result.Stretch = stretch;
+            result.Most = most;
+            result.Goal = goal;
             result.Short = Math.Max(0f, distance - solved);
             result.OutOfReach = result.Short > 0.001f;
 
@@ -300,6 +366,7 @@ namespace SpaceEngineersVR.Tracking
             result.ElbowBend = MathHelper.ToDegrees(Angle(pose.Elbow - shoulder, at - pose.Elbow));
             result.Twist = MathHelper.ToDegrees(pose.Twist);
             result.WristBend = MathHelper.ToDegrees(pose.WristBend);
+            result.Carried = pose.Carried;
             return true;
         }
 
@@ -308,7 +375,7 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>The arm's geometry for one elbow position.</summary>
         private struct Pose
         {
-            public Vector3 Elbow, ForeDir;
+            public Vector3 Elbow, ForeDir, Carried;
             public Matrix UpperTurn, ForeTurn;
             public float Twist, WristBend;
         }
@@ -351,6 +418,7 @@ namespace SpaceEngineersVR.Tracking
                 else if (pose.Twist < -MathHelper.Pi)
                     pose.Twist += MathHelper.TwoPi;
                 pose.WristBend = Angle(-untwisted.Right, -Target.Right);
+                pose.Carried = untwisted.Right;
             }
 
             public float Cost(Vector3 swivel, float phi)
@@ -388,6 +456,13 @@ namespace SpaceEngineersVR.Tracking
             return new Matrix(dir.X, dir.Y, dir.Z, 0f, hinge.X, hinge.Y, hinge.Z, 0f, third.X, third.Y, third.Z, 0f, 0f, 0f, 0f, 1f);
         }
 
+        /// <summary>The distance the unstretched arm is solved for: the distance itself, easing toward the reach close to it.</summary>
+        private static float Eased(float distance, float reach)
+        {
+            float softFrom = reach * (1f - Soft);
+            return distance <= softFrom ? distance : reach - reach * Soft * (float)Math.Exp(-(distance - softFrom) / (reach * Soft));
+        }
+
         private static float Angle(Vector3 a, Vector3 b)
         {
             float l = (float)Math.Sqrt(a.LengthSquared() * b.LengthSquared());
@@ -395,13 +470,21 @@ namespace SpaceEngineersVR.Tracking
         }
 
         /// <summary>Where a bone starts with its own translation at zero: its rest offset from its parent as the parent is now.</summary>
-        private static Vector3 Origin(MyCharacterBone bone) => (bone.BindTransform * bone.Parent.AbsoluteTransform).Translation;
+        internal static Vector3 Origin(MyCharacterBone bone) => (bone.BindTransform * bone.Parent.AbsoluteTransform).Translation;
 
         /// <summary>A bone to an orientation (model space) and a position.</summary>
         private static void SetAbsolute(MyCharacterBone bone, Matrix orientation, Vector3 position)
         {
             orientation.Translation = position;
             Place(bone, orientation);
+        }
+
+        /// <summary>Moves a bone (and what hangs off it) by an offset in model space, its axes kept.</summary>
+        internal static void Move(MyCharacterBone bone, Vector3 offset)
+        {
+            Matrix pose = bone.AbsoluteTransform;
+            pose.Translation += offset;
+            Place(bone, pose);
         }
 
         /// <summary>Puts a bone at a model-space pose (origin and axes), as the game's solver puts the palm on its target.</summary>

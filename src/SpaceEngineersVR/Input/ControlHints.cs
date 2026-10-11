@@ -5,14 +5,13 @@ using Sandbox.Game.World;
 namespace SpaceEngineersVR.Input
 {
     /// <summary>
-    /// Short reminders on the game's own HUD, for the two things a first session in the headset could not find: how to
-    /// leave a seat (hold Y; a tap opens the slot wheel instead) and how to back out of a menu (B, or the left Menu
-    /// button). The seat reminder is shown the first <see cref="SeatTimes"/> times the player sits down in a session, the
-    /// menu one the first time a menu has focus while there is a HUD to show it on. Two more for the next things a first
-    /// session could not find: on foot, once, where the tools wheel and the wrist panel (inventory, terminal, G menu) are;
-    /// and the first time the inventory opens, that the trigger twice on an item moves it to the other inventory (the
-    /// game's double click, MyTerminalInventoryController's TransferToOppositeFirst). Off with the Control hints setting
-    /// (<see cref="VRSettings.ControlHints"/>); B and Menu close a menu either way.
+    /// Short reminders on the game's own HUD, for what a first session in the headset could not find: how to back out of a
+    /// menu (B, or the left Menu button), shown the first time a menu has focus while there is a HUD to show it on; on foot,
+    /// once, where the tools wheel and the wrist panel (inventory, terminal, G menu) are; and the first time the inventory
+    /// opens, that the trigger twice on an item moves it to the other inventory (the game's double click,
+    /// MyTerminalInventoryController's TransferToOppositeFirst). How to leave a seat is not here: the game's own line on
+    /// the seat names it ("Hold Y to leave Passenger Seat 2", <see cref="VRPrompts.LeaveFormat"/>). Off with the Control
+    /// hints setting (<see cref="VRSettings.ControlHints"/>); B and Menu close a menu either way.
     /// </summary>
     /// <remarks>
     /// A hint that cannot be shown yet (no world, so no HUD) stays pending while its situation lasts and is not counted,
@@ -21,8 +20,6 @@ namespace SpaceEngineersVR.Input
     /// </remarks>
     internal static class ControlHints
     {
-        public const string SeatText = "Hold Y to leave the seat";
-
         /// <summary>The first menu of a session: Back, the pointing hand's stick scrolling a list, and the recentre.</summary>
         public static string MenuText =>
             "B: back.  " + (VRSettings.DominantHand == Hand.Left ? "Left" : "Right") + " stick: scroll.  Hold Menu: recentre";
@@ -33,11 +30,14 @@ namespace SpaceEngineersVR.Input
         /// <summary>The same with the wrist panel turned off.</summary>
         public const string WalkTextNoWrist = "Hold left grip: tools wheel.  Hold Menu: recentre";
 
-        /// <summary>The inventory screen, the first time it opens in a session: moving an item to the other side, and out.</summary>
-        public const string InventoryText = "Trigger twice on an item: move it to the other inventory.  B: back";
-
-        /// <summary>How many times a session the seat reminder is shown.</summary>
-        public const int SeatTimes = 3;
+        /// <summary>
+        /// The inventory screen, the first time it opens in a session: moving an item to the other side, the amounts (the hand
+        /// that does not point: VRControls.WantsAmount), and out.
+        /// </summary>
+        public static string InventoryText =>
+            VRSettings.DominantHand == Hand.Left
+                ? "X on an item: move it to the other inventory.  Hold right grip: 10, trigger: 100, both: 1000.  B: back"
+                : "A on an item: move it to the other inventory.  Hold left grip: 10, trigger: 100, both: 1000.  B: back";
 
         /// <summary>How long a reminder stays up, milliseconds of simulation time.</summary>
         public const int Milliseconds = 4000;
@@ -45,12 +45,8 @@ namespace SpaceEngineersVR.Input
         /// <summary>Test seam: stands in for the HUD. Gets the text and the time; false when it could not be shown.</summary>
         internal static Func<string, int, bool> ShowOverride { get; set; }
 
-        private static bool wasSeated, wasMenu, wasInventory, seatPending, menuPending, menuShown, walkShown, inventoryPending, inventoryShown, broken;
-        private static int seatShown;
+        private static bool wasMenu, wasInventory, menuPending, menuShown, walkShown, inventoryPending, inventoryShown, broken;
         private static MyHudNotificationBase current;
-
-        /// <summary>How many times the seat reminder has been shown this session.</summary>
-        internal static int SeatShown => seatShown;
 
         /// <summary>Whether the menu reminder has been shown this session.</summary>
         internal static bool MenuShown => menuShown;
@@ -58,43 +54,32 @@ namespace SpaceEngineersVR.Input
         /// <summary>Forgets what was shown (a new session in a test).</summary>
         internal static void Reset()
         {
-            wasSeated = wasMenu = wasInventory = seatPending = menuPending = menuShown = walkShown = inventoryPending = inventoryShown = broken = false;
-            seatShown = 0;
+            wasMenu = wasInventory = menuPending = menuShown = walkShown = inventoryPending = inventoryShown = broken = false;
             current = null;
         }
 
         /// <summary>
-        /// Game thread, once per frame: <paramref name="seated"/> is a ship controller or turret, <paramref name="menu"/> a
-        /// menu (not the radial wheel) has focus, <paramref name="walking"/> on foot or on the jetpack with no menu, and
-        /// <paramref name="inventory"/> the terminal's inventory page is open.
+        /// Game thread, once per frame: <paramref name="menu"/> a menu (not the radial wheel) has focus,
+        /// <paramref name="walking"/> on foot or on the jetpack with no menu, and <paramref name="inventory"/> the
+        /// terminal's inventory page is open.
         /// </summary>
-        public static void Update(bool seated, bool menu, bool walking = false, bool inventory = false)
+        public static void Update(bool menu, bool walking = false, bool inventory = false)
         {
-            if (seated && !wasSeated && seatShown < SeatTimes)
-                seatPending = true;
             if (menu && !wasMenu && !menuShown)
                 menuPending = true;
             if (inventory && !wasInventory && !inventoryShown)
                 inventoryPending = true;
-            wasSeated = seated;
             wasMenu = menu;
             wasInventory = inventory;
-            if (!seated)
-                seatPending = false;
             if (!menu)
                 menuPending = false;
             if (!inventory)
                 inventoryPending = false;
             bool walkPending = walking && !walkShown;
-            if (!VRSettings.ControlHints || broken || (!seatPending && !menuPending && !inventoryPending && !walkPending))
+            if (!VRSettings.ControlHints || broken || (!menuPending && !inventoryPending && !walkPending))
                 return;
 
-            if (seatPending && Show(SeatText))
-            {
-                seatPending = false;
-                seatShown++;
-            }
-            else if (inventoryPending && Show(InventoryText))
+            if (inventoryPending && Show(InventoryText))
             {
                 // It says B: back as well, so the menu one is not needed after it.
                 inventoryPending = menuPending = false;
@@ -108,6 +93,9 @@ namespace SpaceEngineersVR.Input
             else if (walkPending && !menuPending && Show(WristButton.Enabled ? WalkText : WalkTextNoWrist))
                 walkShown = true;
         }
+
+        /// <summary>A reminder from elsewhere, now (the seat's "take hold of the stick", <see cref="ControlGrip"/>), under the Control hints setting; false when not shown.</summary>
+        internal static bool ShowNow(string text) => VRSettings.ControlHints && !broken && Show(text);
 
         private static bool Show(string text)
         {

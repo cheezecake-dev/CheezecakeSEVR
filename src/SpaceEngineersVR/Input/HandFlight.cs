@@ -16,11 +16,13 @@ namespace SpaceEngineersVR.Input
     /// pad's own curve (<see cref="ShipStick"/>), so the game sees the same analog input as from a thumbstick.
     /// </summary>
     /// <remarks>
-    /// The two grab zones are spheres in the tracking space (where the hands are), put relative to the head as it was
-    /// when the player sat down (<see cref="ZoneSide"/>, <see cref="ZoneDown"/>, <see cref="ZoneAhead"/>), turned to face
-    /// where the head faced. They are not tied to the cockpit's modelled stick, so the same motion flies in first person,
-    /// third person and a camera view. A grip pressed inside a zone grabs it, with the hand's pose at that moment as the
-    /// middle; letting go puts the input back to zero at once. A grip pressed anywhere else is the roll it always was.
+    /// In a cockpit whose pilot pose has the hands on its controls, the stick and the throttle are where that pose puts
+    /// the astronaut's hands, held as <see cref="ControlGrip"/> holds them (its liberal zones): its hold is this one's
+    /// grab, with the hand's pose at that moment as the middle. Elsewhere (a remote control, a seat whose pose holds
+    /// nothing) the two grab zones are spheres in the tracking space (where the hands are), put relative to the head as it
+    /// was when the player sat down (<see cref="ZoneSide"/>, <see cref="ZoneDown"/>, <see cref="ZoneAhead"/>), turned to
+    /// face where the head faced, and a grip pressed inside one grabs it. Letting go puts the input back to zero at once.
+    /// A grip pressed anywhere else is the roll it always was.
     /// The deflection is measured in the seat's frame (up, forward and right as the seat has them), not the hand's, so a
     /// stick is tilted forward by tilting the hand forward however the controller sits in the fist.
     /// </remarks>
@@ -127,8 +129,19 @@ namespace SpaceEngineersVR.Input
             Hand stickHand = VRSettings.DominantHand;
             Hand throttleHand = stickHand == Hand.Left ? Hand.Right : Hand.Left;
             Vector3 stickZone = Zone(stickHand), throttleZone = Zone(throttleHand);
-            Track(ref stick, stickHand, stickZone, cursor, "stick");
-            Track(ref throttle, throttleHand, throttleZone, cursor, "throttle");
+            if (ControlGrip.Active)
+            {
+                // The game's points: the idle crosses mark them while they are known.
+                if (!ControlGrip.TryPoint(stickHand, out stickZone) || !ControlGrip.TryPoint(throttleHand, out throttleZone))
+                    stickZone = throttleZone = Vector3.Zero;
+                Follow(ref stick, stickHand, cursor, "stick");
+                Follow(ref throttle, throttleHand, cursor, "throttle");
+            }
+            else
+            {
+                Track(ref stick, stickHand, stickZone, cursor, "stick");
+                Track(ref throttle, throttleHand, throttleZone, cursor, "throttle");
+            }
 
             var view = new Ghost { On = true, StickZone = stickZone, ThrottleZone = throttleZone, StickHeld = stick.Held, ThrottleHeld = throttle.Held };
             if (stick.Held)
@@ -269,9 +282,28 @@ namespace SpaceEngineersVR.Input
                 return;
             if (Vector3.Distance(state.Grip.Translation, zone) > GrabRadius)
                 return;
+            // A grip another feature took (the hand on a door or terminal within reach of the seat) is not also the stick.
+            if (Hands.GripClaim.Owner(hand) != null)
+                return;
             grab = new Grab { Held = true, Hand = hand, Rotation = Turn(state.Grip), Origin = state.Grip.Translation };
             VRInput.Haptic(hand, TickAmplitude, TickSeconds);
             Log.Info($"Hand flying: {what} taken by the {(hand == Hand.Left ? "left" : "right")} hand");
+        }
+
+        /// <summary>In a cockpit: held while <see cref="ControlGrip"/> holds the control, the hand's pose when it took hold the middle (its pulse is that one's).</summary>
+        private static void Follow(ref Grab grab, Hand hand, bool cursor, string what)
+        {
+            bool holds = ControlGrip.Holds(hand) && VRInput.Get(hand).Tracked && !cursor;
+            if (grab.Held && (grab.Hand != hand || !holds))
+            {
+                grab.Held = false;
+                Log.Info($"Hand flying: {what} let go");
+            }
+            if (grab.Held || !holds)
+                return;
+            Matrix grip = VRInput.Get(hand).Grip;
+            grab = new Grab { Held = true, Hand = hand, Rotation = Turn(grip), Origin = grip.Translation };
+            Log.Info($"Hand flying: {what} taken by the {(hand == Hand.Left ? "left" : "right")} hand, on the cockpit's {what}");
         }
 
         /// <summary>Nothing flies by hand: let go of anything held and hide the ghost.</summary>
@@ -302,8 +334,11 @@ namespace SpaceEngineersVR.Input
 
                 Vector4 stickColor = view.StickHeld ? StickColor : Dim(StickColor);
                 Vector4 throttleColor = view.ThrottleHeld ? ThrottleColor : Dim(ThrottleColor);
-                Cross(toWorld, view.StickZone, stickColor);
-                Cross(toWorld, view.ThrottleZone, throttleColor);
+                if (view.StickZone != Vector3.Zero)
+                {
+                    Cross(toWorld, view.StickZone, stickColor);
+                    Cross(toWorld, view.ThrottleZone, throttleColor);
+                }
                 if (view.StickHeld)
                 {
                     Vector3 pivot = view.StickOrigin - new Vector3(0f, ShaftBelow, 0f);

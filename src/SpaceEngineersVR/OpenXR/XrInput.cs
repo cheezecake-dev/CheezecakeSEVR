@@ -642,11 +642,12 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>Grip, aim and palm at <paramref name="time"/>; a pose that is not valid keeps what it was.</summary>
         private void LocatePoses(int h, long time, ref HandState s)
         {
-            bool gripped = Locate(gripSpaces[h], time, ref s.Grip);
-            bool aimed = Locate(aimSpaces[h], time, ref s.Aim);
+            bool gripped = Locate(gripSpaces[h], time, ref s.Grip, out s.GripFlags);
+            bool aimed = Locate(aimSpaces[h], time, ref s.Aim, out s.AimFlags);
             s.Tracked = gripped && aimed;
             // Without the palm action bound the space is unlocatable, which reads as not valid.
-            s.PalmTracked = palmSpaces[h] != 0 && Locate(palmSpaces[h], time, ref s.Palm, optional: true);
+            s.PalmFlags = 0;
+            s.PalmTracked = palmSpaces[h] != 0 && Locate(palmSpaces[h], time, ref s.Palm, out s.PalmFlags, optional: true);
         }
 
         /// <summary>A touch sensor; one the runtime fails to read counts as absent, never as a reason to take the controllers down.</summary>
@@ -666,14 +667,17 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>
         /// The pose in the same space the head is in (LOCAL), through the same conversion. Left as it was when not valid.
         /// An <paramref name="optional"/> pose (the palm) that fails to locate is not valid rather than an error.
+        /// <paramref name="flags"/> is the location's valid and tracked bits, for the trace (<see cref="Hands.HeldTrace"/>).
         /// </summary>
-        private bool Locate(ulong space, long displayTime, ref Matrix pose, bool optional = false)
+        private bool Locate(ulong space, long displayTime, ref Matrix pose, out byte flags, bool optional = false)
         {
+            flags = 0;
             var location = new XrSpaceLocation { Type = XrStructureType.SpaceLocation };
             int result = Xr.xrLocateSpace(space, baseSpace, displayTime, ref location);
             if (optional && result < 0)
                 return false;
             Xr.Check(result, "xrLocateSpace", XrRuntime.Instance);
+            flags = (byte)(location.LocationFlags & 0xF);
             const ulong valid = XrConst.SpaceLocationOrientationValid | XrConst.SpaceLocationPositionValid;
             if ((location.LocationFlags & valid) != valid)
                 return false;

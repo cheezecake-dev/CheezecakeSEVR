@@ -4,6 +4,7 @@ using Sandbox;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Gui;
+using Sandbox.Game.Localization;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Gui;
 using VRage;
@@ -30,6 +31,9 @@ namespace SpaceEngineersVR.Input
     /// GetControlButtonName(Keyboard), which the use-object prompts, the ladder, the seat and the HUD notifications use.
     /// The keyboard-and-mouse options screen reads AppendBoundButtonNames instead, so its key bindings are unchanged.</item>
     /// </list>
+    /// One sentence is reworded as well: the seat's line reads "Hold Y to leave Passenger Seat 2", where the game's is
+    /// "Press [Hold Y] to leave ..." (<see cref="LeaveFormat"/>; holding is not pressing, and the line is the only reminder
+    /// of how to get out).
     /// Off with the VR button names setting (<see cref="VRSettings.VRButtonNames"/>) or RenderDebug VRPrompts=0; with no
     /// hands (<see cref="VRInput.Active"/> false, a desktop game) nothing changes either.
     /// </remarks>
@@ -108,11 +112,11 @@ namespace SpaceEngineersVR.Input
         /// <summary>
         /// The headset's control for a game control in a control set, from the table in docs/VR_PLAN.md as
         /// <see cref="VRControls"/> builds it; null when the hands cannot press it there. No controlled entity (the main
-        /// menu, dead, a spectator camera) reads as on foot.
+        /// menu, dead) and the spectator camera read as on foot.
         /// </summary>
         internal static string NameOf(MyStringId control, VRContext where)
         {
-            if (where == VRContext.None)
+            if (where == VRContext.None || where == VRContext.Spectator)
                 where = VRContext.OnFoot;
             bool walking = where == VRContext.OnFoot || where == VRContext.Jetpack;
             bool ship = where == VRContext.Ship;
@@ -136,12 +140,16 @@ namespace SpaceEngineersVR.Input
                 return where == VRContext.OnFoot ? "Left stick click" : null;
             if (control == MyControlsSpace.MAIN_MENU)
                 return "Menu";
+            if (control == MyControlsSpace.RELOAD)
+                return walking ? "Right stick click" : null;
             if (control == MyControlsSpace.LANDING_GEAR)
                 return ship ? "Right stick click" : null;
+            // On the jetpack the roll is zero g's only (VRControls.UpdateZeroG).
+            bool zeroGRoll = where == VRContext.Jetpack && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff;
             if (control == MyControlsSpace.ROLL_LEFT)
-                return ship ? "Left grip" : null;
+                return ship ? "Left grip" : zeroGRoll ? "Left stick click + right stick left" : null;
             if (control == MyControlsSpace.ROLL_RIGHT)
-                return ship ? "Right grip" : null;
+                return ship ? "Right grip" : zeroGRoll ? "Left stick click + right stick right" : null;
             if (control == MyControlsSpace.FORWARD || control == MyControlsSpace.BACKWARD
                 || control == MyControlsSpace.STRAFE_LEFT || control == MyControlsSpace.STRAFE_RIGHT)
                 return walking || ship ? "Left stick" : null;
@@ -204,20 +212,52 @@ namespace SpaceEngineersVR.Input
             Hook(harmony, "a control's button names", AccessTools.PropertyGetter(typeof(MyControl), nameof(MyControl.ButtonNames)), prefix: nameof(ControlName));
             Hook(harmony, "a control's first button names", AccessTools.PropertyGetter(typeof(MyControl), nameof(MyControl.ButtonNamesIgnoreSecondary)), prefix: nameof(ControlName));
             Hook(harmony, "a control's key name", AccessTools.Method(typeof(MyControl), nameof(MyControl.GetControlButtonName)), prefix: nameof(DeviceName));
+            Hook(harmony, "the seat's leave line", AccessTools.DeclaredMethod(typeof(MyHudNotification), "GetOriginalText"), postfix: nameof(LeaveLine));
             WrapRegistered();
         }
 
-        private static void Hook(Harmony harmony, string what, System.Reflection.MethodBase target, string prefix)
+        private static void Hook(Harmony harmony, string what, System.Reflection.MethodBase target, string prefix = null, string postfix = null)
         {
             try
             {
                 if (target == null)
                     throw new MissingMethodException(what);
-                harmony.Patch(target, prefix: new HarmonyMethod(typeof(VRPrompts), prefix));
+                harmony.Patch(target,
+                    prefix: prefix == null ? null : new HarmonyMethod(typeof(VRPrompts), prefix),
+                    postfix: postfix == null ? null : new HarmonyMethod(typeof(VRPrompts), postfix));
             }
             catch (Exception e)
             {
                 Log.Error(e, $"VR prompts ({what}) could not be hooked; those prompts keep the game's names");
+            }
+        }
+
+        /// <summary>
+        /// The seat's leave line without its "Press": the game's "Press {0} to leave {1}" reads "{0} to leave {1}", which with
+        /// the hands' name is "Hold Y to leave Passenger Seat 2" (the name is the control's, in brackets, which the HUD draws in
+        /// colour and drops). Another wording (a translation's) is left as the game has it.
+        /// </summary>
+        internal static string LeaveFormat(string format)
+        {
+            const string press = "Press ";
+            return format != null && format.StartsWith(press + "{0}", StringComparison.Ordinal) ? format.Substring(press.Length) : format;
+        }
+
+        /// <summary>Postfix of a HUD notification's text before its arguments go in: the seat's leave line (MyShipController.RefreshControlNotifications) loses its "Press" (<see cref="LeaveFormat"/>).</summary>
+        private static void LeaveLine(MyHudNotification __instance, ref string __result)
+        {
+            try
+            {
+                if (Active && __instance.Text == MySpaceTexts.NotificationHintLeaveCockpit)
+                    __result = LeaveFormat(__result);
+            }
+            catch (Exception e)
+            {
+                if (!loggedFailure)
+                {
+                    loggedFailure = true;
+                    Log.Error(e, "VR prompts: the seat's leave line could not be reworded; the game's is used");
+                }
             }
         }
 

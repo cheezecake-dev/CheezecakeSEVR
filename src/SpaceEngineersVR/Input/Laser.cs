@@ -1,12 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using HarmonyLib;
 using Sandbox;
 using Sandbox.Game.World;
+using Sandbox.Graphics;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Rendering;
 using SpaceEngineersVR.Tracking;
 using VRage.Game;
+using VRage.Game.Entity;
 using VRage.Input;
 using VRage.Utils;
 using VRageMath;
@@ -56,6 +59,23 @@ namespace SpaceEngineersVR.Input
 
         private const int WheelNotch = 120;
 
+        /// <summary>
+        /// A press on a grid (an inventory, the blueprints, an assembler's queue) holds the cursor where the trigger went down
+        /// until the hand's aim has turned this far from it (degrees, at the distance the ray hits): the game starts dragging the
+        /// item the moment the cursor moves at all with the button held, and a hand always moves a little as its trigger is pulled.
+        /// </summary>
+        internal const float DragDegrees = 1.0f;
+
+        /// <summary>
+        /// A second press on a grid within <see cref="DoubleClickSeconds"/> of the first and this near it (degrees of aim, at
+        /// the distance the ray hits) goes where the first went: the game counts a double click only within 0.005 of its
+        /// screen units (about 7 pixels of 1080), a quarter of a degree at two metres.
+        /// </summary>
+        internal const float DoubleClickDegrees = 1.5f;
+
+        /// <summary>The game's double click time (MyGuiControlGrid: 500 ms).</summary>
+        private const double DoubleClickSeconds = 0.5;
+
         internal const float LineThickness = 0.003f;
         internal static readonly Vector4 LineColor = new Vector4(0.35f, 0.85f, 1f, 1f);
 
@@ -80,7 +100,7 @@ namespace SpaceEngineersVR.Input
         private static bool holds;
         private static Vector2 cursor;
         private static bool lineOn;
-        private static Vector3 lineFrom, lineTo;
+        private static Vector3 lineFrom, lineTo, lineTip;
 
         // Game thread only.
         private static bool haveReal, mouseWins, leftHeld, rightHeld;
@@ -88,6 +108,15 @@ namespace SpaceEngineersVR.Input
         private static float scrollCarry;
         private static long lastFrame, lastNote;
         private static int suppressed, errors;
+
+        // A press on a grid (GridPress): the cursor is held at pressAt while pressHeld; the last press that began a pair, for
+        // the double click, at pairAt when pairTime (Stopwatch ticks) is not 0.
+        private static bool pressHeld;
+        private static Vector2 pressAt, pairAt;
+        private static long pairTime;
+        private static readonly List<MyGuiControlBase> under = new List<MyGuiControlBase>();
+        private static Action<MyGuiControlGrid> doubleClick;
+        private static bool doubleClickMissing;
 
         /// <summary>
         /// Each hook on its own, like the hand input's: a laser that cannot be hooked must not take the rendering patches
@@ -131,7 +160,8 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// The beam as the last frame left it, both ends in the tracking space: from the hand to where the ray meets the panel.
+        /// The beam as the last frame left it, both ends in the tracking space: from the controller's aim pose (no hand is
+        /// drawn there) to where the ray meets the panel.
         /// For the main menu, where the game draws no world and so no billboard (<see cref="Rendering.MainMenu"/> draws it in the eyes).
         /// Any thread. False when the laser is not on the panel.
         /// </summary>
@@ -202,11 +232,15 @@ namespace SpaceEngineersVR.Input
             // Where the ray meets the panel.
             LaserRay.Hit hit = default;
             bool ready = false;
+            float pixelsPerDegree = 0f;
             if (!Off && VRInput.Active && state.Tracked && cursorShown
                 && HudPanel.TryGetPlacement(out Matrix pose, out float halfWidth, out float halfHeight))
             {
                 hit = LaserRay.Cast(state.Aim, pose, halfWidth, halfHeight, Gui);
                 ready = hit.Valid;
+                // How far a degree of the hand's aim moves the hit on the panel, in GUI pixels, where it hits now (square on).
+                if (halfWidth > 0f)
+                    pixelsPerDegree = hit.Distance * (float)Math.Tan(MathHelper.ToRadians(1f)) * Gui.X / (2f * halfWidth);
             }
 
             // The real mouse, as the platform has it: the game's own read of it goes through the panel (PanelCursor).
@@ -249,6 +283,37 @@ namespace SpaceEngineersVR.Input
             if (rightHeld != right)
                 Log.Info($"Laser: right button {(rightHeld ? "down" : "up")} at ({hit.Pixel.X:0}, {hit.Pixel.Y:0})");
 
+            // Where the game is told the cursor is: where the ray hits, unless a press on a grid holds it (GridPress).
+            Vector2 at = hit.Pixel;
+            if (leftHeld && !left)
+                GridPress(hit.Pixel, pixelsPerDegree, now);
+            if (pressHeld)
+            {
+                if (!nowHolds || !(leftHeld || left))
+                    pressHeld = false;
+                else if (leftHeld && Vector2.Distance(hit.Pixel, pressAt) > DragDegrees * pixelsPerDegree)
+                {
+                    // A drag. The game drags the item under the cursor on the frame it first moves, so the first step is a
+                    // pixel from the press, still on the item pressed; from the next frame the cursor follows the hand.
+                    pressHeld = false;
+                    at = pressAt + Vector2.Normalize(hit.Pixel - pressAt);
+                    Log.Info($"Laser: drag from ({pressAt.X:0}, {pressAt.Y:0}) on a grid, the hand {Vector2.Distance(hit.Pixel, pressAt):0} px off it " +
+                             $"(over {DragDegrees * pixelsPerDegree:0} px, {DragDegrees:0.0} deg at {hit.Distance:0.00} m)");
+                }
+                else
+                {
+                    // Held, or let go of this frame: the game picks the item where the button goes up.
+                    at = pressAt;
+                    if (!leftHeld)
+                        pressHeld = false;
+                }
+            }
+
+            // A (X with the left hand pointing) on an item in a grid: the grid's double click. In the inventory it moves the item
+            // to the other side, the whole stack, or 10, 100, 1000 with the other hand's grip and trigger (VRControls.WantsAmount).
+            if (nowHolds && hit.Inside && !leftHeld && VRInput.IsNewPressed(hand, hand == Hand.Right ? VRButtons.A : VRButtons.X))
+                ItemButton(hit.Pixel);
+
             // The wheel: the thumbstick's up and down. A notch at a time, or, for a screen that scrolls in proportion, a few
             // units of a notch every frame.
             float stick = nowHolds ? Dead(state.Stick.Y) : 0f;
@@ -288,13 +353,95 @@ namespace SpaceEngineersVR.Input
             {
                 wasHolding = holds;
                 holds = nowHolds;
-                cursor = hit.Pixel;
+                cursor = at;
                 lineOn = nowHolds;
                 lineFrom = state.Aim.Translation;
+                lineTip = Hands.FingerPress.FingertipInTracking(hand, state);
                 lineTo = hit.Point;
             }
             if (nowHolds != wasHolding)
                 Note(nowHolds ? $"Laser: pointing at the panel, GUI ({hit.Pixel.X:0}, {hit.Pixel.Y:0}), {hit.Distance:0.00} m" : "Laser: off the panel");
+        }
+
+        /// <summary>
+        /// The trigger went down on the panel this frame. On a grid the cursor is held there (<see cref="DragDegrees"/>), and a
+        /// second press soon after the first and near it is put where the first was, so the game sees a double click
+        /// (<see cref="DoubleClickDegrees"/>). Anywhere else (a slider, a list, a button) the cursor follows the hand as it was.
+        /// </summary>
+        private static void GridPress(Vector2 pixel, float pixelsPerDegree, long now)
+        {
+            if (pixelsPerDegree <= 0f || GridAt(pixel) == null)
+            {
+                pairTime = 0;
+                return;
+            }
+            double since = pairTime == 0 ? double.MaxValue : (now - pairTime) / (double)Stopwatch.Frequency;
+            float apart = Vector2.Distance(pixel, pairAt), radius = DoubleClickDegrees * pixelsPerDegree;
+            if (since <= DoubleClickSeconds && apart <= radius)
+            {
+                pressAt = pairAt;
+                pairTime = 0;
+                Log.Info($"Laser: second press on a grid {apart:0} px from the first after {since * 1000:0} ms: put on the first, a double click " +
+                         $"(within {radius:0} px, {DoubleClickDegrees:0.0} deg at this distance)");
+            }
+            else
+            {
+                pressAt = pairAt = pixel;
+                pairTime = now;
+            }
+            pressHeld = true;
+        }
+
+        /// <summary>The grid drawn on top under this GUI pixel on the screen with focus, or null.</summary>
+        private static MyGuiControlGrid GridAt(Vector2 pixel)
+        {
+            MyGuiScreenBase focus = MyScreenManager.GetScreenWithFocus();
+            if (focus == null)
+                return null;
+            under.Clear();
+            try
+            {
+                focus.GetControlsUnderMouseCursor(MyGuiManager.GetNormalizedMousePosition(pixel, Gui), under, visibleOnly: true);
+                for (int i = under.Count - 1; i >= 0; i--)
+                    if (under[i] is MyGuiControlGrid grid)
+                        return grid;
+                return null;
+            }
+            finally
+            {
+                under.Clear();
+            }
+        }
+
+        /// <summary>A on the panel: the double click of the grid item under the cursor, as the game's own double click does it.</summary>
+        private static void ItemButton(Vector2 pixel)
+        {
+            MyGuiControlGrid grid = GridAt(pixel);
+            int index = grid?.MouseOverIndex ?? -1;
+            MyGuiGridItem item = index >= 0 ? grid.TryGetItemAt(index) : null;
+            if (item == null)
+            {
+                Note($"Laser: A at ({pixel.X:0}, {pixel.Y:0}) is on {(grid == null ? "no grid" : "an empty cell")}; nothing to move");
+                return;
+            }
+            if (doubleClick == null && !doubleClickMissing)
+            {
+                try
+                {
+                    doubleClick = AccessTools.MethodDelegate<Action<MyGuiControlGrid>>(AccessTools.Method(typeof(MyGuiControlGrid), "DoubleClickItem"));
+                }
+                catch (Exception e)
+                {
+                    doubleClickMissing = true;
+                    Log.Error(e, "Laser: the grid's double click could not be found; A does not move items");
+                }
+            }
+            if (doubleClick == null)
+                return;
+            string what = item.UserData is MyPhysicalInventoryItem stack ? $"{stack.Content?.SubtypeName} x{stack.Amount}" : item.UserData?.GetType().Name ?? "an item";
+            Log.Info($"Laser: A on {what} (cell {index} of {grid.Name ?? grid.GetType().Name}): the grid's double click");
+            grid.SelectedIndex = index;
+            doubleClick(grid);
         }
 
         /// <summary>The screen with focus scrolls in proportion to the wheel's travel.</summary>
@@ -313,7 +460,8 @@ namespace SpaceEngineersVR.Input
         /// <summary>The laser lets go of everything, after a failure or when it is turned off.</summary>
         private static void Release()
         {
-            leftHeld = rightHeld = mouseWins = false;
+            leftHeld = rightHeld = mouseWins = pressHeld = false;
+            pairTime = 0;
             scrollCarry = 0f;
             lock (gate)
                 holds = lineOn = false;
@@ -343,8 +491,9 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// Game thread, in the gameplay screen's draw: a thin line from the hand to where the ray hits the panel, as the
-        /// game draws its own lines (billboards), in the world where the hand is (<see cref="HandWorld"/>).
+        /// Game thread, in the gameplay screen's draw: a thin line from the drawn hand's index fingertip (the aim pose's own
+        /// origin is below the drawn hand) to where the ray hits the panel, as the game draws its own lines (billboards), in
+        /// the world where the hand is (<see cref="HandWorld"/>).
         /// </summary>
         private static void DrawLine()
         {
@@ -355,10 +504,12 @@ namespace SpaceEngineersVR.Input
                 {
                     if (!lineOn)
                         return;
-                    from = lineFrom;
+                    from = lineTip;
                     to = lineTo;
                 }
-                if (Off || !MyTransparentGeometry.HasCamera || !HandWorld.TryGetTrackingToWorld(out MatrixD toWorld))
+                // In the death view no eye sees the world: the beam is drawn into the black eyes instead (Rendering.MainMenu),
+                // and a billboard here would hang in the game camera's picture on the screen ahead.
+                if (Off || Rendering.DeathView.Showing || !MyTransparentGeometry.HasCamera || !HandWorld.TryGetTrackingToWorld(out MatrixD toWorld))
                     return;
                 Vector3D start = Vector3D.Transform((Vector3D)from, toWorld);
                 Vector3D along = Vector3D.Transform((Vector3D)to, toWorld) - start;

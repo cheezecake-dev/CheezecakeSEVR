@@ -85,6 +85,12 @@ namespace SpaceEngineersVR.Input
         /// the pipeline lead (XrInput). 0 from a source without one.
         /// </summary>
         public long FrameTime;
+
+        /// <summary>
+        /// Debug (<see cref="Hands.HeldTrace"/>): the runtime's location flags for <see cref="Grip"/>, <see cref="Aim"/> and
+        /// <see cref="Palm"/> as last located (OpenXR's valid and tracked bits, 0x1 to 0x8); 0 from a source without them.
+        /// </summary>
+        public byte GripFlags, AimFlags, PalmFlags;
     }
 
     /// <summary>
@@ -137,9 +143,13 @@ namespace SpaceEngineersVR.Input
         /// <summary>A source was active for this frame's snapshot.</summary>
         public static bool Active { get; private set; }
 
+        /// <summary>Counts <see cref="Update"/>s: which snapshot a reader got, for the trace (<see cref="Hands.HeldTrace"/>).</summary>
+        public static int Sequence { get; private set; }
+
         /// <summary>Game thread, once per simulation frame, before anything reads the snapshot.</summary>
         public static void Update()
         {
+            Sequence++;
             leftBefore = left.Buttons;
             rightBefore = right.Buttons;
             IVRInputSource source = sources[0]?.Active == true ? sources[0] : sources[1]?.Active == true ? sources[1] : null;

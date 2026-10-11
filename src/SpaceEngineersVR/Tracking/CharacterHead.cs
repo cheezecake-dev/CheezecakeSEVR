@@ -56,6 +56,10 @@ namespace SpaceEngineersVR.Tracking
         {
             if (!Ours(__instance, headBone))
                 return;
+            // The body is drawn ahead of the head bone (BodyShift), and the head bone with it: the eye stays where it was.
+            float ahead = BodyShift.Ahead(__instance, headBone);
+            if (ahead != 0f)
+                __result.Translation += Vector3D.TransformNormal(new Vector3D(0.0, 0.0, ahead), __instance.PositionComp.WorldMatrixRef);
             if (!GameHead.Take())
             {
                 GameHead.GameHeadShown(__instance.HeadLocalYAngle);
@@ -74,11 +78,14 @@ namespace SpaceEngineersVR.Tracking
             if (includeX && includeY)
             {
                 // The head offset from the bone, kept out of the character's own body (BodyGuard: a real crouch is the
-                // character's, and what is left is pushed out of the suit and the backpack).
-                Vector3 offset = BodyGuard.Offset(__instance, __result.Translation, GameHead.Head.Translation);
+                // character's, and what is left is pushed out of the suit and the backpack), the body where it is drawn
+                // this frame (BodyShift.Reckon), also when this is built before the bones are moved.
+                Vector3 offset = BodyGuard.Offset(__instance, __result.Translation, GameHead.Head.Translation, BodyShift.Reckon(__instance, ahead));
                 result.Translation += Vector3D.TransformNormal((Vector3D)offset, basis);
             }
             __result = result;
+            if (includeX && includeY)
+                CameraShake.NoteEye(__instance, result.Translation);
             GameHead.UsedForView();
         }
     }

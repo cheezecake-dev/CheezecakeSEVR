@@ -61,7 +61,7 @@ namespace SpaceEngineersVR.Gui
 
         private List<ActionsWheel.Entry> shown;
         private string title;
-        private bool gripHeld, onPage, stickArmed, pointing, used, centreLit = true;
+        private bool gripHeld, onPage, stickArmed, pointing, used, centreLit, touched, aimedAtEmpty;
         private int count, hovered = -1;
         private string pickedBy = "nothing";
         private float ringScale = 1f, sectorWidth = 1f;
@@ -113,6 +113,7 @@ namespace SpaceEngineersVR.Gui
             sectorWidth = (float)(Math.Tan(Math.PI / count) / Math.Tan(Math.PI / 8d));
             hovered = -1;
             pointing = false;
+            touched = aimedAtEmpty = false;
             stickArmed = false;
             lastStickAt = -1d;
             origin = ActionsWheel.HandAt(hand);
@@ -148,8 +149,10 @@ namespace SpaceEngineersVR.Gui
             highlight = new MyGuiControlImageRotatable { Visible = false };
             highlight.SetTexture(SelectedTexture);
             Controls.Add(highlight);
-            centre = Image(CentreSelectedTexture);
-            centreLit = true;
+            // The centre is dim until the hand has picked something and come back to it: lit, it says "let go here and the
+            // wheel closes", which is not so before the hand has moved.
+            centre = Image(CentreTexture);
+            centreLit = false;
             titleLabel = Label(1.1f, "White", Vector4.One);
             nameLabel = Label(1.35f, "Blue", Vector4.One);
             stateLabel = Label(1f, "Blue", Vector4.One);
@@ -256,8 +259,9 @@ namespace SpaceEngineersVR.Gui
             }
 
             highlight.Visible = hovered >= 0;
-            // Lit while nothing is chosen (letting go there closes), as the tools wheel's is.
-            bool lit = hovered < 0;
+            // Lit only when the centre is what the hand has chosen: it picked an entry since the ring came up and is back
+            // between them (not on an empty place). Dim as the ring comes up, with nothing chosen yet.
+            bool lit = hovered < 0 && touched && !aimedAtEmpty;
             if (lit != centreLit)
             {
                 centreLit = lit;
@@ -278,7 +282,7 @@ namespace SpaceEngineersVR.Gui
                 nameLabel.Text = string.Empty;
                 stateLabel.Text = string.Empty;
             }
-            hintLabel.Text = (gripHeld ? "Point or push the stick, let go of the grip: use.  B: "
+            hintLabel.Text = (gripHeld ? "Point or push the stick; trigger or let go of the grip: use.  B: "
                 : "Point or push the stick, trigger: use.  B: ") + (onPage ? "back" : "close");
         }
 
@@ -350,13 +354,20 @@ namespace SpaceEngineersVR.Gui
                 hovered = now;
                 if (now >= 0)
                 {
+                    touched = true;
                     Hands.Haptics.Pulse(hand, TickAmplitude, TickSeconds);
                     MyGuiSoundManager.PlaySound(GuiSounds.MouseOver);
                 }
             }
 
             bool release = gripHeld && !VRInput.IsPressed(hand, VRButtons.Grip);
-            bool trigger = VRInput.IsNewPressed(Hand.Left, VRButtons.Trigger) || VRInput.IsNewPressed(Hand.Right, VRButtons.Trigger);
+            bool leftTrigger = VRInput.IsNewPressed(Hand.Left, VRButtons.Trigger), rightTrigger = VRInput.IsNewPressed(Hand.Right, VRButtons.Trigger);
+            bool trigger = leftTrigger || rightTrigger;
+            // A trigger pulled on the wheel is the wheel's: it does not fire a tool when the wheel has closed under a finger still on it.
+            if (leftTrigger)
+                VRControls.SwallowTrigger(Hand.Left);
+            if (rightTrigger)
+                VRControls.SwallowTrigger(Hand.Right);
             if (release)
                 gripHeld = false;
             if (release || trigger)
@@ -397,11 +408,16 @@ namespace SpaceEngineersVR.Gui
                 float distance = offset.Length();
                 pointing = distance > (pointing ? PointRelease : ActionsWheel.PointDistance);
                 if (!pointing)
+                {
+                    aimedAtEmpty = false;
                     return -1;
+                }
                 direction = new Vector2(offset.X, -offset.Y);
                 pickedBy = $"hand moved {distance * 100f:0.0} cm";
             }
-            return IndexAt(direction);
+            int index = IndexAt(direction);
+            aimedAtEmpty = index < 0;
+            return index;
         }
 
         /// <summary>The entry a direction (GUI y down) points at, keeping the one already chosen near its edges; -1 on an empty place.</summary>
@@ -480,6 +496,38 @@ namespace SpaceEngineersVR.Gui
             CloseScreen();
         }
 
+        // ---- The drive's "wheel" command (test aid: ActionsWheelDrive) ----
+
+        /// <summary>The ring up now: its name and its entries, each with its state line and greyed if it cannot be used.</summary>
+        internal string Describe()
+        {
+            var parts = new List<string>(shown?.Count ?? 0);
+            if (shown != null)
+            {
+                foreach (ActionsWheel.Entry entry in shown)
+                {
+                    string state = entry.Page != null && entry.StateText == null ? $"{entry.Page.Count - 1} more" : entry.State;
+                    parts.Add($"{entry.Name}{(entry.Page != null ? " >" : string.Empty)}{(string.IsNullOrEmpty(state) ? string.Empty : "=" + state)}{(entry.Enabled ? string.Empty : " (greyed)")}");
+                }
+            }
+            return $"{title}: {string.Join(", ", parts)}";
+        }
+
+        /// <summary>Chooses the entry of that name on the ring up now, as a trigger pulled on it does; false with the ring's entries when there is none.</summary>
+        internal bool DrivePick(string name, out string detail)
+        {
+            ActionsWheel.Entry entry = shown?.Find(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+            {
+                detail = $"no '{name}' on {Describe()}";
+                return false;
+            }
+            pickedBy = "the drive";
+            Choose(entry, false);
+            detail = entry.Name;
+            return true;
+        }
+
         /// <summary>A screen that was not up when the wheel opened is up now (and is not the HUD's kind, drawn without the focus).</summary>
         private bool OtherScreenOpened()
         {
@@ -503,6 +551,10 @@ namespace SpaceEngineersVR.Gui
         {
             base.OnClosed();
             ActionsWheel.Closed();
+            // An entry that presses a game control (GameControlEntries) hands it to the gameplay screen once the wheel is gone.
+            WristButton.ScreenClosed(this);
+            // The stick that pointed at an entry is still pushed as the wheel goes: the game's other radial menus ask for this.
+            VRControls.HoldMovement();
         }
     }
 }

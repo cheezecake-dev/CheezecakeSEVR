@@ -120,7 +120,13 @@ namespace SpaceEngineersVR.Hands
 
         internal static void Shot() => Pulse(ToolHand, FireAmplitude, FireSeconds);
 
-        internal static void ToolContact() => Pulse(ToolHand, ToolAmplitude, ToolSeconds);
+        /// <summary>The light contact buzz; it waits while a one-handed kick's pulse plays, which it would otherwise cut short (<see cref="Kickback.Rumbling"/>).</summary>
+        internal static void ToolContact()
+        {
+            if (Kickback.Rumbling)
+                return;
+            Pulse(ToolHand, ToolAmplitude, ToolSeconds);
+        }
 
         internal static void BlockPlaced() => Pulse(ToolHand, PlaceAmplitude, PlaceSeconds);
 
@@ -215,7 +221,10 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 if (__result)
+                {
                     BlockPlaced();
+                    BuildMode.NotePlaced();
+                }
             }
             catch (Exception e)
             {

@@ -39,6 +39,8 @@ namespace SpaceEngineersVR.Hands
             Hook("Use from the hand", () => HandUse.Patch(harmony));
             Hook("Building from the hand", () => HandPlacement.Patch(harmony));
             Hook("Hand ray", () => HandRay.Patch(harmony));
+            Hook("Build mode", () => BuildMode.Patch(harmony));
+            Hook("Colour tool", PaintMode.Patch);
         }
 
         private static void Hook(string what, Action patch)
@@ -66,8 +68,29 @@ namespace SpaceEngineersVR.Hands
             MyCharacter character = MySession.Static?.LocalCharacter;
             if (Off || !HandWorld.TryGetNow(character, VRSettings.DominantHand, out grip, out aim, out _))
                 return false;
+            if (HeldTrace.On)
+                HeldTrace.Raw(grip, aim);
             Tracking.HandResidual.NoteTool(grip);
             TwoHand.Apply(character, ref grip, ref aim);
+            Kickback.Apply(character, ref grip, ref aim);
+            return true;
+        }
+
+        /// <summary>
+        /// <see cref="TryGetHand(out MatrixD, out MatrixD)"/>, both hands placed by <paramref name="trackingToModel"/> (the move
+        /// the arms are solved by, <see cref="HandWorld.TryGetIn"/>), so the tool and the arm that holds it share one frame.
+        /// </summary>
+        public static bool TryGetHand(in MatrixD trackingToModel, out MatrixD grip, out MatrixD aim)
+        {
+            grip = aim = MatrixD.Identity;
+            MyCharacter character = MySession.Static?.LocalCharacter;
+            if (Off || !HandWorld.TryGetIn(character, VRSettings.DominantHand, trackingToModel, out grip, out aim))
+                return false;
+            if (HeldTrace.On)
+                HeldTrace.Raw(grip, aim);
+            Tracking.HandResidual.NoteTool(grip);
+            TwoHand.Apply(character, ref grip, ref aim, trackingToModel);
+            Kickback.Apply(character, ref grip, ref aim);
             return true;
         }
 

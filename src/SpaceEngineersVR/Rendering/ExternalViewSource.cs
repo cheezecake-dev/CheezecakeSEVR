@@ -16,7 +16,7 @@ namespace SpaceEngineersVR.Rendering
     /// <summary>
     /// What the external view (<see cref="ExternalView"/>) shows, and the switching of it: off, third person (the chase
     /// camera behind and above the ship) or the view from one of the ship's camera blocks. The actions wheel works it
-    /// (<see cref="Gui.ExternalViewEntries"/>); the choice is kept in the settings file like any other setting
+    /// (<see cref="Gui.ExternalViewEntries"/>), and the tools wheel's switch turns it on and off (<see cref="Toggle"/>); the choice is kept in the settings file like any other setting
     /// (<see cref="VRSettings.ExternalViewOn"/>, <see cref="VRSettings.ExternalViewIsCamera"/>, <see cref="VRSettings.ExternalViewCameraId"/>).
     /// <list type="bullet">
     /// <item>Which cameras: the game's own rule for the cameras its camera switch steps through while the player looks
@@ -164,6 +164,19 @@ namespace SpaceEngineersVR.Rendering
             Switch($"External view: camera {NameOf(camera)}", off: false, camera: camera);
 
         /// <summary>
+        /// Turns the screen off if it is on, or on again with what it showed before (third person, or the camera last chosen):
+        /// the tools wheel's switch (<see cref="Gui.SlotWheelScreen"/>).
+        /// </summary>
+        public static void Toggle()
+        {
+            if (ExternalView.On)
+                TurnOff();
+            else
+                Switch(VRSettings.ExternalViewIsCamera ? $"External view: camera {Short(VRSettings.ExternalViewCameraName)}" : "External view: third person",
+                    off: false, camera: null, keepSource: true);
+        }
+
+        /// <summary>
         /// The next source after the one chosen, round: third person, then each camera, then third person again. Turns the screen
         /// on if it is off. False when there is no camera to step to.
         /// </summary>
@@ -204,7 +217,7 @@ namespace SpaceEngineersVR.Rendering
             return to == 0 ? "Third person" : "Camera: " + Names(cameras)[to - 1];
         }
 
-        private static void Switch(string label, bool off, MyCameraBlock camera)
+        private static void Switch(string label, bool off, MyCameraBlock camera, bool keepSource = false)
         {
             bool wasOn = ExternalView.On;
             if (ExternalView.Debug.HasValue)
@@ -217,7 +230,7 @@ namespace SpaceEngineersVR.Rendering
                 checkedAt = Seconds();
                 lost = false;
             }
-            else if (!off)
+            else if (!off && !keepSource)
             {
                 VRSettings.ExternalViewIsCamera = false;
                 lost = false;
@@ -231,7 +244,7 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>Writes the settings file on a pool thread, so the frame that switched does not wait for the disk; changes made meanwhile make one more write.</summary>
-        private static void QueueSave()
+        internal static void QueueSave()
         {
             if (Interlocked.Exchange(ref savePending, 1) != 0)
                 return;

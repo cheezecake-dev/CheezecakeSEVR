@@ -29,6 +29,14 @@ namespace SpaceEngineersVR.Tracking
         private const float Slant = 15f;
 
         /// <summary>
+        /// The middle of the closed hand (where the controller's grip pose has its origin) in a palm bone's frame, metres: the
+        /// spot a hand holds a tool by. A held item's RightHand and LeftHand are where the game puts the palm bones, at the
+        /// wrist, 9 cm from it (<see cref="Hands.HeldItem.GraspInItem"/>).
+        /// </summary>
+        public static Vector3 HandleInPalm(bool left) =>
+            left ? new Vector3(HandleInRightPalm.X, HandleInRightPalm.Y, -HandleInRightPalm.Z) : HandleInRightPalm;
+
+        /// <summary>
         /// The palm bone's pose in the grip pose's frame (row vectors: palm-local times this is grip-local), for one hand,
         /// turned (degrees about the grip's X, Y, Z: in a hand held forward, pitch, roll, yaw) and shifted (metres along
         /// the grip's X, Y, Z), both mirrored for the left hand so one setting suits both.

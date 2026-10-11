@@ -25,7 +25,7 @@ namespace SpaceEngineersVR.Rendering
     /// <summary>
     /// The HUD's bottom toolbar (the hotbar) is left out on foot and on the jetpack, where the tools wheel (left grip) and the
     /// wrist panel do its job; a short label names the tool you pick instead. Seated, in a camera view, in the G menu and the
-    /// terminal, and in flat play, it is drawn as the game draws it. Off with the VR setting "Show toolbar on foot"
+    /// terminal, and in flat play, it is drawn as the game draws it. Off with the VR setting "Toolbar on the HUD"
     /// (<see cref="VRSettings.ShowToolbarOnFoot"/>); RenderDebug HudToolbar=1 shows it again.
     /// </summary>
     /// <remarks>
@@ -42,7 +42,10 @@ namespace SpaceEngineersVR.Rendering
     /// draws them as stat controls (MyStatControls, "CenterPlate" and "CenterPlateController"), each with a visible
     /// condition. While the toolbar is hidden, the plate, the "Customize Toolbar" and "Color" lines and the other keyboard
     /// hints on it get a condition that is never true (the game's own mechanism, so they fade as the game would fade them), and
-    /// swap back to their own the moment the toolbar is shown. The oxygen, temperature and gravity readouts stay.
+    /// swap back to their own the moment the toolbar is shown. The same gate leaves out what the wrist screen shows of these
+    /// plates while "Status on the wrist" is on (<see cref="WristStatus.TakesFromCenterPlate"/>: the oxygen and temperature
+    /// outside, the inventory fill with its icon, ring and key hint), so a part has one owner. The toolbar's own hiding leaves
+    /// the oxygen, temperature and gravity readouts and the inventory fill bar.
     /// </para>
     /// <para>
     /// The state is worked out once a frame, before the HUD draws, so the control, the plate and the label agree. A tool
@@ -77,6 +80,10 @@ namespace SpaceEngineersVR.Rendering
 
         private static readonly string[] KeptStats = { "environment_oxygen_level", "environment_temperature_level", "artificial_gravity", "natural_gravity" };
         private static readonly string[] KeptTexts = { "{LOC:AGravity}", "{LOC:PGravity}" };
+
+        /// <summary>The inventory fill bar (a straight progress bar of this stat) and the backpack icon beside it stay with the toolbar hidden.</summary>
+        private static readonly string[] KeptBars = { "player_inventory_capacity" };
+        private static readonly string[] KeptImages = { "BackpackIcon" };
         private static readonly string[] PlateTextures = { "CenterPlate", "CenterPlateController" };
 
         private static volatile bool hidden;
@@ -111,19 +118,34 @@ namespace SpaceEngineersVR.Rendering
             public ConditionBase Condition;
         }
 
-        /// <summary>The bindings of one MyStatControls whose visibility follows the toolbar.</summary>
+        /// <summary>
+        /// The bindings of one MyStatControls whose visibility follows the toolbar (the plate's parts), the wrist screen (the
+        /// readouts it shows, <see cref="WristStatus.TakesFromCenterPlate"/>), or both. One gate for both, so a part has one owner
+        /// of its condition.
+        /// </summary>
         private sealed class Gate
         {
             public readonly List<MyObjectBuilder_StatVisualStyle> Styles = new List<MyObjectBuilder_StatVisualStyle>();
+            public readonly List<bool> Toolbar = new List<bool>(), Wrist = new List<bool>();
 
-            public void Apply(bool hide)
+            public void Apply(bool toolbarHidden, bool wristHides)
             {
-                foreach (MyObjectBuilder_StatVisualStyle style in Styles)
+                for (int i = 0; i < Styles.Count; i++)
                 {
-                    if (Originals.TryGetValue(style, out Original original))
-                        style.VisibleCondition = hide ? Never : original.Condition;
+                    if (Originals.TryGetValue(Styles[i], out Original original))
+                        Styles[i].VisibleCondition = (Toolbar[i] && toolbarHidden) || (Wrist[i] && wristHides) ? Never : original.Condition;
                 }
             }
+        }
+
+        /// <summary>The condition the game gave a style of the center plates, if this gate holds it (for the wrist's copies).</summary>
+        internal static bool TryGetOriginalCondition(MyObjectBuilder_StatVisualStyle style, out ConditionBase condition)
+        {
+            condition = null;
+            if (style == null || !Originals.TryGetValue(style, out Original original))
+                return false;
+            condition = original.Condition;
+            return true;
         }
 
         public static void Patch(Harmony harmony)
@@ -166,7 +188,7 @@ namespace SpaceEngineersVR.Rendering
             if (forceShown)
                 why = "RenderDebug HudToolbar=1";
             else if (settingOn)
-                why = "Show toolbar on foot is on";
+                why = "Toolbar on the HUD is on";
             else if (!vrActive)
                 why = "flat play";
             else if (!onFoot)
@@ -238,10 +260,14 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
-        /// <summary>The HUD's own toolbar control is not drawn while hidden; its Visible, and so the toolbar keys, are left alone.</summary>
+        /// <summary>
+        /// The HUD's own toolbar control is not drawn while hidden; its Visible, and so the toolbar keys, are left alone. Nor is
+        /// it drawn while the tools wheel is up in VR: the game would have swapped it for its gamepad layout then, which VR keeps
+        /// off (VRRadialMenus), and it would lie under the wheel's bottom line.
+        /// </summary>
         private static bool BeforeToolbarDraw(MyGuiControlToolbar __instance)
         {
-            if (!hidden || drawBroken)
+            if (!(hidden || ToolbarWheel.Capturing && VRRadialMenus.Active) || drawBroken)
                 return true;
             try
             {
@@ -279,7 +305,7 @@ namespace SpaceEngineersVR.Rendering
                     Gates.Add(__instance, gate);
                 }
                 if (gate.Styles.Count > 0)
-                    gate.Apply(hidden);
+                    gate.Apply(hidden, WristStatus.HudHidden);
             }
             catch (Exception e)
             {
@@ -339,8 +365,9 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// Says something on the screen for a moment, in the tool label's style, whatever is held or sat in (the tool label itself
-        /// is cleared every frame in a seat). Any thread. It is shown from the next frame the wheel is not up, since the actions
-        /// wheel has the HUD off while it is: a switch made on the wheel is seen as the wheel closes. A newer notice replaces it.
+        /// is cleared every frame in a seat). Any thread. It is shown from the next frame no wheel is up, since the actions wheel
+        /// has the HUD off while it is and the tools wheel's external view switch sits where it would show: a switch made on a
+        /// wheel is seen as the wheel closes. A newer notice replaces it.
         /// </summary>
         public static void Notice(string text)
         {
@@ -351,7 +378,7 @@ namespace SpaceEngineersVR.Rendering
         private static void UpdateNotice(double now)
         {
             string pending = pendingNotice;
-            if (pending != null && !ActionsWheel.Showing())
+            if (pending != null && !ActionsWheel.Showing() && !ToolbarWheel.Capturing)
             {
                 pendingNotice = null;
                 NoticeFade.Show(pending, now);
@@ -386,14 +413,19 @@ namespace SpaceEngineersVR.Rendering
             if (!plate)
                 return gate;
 
-            int kept = 0;
+            int kept = 0, plateParts = 0, wrist = 0;
             foreach (MyObjectBuilder_StatVisualStyle style in styles)
             {
-                if (Keeps(style))
+                bool toolbar = !Keeps(style), toWrist = WristStatus.TakesFromCenterPlate(style);
+                if (!toolbar && !toWrist)
                 {
                     kept++;
                     continue;
                 }
+                if (toolbar)
+                    plateParts++;
+                if (toWrist)
+                    wrist++;
                 if (!Originals.TryGetValue(style, out Original original))
                 {
                     if (ReferenceEquals(style.VisibleCondition, Never))
@@ -406,8 +438,10 @@ namespace SpaceEngineersVR.Rendering
                 if (original.Condition != null && InitConditions != null)
                     InitConditions.Invoke(null, new object[] { original.Condition });
                 gate.Styles.Add(style);
+                gate.Toolbar.Add(toolbar);
+                gate.Wrist.Add(toWrist);
             }
-            Log.Info($"HUD toolbar: {gate.Styles.Count} parts of the center plate follow the toolbar, {kept} readouts stay");
+            Log.Info($"HUD toolbar: {plateParts} parts of the center plate follow the toolbar, {wrist} are left out while the wrist screen shows them, {kept} readouts stay");
             return gate;
         }
 
@@ -421,13 +455,33 @@ namespace SpaceEngineersVR.Rendering
             return false;
         }
 
-        /// <summary>The readouts of the plate that stay: oxygen, temperature and gravity (the lines that name the gravity too).</summary>
+        /// <summary>
+        /// The readouts of the plate that stay: oxygen, temperature and gravity (the lines that name the gravity too), and the
+        /// inventory fill bar with its backpack icon. The bar is the straight bar of the stat only (the Default HUD's "Drilling
+        /// indicator"), not the round gauge of the stat on the controller plate, and the icon is picked by its texture.
+        /// </summary>
         private static bool Keeps(MyObjectBuilder_StatVisualStyle style)
         {
             foreach (string name in KeptStats)
             {
                 if (style.StatId == MyStringHash.GetOrCompute(name))
                     return true;
+            }
+            if (style is MyObjectBuilder_ProgressBarStatVisualStyle)
+            {
+                foreach (string name in KeptBars)
+                {
+                    if (style.StatId == MyStringHash.GetOrCompute(name))
+                        return true;
+                }
+            }
+            if (style is MyObjectBuilder_ImageStatVisualStyle image)
+            {
+                foreach (string name in KeptImages)
+                {
+                    if (image.Texture == MyStringHash.GetOrCompute(name))
+                        return true;
+                }
             }
             if (style is MyObjectBuilder_TextStatVisualStyle text && text.Text != null)
             {

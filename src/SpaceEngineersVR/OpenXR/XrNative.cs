@@ -100,6 +100,8 @@ namespace SpaceEngineersVR.OpenXR
         public const ulong LayerBlendTextureSourceAlpha = 0x2;
         public const ulong SpaceLocationOrientationValid = 0x1;
         public const ulong SpaceLocationPositionValid = 0x2;
+        public const ulong SpaceLocationOrientationTracked = 0x4;
+        public const ulong SpaceLocationPositionTracked = 0x8;
         public const ulong ViewStateOrientationValid = 0x1;
         public const ulong ViewStatePositionValid = 0x2;
         public const long InfiniteDuration = 0x7fffffffffffffffL;
@@ -110,6 +112,12 @@ namespace SpaceEngineersVR.OpenXR
 
         /// <summary>Adds /input/palm_ext/pose to every hand's profiles (OpenXR 1.1 calls it grip_surface; the definitions are identical).</summary>
         public const string PalmPoseExtension = "XR_EXT_palm_pose";
+
+        /// <summary>Meta's runtime names the Windows audio endpoints of the headset (xrGetAudioOutputDeviceGuidOculus).</summary>
+        public const string AudioDeviceGuidExtension = "XR_OCULUS_audio_device_guid";
+
+        /// <summary>XR_MAX_AUDIO_DEVICE_STR_SIZE_OCULUS: the wchar_t buffer xrGetAudioOutputDeviceGuidOculus fills.</summary>
+        public const int MaxAudioDeviceStrSizeOculus = 128;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -660,6 +668,10 @@ namespace SpaceEngineersVR.OpenXR
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         public delegate int GetVisibilityMaskKHR(ulong session, int viewConfigurationType, uint viewIndex, XrVisibilityMaskType type, ref XrVisibilityMaskKHR mask);
+
+        /// <summary>xrGetAudioOutputDeviceGuidOculus(XrInstance, wchar_t buffer[XR_MAX_AUDIO_DEVICE_STR_SIZE_OCULUS]).</summary>
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int GetAudioOutputDeviceGuidOculus(ulong instance, IntPtr buffer);
 
         public static T GetFunction<T>(ulong instance, string name) where T : Delegate
         {

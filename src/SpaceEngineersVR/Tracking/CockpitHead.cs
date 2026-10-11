@@ -154,6 +154,18 @@ namespace SpaceEngineersVR.Tracking
         }
 
         /// <summary>
+        /// Where the local player looks from the seat they sit in, world, as <see cref="TrackHead"/> builds the seat's view:
+        /// null when the seat's view is not the tracked head's (third person, no head). For getting up (<see cref="ExitUpright"/>).
+        /// </summary>
+        internal static Vector3D? Look(MyCockpit inSeat)
+        {
+            if (!Ours(inSeat) || !GameHead.Take())
+                return null;
+            MatrixD basis = CameraDummy(inSeat) * inSeat.PositionComp.WorldMatrixRef;
+            return Vector3D.TransformNormal((Vector3D)GameHead.Rotation(true, true).Forward, basis);
+        }
+
+        /// <summary>
         /// The seat's eye from the pilot's head, in the seat's basis (x right, y up, z back); zero when there is no pilot or
         /// the two are further apart than <see cref="PilotFar"/> (then the hold is round the seat's eye).
         /// </summary>

@@ -31,8 +31,12 @@ namespace SpaceEngineersVR.OpenXR
 
         public static bool HasSystem => SystemId != 0;
 
+        /// <summary>XR_OCULUS_audio_device_guid is enabled: the runtime names the headset's audio output (<see cref="AudioOutputDeviceId"/>).</summary>
+        public static bool HasAudioDeviceGuid { get; private set; }
+
         internal static Xr.GetD3D11GraphicsRequirementsKHR GetD3D11Requirements;
         internal static Xr.GetVisibilityMaskKHR GetVisibilityMask;
+        private static Xr.GetAudioOutputDeviceGuidOculus getAudioOutputDeviceGuid;
 
         [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern IntPtr LoadLibrary(string path);
@@ -88,6 +92,9 @@ namespace SpaceEngineersVR.OpenXR
                 extensions.Add(XrConst.PalmPoseExtension);
             else
                 Log.Info($"The OpenXR runtime does not offer {XrConst.PalmPoseExtension}; the palm is placed from the grip pose");
+            HasAudioDeviceGuid = available.Contains(XrConst.AudioDeviceGuidExtension);
+            if (HasAudioDeviceGuid)
+                extensions.Add(XrConst.AudioDeviceGuidExtension);
 
             IntPtr[] names = new IntPtr[extensions.Count];
             try
@@ -123,9 +130,48 @@ namespace SpaceEngineersVR.OpenXR
             GetD3D11Requirements = Xr.GetFunction<Xr.GetD3D11GraphicsRequirementsKHR>(Instance, "xrGetD3D11GraphicsRequirementsKHR");
             if (HasVisibilityMask)
                 GetVisibilityMask = Xr.GetFunction<Xr.GetVisibilityMaskKHR>(Instance, "xrGetVisibilityMaskKHR");
+            if (HasAudioDeviceGuid)
+                getAudioOutputDeviceGuid = Xr.GetFunction<Xr.GetAudioOutputDeviceGuidOculus>(Instance, "xrGetAudioOutputDeviceGuidOculus");
 
             Log.Info($"OpenXR instance created (extensions: {string.Join(", ", extensions)})");
             return true;
+        }
+
+        /// <summary>
+        /// The Windows audio endpoint the runtime plays VR sound through (Meta's XR_OCULUS_audio_device_guid), in the form
+        /// IMMDevice::GetId gives, e.g. "{0.0.0.00000000}.{guid}". Null, with the reason, when the runtime names none.
+        /// </summary>
+        public static string AudioOutputDeviceId(out string reason)
+        {
+            if (Instance == 0)
+            {
+                reason = "no OpenXR instance";
+                return null;
+            }
+            if (!HasAudioDeviceGuid || getAudioOutputDeviceGuid == null)
+            {
+                reason = $"the OpenXR runtime does not offer {XrConst.AudioDeviceGuidExtension}";
+                return null;
+            }
+
+            char* buffer = stackalloc char[XrConst.MaxAudioDeviceStrSizeOculus];
+            buffer[0] = '\0';
+            int result = getAudioOutputDeviceGuid(Instance, (IntPtr)buffer);
+            if (result < 0)
+            {
+                reason = "xrGetAudioOutputDeviceGuidOculus failed: " + Xr.ResultName(Instance, result);
+                return null;
+            }
+            int length = 0;
+            while (length < XrConst.MaxAudioDeviceStrSizeOculus && buffer[length] != '\0')
+                length++;
+            if (length == 0)
+            {
+                reason = "the OpenXR runtime named no audio output device";
+                return null;
+            }
+            reason = null;
+            return new string(buffer, 0, length);
         }
 
         /// <summary>Finds the headset. False when none is connected yet (the runtime reports the form factor unavailable).</summary>

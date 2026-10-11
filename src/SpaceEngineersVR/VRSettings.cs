@@ -8,7 +8,8 @@ namespace SpaceEngineersVR
 {
     /// <summary>
     /// One setting. Declared once, in <see cref="VRSettings"/>; the settings file and the options screen
-    /// (Gui/VROptionsScreen.cs) are both generated from the list, so a new setting is one declaration there.
+    /// (Gui/VROptionsScreen.cs) are both generated from the list, so a new setting is one declaration there, and one line
+    /// in Gui/VROptionsTabs.cs for the tab it is shown on.
     /// A setting has two values. The effective one is what the rest of the plugin reads. The pending one is what is
     /// shown, edited and saved. For a setting that applies live they are always the same. A setting that applies on
     /// restart (<see cref="Restart"/>) keeps its effective value as it was at start-up, so changing it in the menu
@@ -32,7 +33,10 @@ namespace SpaceEngineersVR
         /// <summary>The name in the options screen.</summary>
         public string Label { get; }
 
-        /// <summary>The options screen groups settings under this caption, in the order the sections first appear.</summary>
+        /// <summary>
+        /// The settings file groups settings under this caption, in the order the sections first appear. The options screen
+        /// places them by Gui/VROptionsTabs.cs, and uses this only for one that has no line there.
+        /// </summary>
         public string Section { get; }
 
         public string Tooltip { get; }
@@ -442,17 +446,33 @@ namespace SpaceEngineersVR
             55f, 20f, 120f, 1f, unit: "deg", decimals: 0,
             tooltip: "How wide the HUD looks, in degrees of your view (-hudWidth). You see the change once the menu is closed."));
 
-        private static readonly FlagSetting showToolbarOnFoot = Add(new FlagSetting("showToolbarOnFoot", "Show toolbar on foot", "Display", false,
-            tooltip: "On foot and on the jetpack, the HUD's bottom toolbar (the hotbar, its page numbers, the Customize Toolbar and Color lines, and the plate behind them) is left out: the tools wheel and the wrist panel do its job, and a short label names the tool you pick. The health, energy, gravity and oxygen readouts stay. In a seat, a camera view, the G menu and the terminal it is shown as the game shows it. On: the game's toolbar on foot too."));
+        private static readonly FlagSetting dynamicResolution = Add(new FlagSetting("dynamicResolution", "Dynamic resolution", "Display", true,
+            tooltip: "Draw the eyes at a lower resolution, down to 70% each way, while the GPU cannot keep up with the headset; back up when it can. A frame the GPU misses is shown again, which can feel like judder."));
 
         private static readonly NumberSetting comfortVignette = Add(new NumberSetting("comfortVignette", "Comfort vignette", "Display",
             0f, 0f, 1f, 0.05f, decimals: 2,
             tooltip: "Darkens the edges of your view while the thumbsticks move or turn you, which eases motion sickness. 0 turns it off. Moving your head never triggers it."));
+
+        private static readonly ChoiceSetting cameraShake = Add(new ChoiceSetting("cameraShake", "Camera shake", "Display",
+            new[] { "Off", "Low", "Full" }, 0,
+            tooltip: "How much the game moves your view when you are not moving your head: the shake of the drill, grinder and rifle, of damage and explosions, of a ship under thrust, the ship camera's sway, and the head bob when you start and stop walking. Off: the view moves only with your head. Low: a quarter of the game's. Full: as the game has it. It never changes what the tools or the ship do."));
         private static readonly FlagSetting levelChaseCamera = Add(new FlagSetting("levelChaseCamera", "Level chase camera", "Display", true,
             tooltip: "Third person in a ship: the camera follows the ship but keeps the horizon level, and only turns with its heading, so rolling and pitching the ship does not turn the world around you. Off: the game's own camera, locked to the ship. Needs \"Allow third person\"."));
 
         private static readonly FlagSetting thirdPerson = Add(new FlagSetting("thirdPerson", "Allow third person", "Display", false,
             tooltip: "Lets the camera-mode key switch your own view to third person (with the level-horizon chase camera). A world, a saved game or a respawn always starts in first person in VR; this only lets you switch yourself. Turning it off while in third person puts you back in first person. The external view screen works either way."));
+
+        // ---- Interface: one switch for each part of the game's interface the VR player sees, each hiding only its own part.
+        // A part added later is one more line here.
+
+        private static readonly FlagSetting wristStatus = Add(new FlagSetting("wristStatus", "Status on the wrist", "Interface", true,
+            tooltip: "A screen on the gauntlet of your astronaut's left forearm shows your suit and body status, on foot and in a seat: the helmet, jetpack, broadcast and lamp icons, radiation, the health, food, energy, oxygen and hydrogen bars, the medicine and cryo marks, the inventory fill, and the oxygen and temperature outside. It brightens when you look at it, and the HUD leaves these out (the speed, dampeners and gravity stay on the HUD). Off: no screen on the wrist, and the HUD shows them as the game does."));
+        private static readonly FlagSetting showToolbarOnFoot = Add(new FlagSetting("showToolbarOnFoot", "Toolbar on the HUD", "Interface", false,
+            tooltip: "The HUD's bottom toolbar (the hotbar, its page numbers, the Customize Toolbar and Color lines, and the plate behind them) on foot and on the jetpack. Off: left out there, since the tools wheel and the wrist panel do its job, and a short label names the tool you pick; in a seat, a camera view, the G menu and the terminal it is shown as the game shows it."));
+        private static readonly FlagSetting controlHints = Add(new FlagSetting("controlHints", "Control hints", "Interface", true,
+            tooltip: "Short reminders on the HUD: \"B: back, right stick: scroll\" the first time a menu opens, where the tools wheel and the wrist panel are the first time you walk, and how to move an item to the other inventory the first time the inventory opens. Off: none. B and the left Menu button close a menu either way."));
+        private static readonly FlagSetting externalView = Add(new FlagSetting("externalView", "External view", "Interface", false,
+            tooltip: "A small screen on the dash showing your ship (or you, on foot) from behind and above, or the view from one of the ship's cameras, while you stay in the cockpit. On the desktop it is in the lower left of the picture. Costs a third scene pass. The actions wheel's External view entry turns it on and off and chooses what it shows; its size and source are under Display."));
 
         private static readonly NumberSetting menuDistance = Add(new NumberSetting("menuDistance", "Menu distance", "Menus",
             2f, 0.5f, 6f, 0.05f, unit: "m", decimals: 2,
@@ -468,12 +488,10 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting vrKeyboard = Add(new FlagSetting("vrKeyboard", "On-screen keyboard", "Menus", true,
             tooltip: "Click a text box with the laser and a keyboard opens on the menu to type into it. Off: only a real keyboard types."));
-        private static readonly FlagSetting externalView = Add(new FlagSetting("externalView", "External view", "Display", false,
-            tooltip: "A small screen on the dash showing your ship (or you, on foot) from behind and above, or the view from one of the ship's cameras, while you stay in the cockpit. On the desktop it is in the lower left of the picture. Costs a third scene pass. The actions wheel's External view entry turns it on and off and chooses what it shows."));
 
         private static readonly NumberSetting externalViewSize = Add(new NumberSetting("externalViewSize", "External view size", "Display",
             0.3f, 0.15f, 0.6f, 0.01f, unit: "m", decimals: 2,
-            tooltip: "How wide the external view screen is in the headset, in metres. You see the change as the next frame is drawn."));
+            tooltip: "How wide the external view screen is in the headset, in metres (on the desktop its picture grows and shrinks with it). You see the change as the next frame is drawn. The wrist panel's External view page sets it too."));
 
         private static readonly FlagSetting externalViewHalfRate = Add(new FlagSetting("externalViewHalfRate", "External view at half rate", "Display", true,
             tooltip: "Draw the external view every other frame. Saves most of its cost; the screen looks slightly less smooth."));
@@ -484,6 +502,21 @@ namespace SpaceEngineersVR
 
         private static readonly TextSetting externalViewCamera = Add(new TextSetting("externalViewCamera", "External view camera", "Display", hidden: true,
             tooltip: "The camera block the external view shows when its source is Camera: its entity id, a bar, and its name. Chosen on the actions wheel."));
+
+        private static readonly NumberSetting externalViewOrbit = Add(new NumberSetting("externalViewOrbit", "External view orbit", "Display",
+            0f, -180f, 180f, 15f, unit: "deg", decimals: 0, hidden: true,
+            tooltip: "Third person: how far the camera has gone round what you control from behind it, degrees, positive to its left. Set on the wrist panel's External view page."));
+
+        private static readonly NumberSetting externalViewElevation = Add(new NumberSetting("externalViewElevation", "External view elevation", "Display",
+            0f, -100f, 70f, 10f, unit: "deg", decimals: 0, hidden: true,
+            tooltip: "Third person: how far the camera has gone over (positive) or under what you control from where it starts, degrees. Set on the wrist panel's External view page."));
+
+        private static readonly NumberSetting externalViewDistance = Add(new NumberSetting("externalViewDistance", "External view distance", "Display",
+            1f, 0.25f, 16f, 0.01f, decimals: 2, hidden: true,
+            tooltip: "Third person: the camera's distance from what you control, as a multiple of the one that suits its size. Set on the wrist panel's External view page."));
+
+        private static readonly TextSetting externalViewPlace = Add(new TextSetting("externalViewPlace", "External view placement", "Display", hidden: true,
+            tooltip: "Where the external view screen stands after it was moved by hand, from the head's heading when it appears: right, up and back in metres, then its turn as a quaternion. Empty: on the dash."));
 
         private static readonly ChoiceSetting playPosition = Add(new ChoiceSetting("playPosition", "Play position", "Height",
             new[] { "Standing", "Seated" }, 0,
@@ -508,7 +541,7 @@ namespace SpaceEngineersVR
             tooltip: "In a seat, how far forward, up or down your head can move from your character's head before the view slows to a stop, in centimetres. Sideways it is four fifths of this. Backwards it is only as far as the body allows, so you cannot lean back into your own head and body."));
 
         private static readonly FlagSetting headLock = Add(new FlagSetting("headLock", "Lock head to body", "Height", true,
-            tooltip: "On foot, your head can only move so far from your character's head. Step back, forward or sideways in the room and the view stops at the reach below instead of going out through the back of the body. Off: the view goes where your head goes."));
+            tooltip: "On foot, your head can only move so far from your character's head. Step back, forward or sideways in the room and the view stops at the reach below instead of going out through the back of the body, and follows your head again as soon as you come back. Off: the view goes where your head goes."));
 
         private static readonly NumberSetting headReach = Add(new NumberSetting("headReach", "Head reach on foot", "Height",
             0.25f, 0.1f, 1f, 0.05f, unit: "cm", decimals: 0, displayScale: 100f,
@@ -516,14 +549,18 @@ namespace SpaceEngineersVR
 
         private static readonly NumberSetting snapTurn = Add(new NumberSetting("snapTurn", "Snap turn", "Controls",
             30f, 15f, 90f, 15f, unit: "deg", decimals: 0,
-            tooltip: "How far one flick of the right stick turns you."));
+            tooltip: "How far one flick of the right stick turns you. With Zero-g pitch and roll on Snap, also how far one flick pitches or rolls you."));
 
         private static readonly FlagSetting smoothTurn = Add(new FlagSetting("smoothTurn", "Smooth turn", "Controls", false,
             tooltip: "Turn steadily while the right stick is held sideways, instead of in snap-turn steps. Some people find it less comfortable."));
 
         private static readonly NumberSetting smoothTurnSpeed = Add(new NumberSetting("smoothTurnSpeed", "Smooth turn speed", "Controls",
             120f, 30f, 360f, 15f, unit: "deg/s", decimals: 0,
-            tooltip: "How fast the body turns with the right stick pushed all the way over, when Smooth turn is on. Pushed half way, half as fast."));
+            tooltip: "How fast the body turns with the right stick pushed all the way over, when Smooth turn is on. Pushed half way, half as fast. Zero-g pitch and roll on Smooth goes at the same speed."));
+
+        private static readonly ChoiceSetting zeroGTurn = Add(new ChoiceSetting("zeroGTurn", "Zero-g pitch and roll", "Controls",
+            new[] { "Smooth", "Snap", "Off" }, 0,
+            tooltip: "On the jetpack in zero g, hold the left stick click and the right stick pitches you (up and down) and rolls you (sideways), turning about your eyes. Smooth: steadily, at the Smooth turn speed. Snap: one step of the Snap turn angle a flick. Off: the left stick click does nothing on the jetpack. In gravity the jetpack never pitches or rolls you."));
 
         private static readonly NumberSetting stickDeadzone = Add(new NumberSetting("stickDeadzone", "Stick deadzone", "Controls",
             0.15f, 0.05f, 0.4f, 0.01f, decimals: 2,
@@ -532,6 +569,9 @@ namespace SpaceEngineersVR
         private static readonly NumberSetting shipStickSensitivity = Add(new NumberSetting("shipStickSensitivity", "Ship stick sensitivity", "Controls",
             1f, 0.25f, 3f, 0.05f, decimals: 2,
             tooltip: "How fast the right stick and the grips turn a ship, a turret or a camera. 1 matches a gamepad pushed all the way."));
+
+        private static readonly FlagSetting handsOnControls = Add(new FlagSetting("handsOnControls", "Hands on the controls to fly", "Controls", true,
+            tooltip: "In a cockpit or rover seat the ship flies only while you hold its controls: close your grip with the dominant hand where the astronaut's hand holds the stick, and the other where it holds the throttle. Anywhere on that hand's side between your hips and chin counts, your lap included. The throttle hand gives the left stick's move and A/B up and down; the stick hand the right stick's turn and pitch, roll by tilting your hand sideways, and the triggers' fire. Dampeners, lights, landing gear, Y and Menu work without holding. Off: the sticks and grips fly the ship as on a gamepad."));
 
         private static readonly FlagSetting handFlying = Add(new FlagSetting("handFlying", "Hand flying", "Controls", false,
             tooltip: "In a ship seat, press a grip with your hand by the stick (dominant hand) or throttle (other hand) to take hold of it, and fly by moving the controller. Off: thumbsticks and grips only."));
@@ -555,19 +595,20 @@ namespace SpaceEngineersVR
             1f, 0f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
             tooltip: "How hard the controllers buzz when you fire, weld, grind or drill, place a block or get hit. 0 turns it off."));
         private static readonly FlagSetting grabToUse = Add(new FlagSetting("grabToUse", "Grab to use", "Controls", true,
-            tooltip: "On foot, closing the grip with your hand on a seat, cryo pod, door, medical room, survival kit, cargo container or terminal block uses it, as the Use key does. A door has to be pulled or pushed a hand's width while held. With nothing in reach the right grip is still Use along your hand's ray. Not while that hand holds a tool, a menu is up or you are on a ladder or seated."));
+            tooltip: "Closing the grip with your hand on anything the Use key works on uses it, as the key does: seats, terminals, screens, cargo and connectors, medical rooms (heals while held), stores and the rest. A door or hatch has to be pulled or pushed a hand's width while held; a vending machine's Buy held for a moment. In a seat it works on what is within arm's reach, not the seat itself. With nothing in reach the grip keeps its usual job. Ladders and buttons have their own grab and fingertip. Not while that hand holds a tool, a menu is up or you are on a ladder."));
 
         private static readonly FlagSetting wristPanel = Add(new FlagSetting("wristPanel", "Wrist panel", "Controls", true,
             tooltip: "On foot and on the jetpack, Y on the left controller opens the quick-actions panel on your left wrist (inventory, terminal, G menu, lights, helmet, dampeners, broadcast, symmetry, colour picker); Y again closes it. Off: Y does nothing there."));
 
-        private static readonly FlagSetting wristLook = Add(new FlagSetting("wristLook", "Wrist panel on look", "Controls", true,
-            tooltip: "On foot and on the jetpack, looking at the gauntlet on your astronaut's left forearm opens the wrist panel, and looking away closes it: turn your left forearm up with the back of the wrist toward your eyes and look at it for a moment. Y still opens it, and a panel opened with Y stays until Y or a button closes it. Not while the left grip is down, in a seat, or with a menu open. Needs Wrist panel on; off with Left-handed on, since the left hand then points the laser and cannot press its own wrist."));
-
         private static readonly FlagSetting fingerPress = Add(new FlagSetting("fingerPress", "Press with fingertip", "Controls", true,
             tooltip: "On foot, touching a push-button with the tip of a controller's index finger presses it, as the Use key does: the buttons of a button panel, and the next, previous and pause buttons of a jukebox. Doors, seats, terminals and cargo are not touched. Not while that hand holds a tool, a menu is up or you are on a ladder or seated. Off: only the Use key and the hand's ray."));
 
-        private static readonly FlagSetting holsters = Add(new FlagSetting("holsters", "Holsters", "Controls", true,
-            tooltip: "On foot, draw tools from your body: grip with the tool hand at your hip for the welder, at the other hip for the grinder, over your shoulder for the rifle, over the other shoulder for the hand drill (the best one you carry). Let go of the grip back at the holster to put it away. Grip the helmet with either hand to open or close it; tap the side of your head with a fingertip for the suit lamp. A grip anywhere else keeps its old job (Use, the toolbar wheel). Off: the toolbar, the wheel and the keys only."));
+        private static readonly FlagSetting helmetAndLamp = Add(new FlagSetting("helmetAndLamp", "Helmet and lamp by hand", "Controls", true,
+            tooltip: "On foot, grip your helmet with either hand to open or close it, and tap the side of your head with a fingertip to switch the suit lamp. A grip anywhere else keeps its old job (Use, the toolbar wheel). Off: the keys and the wrist panel only."));
+        private static readonly FlagSetting moveViewByHand = Add(new FlagSetting("moveViewByHand", "Move the external view by hand", "Controls", true,
+            tooltip: "Grip the external view screen with either hand to pick it up and put it anywhere; it stays where you let go, the next time too. The External view page's Reset puts it back on the dash. Off: it stays on the dash."));
+        private static readonly FlagSetting touchToolbar = Add(new FlagSetting("touchToolbar", "Touch toolbar on the cockpit screen", "Controls", true,
+            tooltip: "Set any cockpit screen to the script \"Touch Toolbar\" in its screen settings and, piloting, that screen shows the ship's toolbar: tap a slot to use it, as its number key does, and the arrows to turn the page. A screen out of reach is tapped with the laser and the trigger. With no screen set to it, this puts it on the cockpit's most central screen while you pilot; only your view of that screen changes, and it gets its own picture back when you leave the seat. Off: only screens set to Touch Toolbar show it."));
         private static readonly FlagSetting grabItems = Add(new FlagSetting("grabItems", "Grab items", "Controls", true,
             tooltip: "On foot, close a hand's grip on a floating item (ore, ice, components, a dropped tool) to take it out of the air and hold it; open the hand and it flies on at the hand's speed. Let go of it at your chest and it goes into your inventory. Heavy stacks come along slowly. Off: a grip near an item means what it does in empty air."));
         private static readonly FlagSetting grabHulls = Add(new FlagSetting("grabHulls", "Grab hulls", "Controls", true,
@@ -577,10 +618,13 @@ namespace SpaceEngineersVR
             tooltip: "Press a grip with your hand on a ladder to get on it, then pull your hand down to climb a step up, or push it up to climb down. Off: ladders by the Use key and the move stick only."));
 
         private static readonly FlagSetting twoHandedTools = Add(new FlagSetting("twoHandedTools", "Two-handed tools", "Controls", true,
-            tooltip: "On foot, close your other hand's grip on the front of the tool or gun you hold, where the astronaut's other hand goes, to hold it with both hands: it then points along the line from your tool hand to your other hand. A light tick tells you the hand is close enough. Let go, or pull the hand away, and it goes back to one hand. A pistol is steadied but still aims with the tool hand. A grip anywhere else keeps its old job (the toolbar wheel). Off: tools in one hand only."));
+            tooltip: "On foot, close your other hand's grip on the front of the tool or gun you hold, where the astronaut's other hand goes, to hold it with both hands: it then points along the line from your tool hand to your other hand. A light tick tells you the hand is close enough. Let go and it goes back to one hand. A pistol is steadied but still aims with the tool hand. A grip anywhere else keeps its old job (the toolbar wheel). Off: tools in one hand only."));
 
-        private static readonly FlagSetting controlHints = Add(new FlagSetting("controlHints", "Control hints", "Controls", true,
-            tooltip: "Short reminders on the HUD: \"Hold Y to leave the seat\" when you sit down (the first three times each session), and \"B: back, right stick: scroll\" the first time a menu opens, where the tools wheel and the wrist panel are the first time you walk, and how to move an item to the other inventory the first time the inventory opens. Off: none. B and the left Menu button close a menu either way."));
+        private static readonly FlagSetting twoHandGripStays = Add(new FlagSetting("twoHandGripStays", "Two-hand grip stays on", "Controls", true,
+            tooltip: "Once your other hand has taken the tool's front grip, the astronaut's hand stays on it for as long as you hold that grip button, however far your real hand moves. Up to 15 cm off the grip your other hand still aims the tool; further off, its pull eases away and the tool points where your tool hand points. Let go of the button to go back to one hand. Off: pulling the hand 15 cm off the grip lets go as well."));
+
+        private static readonly ChoiceSetting kickback = Add(new ChoiceSetting("kickback", "Tool and weapon kickback", "Controls", new[] { "Off", "Light", "Full" }, 2,
+            tooltip: "A gun or tool made for two hands (the rifles, rocket launchers, grinders and hand drills) kicks hard when you use it in one hand: a gun climbs, snaps and shoves back with every shot while the trigger stays down. A grinder or drill fights you whenever it runs, cutting or not: it yanks as it spins up, climbs and pulls to the side more the longer you hold it, and jerks hard; the drill twists your wrist against its spin. A pistol in one hand flips up with each shot and comes back on its own: time your shots to it, or it walks up. Let go of the trigger and it settles back into your hand. Hold it in both hands and it stays steady. Only the tool and where it points move, never your view (the game's own recoil, which turns the head, is left out). Light: half as hard. Off: no kick."));
 
         private static readonly FlagSetting vrButtonNames = Add(new FlagSetting("vrButtonNames", "VR button names", "Controls", true,
             tooltip: "The game's prompts name the controller buttons instead of the keys: \"Press [Right grip] to open\", \"[A] to jump\", \"[Y > Inventory]\" for what the wrist panel opens. A control the controllers have no way to press keeps its key. Off: the keyboard's names."));
@@ -590,6 +634,9 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting vrActionsWheel = Add(new FlagSetting("vrActionsWheel", "VR actions wheel", "Controls", true,
             tooltip: "Clicking the left stick on the tools wheel opens the game's actions (inventory, dampeners, lights, helmet, HUD, broadcasting, and the Menu, View and Blueprint pages) as a wheel at your left hand: point at an entry with the hand or the stick, let go of the grip or pull the trigger to use it, B to close. Off: the game's own gamepad radial screen."));
+
+        private static readonly FlagSetting headsetAudio = Add(new FlagSetting("headsetAudio", "Sound through the headset", "Sound", true, restart: true,
+            tooltip: "The game's sound plays through the headset's own audio device, the one the headset's runtime names for VR (with a Quest on Link, Headphones (Oculus Virtual Audio Device)), whatever the Windows default output is. Without a headset, or with a runtime that names no device, it plays through the Windows default. Off: always the Windows default. Takes effect the next time the game starts."));
 
         private static readonly FlagSetting enabled = Add(new FlagSetting("enabled", "VR enabled", "Advanced", true, restart: true, hidden: true,
             // Not in the menu: turned off there, VR would have no menu to turn it back on. enabled=false in the file, or -novr.
@@ -620,6 +667,9 @@ namespace SpaceEngineersVR
 
         public static int MirrorHeight => (int)mirrorHeight.Value;
 
+        /// <summary>The game's sound goes to the headset's audio device, when the runtime names one (<see cref="Rendering.HeadsetAudio"/>). Read at the next game start.</summary>
+        public static bool HeadsetAudio => headsetAudio.Value;
+
         /// <summary>The game's toolbar stays on the HUD on foot too; off (the default) it is left out there (<see cref="Rendering.HudToolbar"/>).</summary>
         public static bool ShowToolbarOnFoot => showToolbarOnFoot.Value;
 
@@ -631,6 +681,34 @@ namespace SpaceEngineersVR
 
         /// <summary>How strongly the comfort vignette darkens the edges of the view while the sticks move or turn you, 0 (off) to 1 (<see cref="Rendering.Vignette"/>).</summary>
         public static float ComfortVignette => comfortVignette.Value;
+
+        /// <summary>
+        /// The camera shake setting: 0 Off, 1 Low, 2 Full. RenderDebug CameraShake=0/1/2 takes its place (<see cref="CameraShakeOverride"/>).
+        /// </summary>
+        public static int CameraShakeLevel => CameraShakeOverride ?? cameraShake.Value;
+
+        /// <summary>RenderDebug CameraShake=0 (Off), 1 (Low) or 2 (Full) in place of the setting; null: the setting.</summary>
+        public static int? CameraShakeOverride
+        {
+            get
+            {
+                int level = cameraShakeOverride;
+                return level < 0 ? (int?)null : level;
+            }
+            set => cameraShakeOverride = value ?? -1; // one int, so the game thread never reads half of it
+        }
+
+        private static volatile int cameraShakeOverride = -1;
+
+        /// <summary>The share of the game's camera shake that reaches the view: 0 (Off), a quarter (Low), 1 (Full) (<see cref="Tracking.CameraShake"/>).</summary>
+        public static float CameraShakeScale
+        {
+            get
+            {
+                int level = CameraShakeLevel;
+                return level <= 0 ? 0f : level == 1 ? 0.25f : 1f;
+            }
+        }
         /// <summary>The external view screen is on. The actions wheel turns it on and off, and so does the options screen.</summary>
         public static bool ExternalViewOn
         {
@@ -684,7 +762,55 @@ namespace SpaceEngineersVR
         }
 
         /// <summary>How wide the external view screen is in the headset, metres; its height follows the picture's 16:9.</summary>
-        public static float ExternalViewSize => externalViewSize.Value;
+        public static float ExternalViewSize
+        {
+            get => externalViewSize.Value;
+            set => externalViewSize.Set(Clamp(value, externalViewSize.Min, externalViewSize.Max));
+        }
+
+        private static float Clamp(float value, float min, float max) => value < min ? min : value > max ? max : value;
+
+        /// <summary>The narrowest and the widest the external view screen may be, metres.</summary>
+        public static float ExternalViewSizeMin => externalViewSize.Min;
+
+        public static float ExternalViewSizeMax => externalViewSize.Max;
+
+        public static float ExternalViewSizeDefault => externalViewSize.DefaultValue ?? 0.3f;
+
+        /// <summary>Third person: degrees the camera has gone round from behind, positive to the left (-180..180).</summary>
+        public static float ExternalViewOrbit
+        {
+            get => externalViewOrbit.Value;
+            set => externalViewOrbit.Set(value);
+        }
+
+        /// <summary>Third person: degrees the camera has gone over (positive) or under from where it starts.</summary>
+        public static float ExternalViewElevation
+        {
+            get => externalViewElevation.Value;
+            set => externalViewElevation.Set(Clamp(value, externalViewElevation.Min, externalViewElevation.Max));
+        }
+
+        /// <summary>Third person: the camera's distance as a multiple of the one that suits the size of what is followed.</summary>
+        public static float ExternalViewDistance
+        {
+            get => externalViewDistance.Value;
+            set => externalViewDistance.Set(Clamp(value, externalViewDistance.Min, externalViewDistance.Max));
+        }
+
+        public static float ExternalViewDistanceMin => externalViewDistance.Min;
+
+        public static float ExternalViewDistanceMax => externalViewDistance.Max;
+
+        /// <summary>Where the screen was moved by hand (see the setting's tooltip); empty for the dash.</summary>
+        public static string ExternalViewPlace
+        {
+            get => externalViewPlace.Value;
+            set => externalViewPlace.Set(value);
+        }
+
+        /// <summary>The eyes are drawn smaller while the GPU is over its time (<see cref="Rendering.DynamicResolution"/>).</summary>
+        public static bool DynamicResolution => dynamicResolution.Value;
 
         /// <summary>The external view is drawn every other frame.</summary>
         public static bool ExternalViewHalfRate => externalViewHalfRate.Value;
@@ -762,6 +888,11 @@ namespace SpaceEngineersVR
         /// <summary>Degrees a second the body turns with the right stick pushed all the way over, when <see cref="SmoothTurn"/> is on.</summary>
         public static float SmoothTurnSpeedDegrees => smoothTurnSpeed.Value;
 
+        /// <summary>Zero-g pitch and roll on the jetpack (<see cref="Input.VRControls"/>): 0 Smooth, 1 Snap, 2 Off.</summary>
+        public static int ZeroGTurn => zeroGTurn.Value;
+
+        public const int ZeroGTurnSmooth = 0, ZeroGTurnSnap = 1, ZeroGTurnOff = 2;
+
         /// <summary>How hard the controllers buzz, 0 (off) to 1 (the strengths in <see cref="Hands.Haptics"/> as they are).</summary>
         public static float HapticStrength => hapticStrength.Value;
 
@@ -770,6 +901,9 @@ namespace SpaceEngineersVR
 
         /// <summary>How hard the right stick and the grips turn a ship, a turret or a camera, against a gamepad at full push (1).</summary>
         public static float ShipStickSensitivity => shipStickSensitivity.Value;
+
+        /// <summary>In a pilot seat the ship flies only while its stick and throttle are held (<see cref="Input.ControlGrip"/>).</summary>
+        public static bool HandsOnControls => handsOnControls.Value;
 
         /// <summary>Grab the stick and throttle in a ship seat and fly by moving the controllers (<see cref="Input.HandFlight"/>).</summary>
         public static bool HandFlying => handFlying.Value;
@@ -789,17 +923,22 @@ namespace SpaceEngineersVR
         /// <summary>Y opens the quick-actions panel on the wrist (<see cref="Input.WristButton"/>).</summary>
         public static bool WristPanel => wristPanel.Value;
 
-        /// <summary>Looking at the astronaut's gauntlet opens the wrist panel (<see cref="Input.WristLook"/>).</summary>
-        public static bool WristLook => wristLook.Value;
+        /// <summary>The suit and body status is on a screen on the gauntlet, and not on the HUD (<see cref="Rendering.WristStatus"/>).</summary>
+        public static bool WristStatus => wristStatus.Value;
 
-        /// <summary>Closing the grip on a seat, door, medical room, cargo container or terminal block uses it (<see cref="Hands.GrabUse"/>).</summary>
+        /// <summary>Closing the grip on anything the Use key works on uses it, on foot and from a seat (<see cref="Hands.GrabUse"/>).</summary>
         public static bool GrabToUse => grabToUse.Value;
 
         /// <summary>Touching a use object with a fingertip presses it (<see cref="Hands.FingerPress"/>).</summary>
         public static bool FingerPress => fingerPress.Value;
 
-        /// <summary>Tools from the body, the helmet and the lamp by hand (<see cref="Hands.Holsters"/>).</summary>
-        public static bool Holsters => holsters.Value;
+        /// <summary>The helmet and the lamp by hand (<see cref="Hands.HeadGestures"/>).</summary>
+        public static bool HelmetAndLamp => helmetAndLamp.Value;
+
+        /// <summary>A grip on the external view screen picks it up and moves it (<see cref="Hands.ViewScreenGrab"/>).</summary>
+        public static bool MoveViewByHand => moveViewByHand.Value;
+        /// <summary>The ship's toolbar on a cockpit screen, touched to use it (<see cref="Gui.TouchToolbar"/>).</summary>
+        public static bool TouchToolbar => touchToolbar.Value;
         /// <summary>A grip on a floating item holds it, opening the hand throws it, letting go at the chest stows it (<see cref="Hands.ItemGrab"/>).</summary>
         public static bool GrabItems => grabItems.Value;
         /// <summary>With no gravity, a grip on a hull takes hold of it and the body follows the hand (<see cref="Hands.HullGrab"/>).</summary>
@@ -811,7 +950,16 @@ namespace SpaceEngineersVR
         /// <summary>The other hand's grip on the held tool's front grip holds it in both hands, aimed along the line between them (<see cref="Hands.TwoHand"/>).</summary>
         public static bool TwoHandedTools => twoHandedTools.Value;
 
-        /// <summary>The HUD reminders for leaving a seat and for backing out of a menu (<see cref="Input.ControlHints"/>).</summary>
+        /// <summary>The other hand stays on the tool's grip while its grip button is held, however far the hand moves (<see cref="Hands.TwoHand.Stays"/>).</summary>
+        public static bool TwoHandGripStays => twoHandGripStays.Value;
+
+        /// <summary>The kickback setting: 0 Off, 1 Light, 2 Full (<see cref="Hands.Kickback"/>).</summary>
+        public static int KickbackLevel => kickback.Value;
+
+        /// <summary>The share of the one-handed kick: none (Off), a half (Light), all (Full).</summary>
+        public static double KickbackShare => KickbackLevel <= 0 ? 0.0 : KickbackLevel == 1 ? 0.5 : 1.0;
+
+        /// <summary>The HUD reminders for backing out of a menu, and the first-time ones on foot and in the inventory (<see cref="Input.ControlHints"/>).</summary>
         public static bool ControlHints => controlHints.Value;
 
         /// <summary>Prompts name the controller buttons (<see cref="Input.VRPrompts"/>).</summary>
@@ -966,6 +1114,26 @@ namespace SpaceEngineersVR
                     Log.Warn($"{where}: {setting.Key}: {problem}; keeping '{setting.Serialize()}'");
             }
             Log.Info("Settings read from " + path);
+        }
+
+        /// <summary>
+        /// Sets one setting for this run only, as the file would have it (the drive's "setting key=value", for tests): the
+        /// file is not written.
+        /// </summary>
+        internal static bool TrySetForRun(string key, string value, out string detail)
+        {
+            if (string.IsNullOrWhiteSpace(key) || !byKey.TryGetValue(key.Trim(), out Setting setting))
+            {
+                detail = $"unknown setting '{key}'";
+                return false;
+            }
+            if (!setting.TryLoad(value ?? string.Empty, out string problem))
+            {
+                detail = $"{setting.Key}: {problem}";
+                return false;
+            }
+            detail = $"{setting.Key}={setting.Serialize()} for this run, not saved";
+            return true;
         }
 
         private static void LoadArguments(string[] args)

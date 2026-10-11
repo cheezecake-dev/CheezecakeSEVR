@@ -24,19 +24,24 @@ namespace SpaceEngineersVR.Input
     /// themselves the moment the pad is not the last device used. This class opens, steers and closes them from the
     /// controllers, through those same questions:
     /// <list type="bullet">
-    /// <item>On foot and on the jetpack: hold the left grip; push the left stick at a slot; letting go of the grip
-    /// activates it (<c>ActivateItemAtSlot</c>, as its number key does), or just closes the wheel if the stick is back in
-    /// the middle.</item>
-    /// <item>Seated: tap Y (let go before the hold that leaves the seat completes); the right trigger activates, B or
-    /// another Y tap closes.</item>
+    /// <item>On foot and on the jetpack: hold the left grip; push the left stick at a slot; either trigger, or letting
+    /// go of the grip, activates it (<c>ActivateItemAtSlot</c>, as its number key does). With the stick back in the middle
+    /// after it has chosen something that is the empty hand (<see cref="IWheelToolbar.EmptyHand"/>, the toolbar's holster
+    /// slot); with the stick never moved it just closes the wheel. The right B closes it without any effect.</item>
+    /// <item>Seated: tap Y (let go before the hold that leaves the seat completes); either trigger activates (or empties
+    /// the hand, from the middle), B or another Y tap closes.</item>
     /// <item>The right stick, left or right, turns the toolbar's pages (<c>SwitchToPage</c>, round the ends) and the wheel
     /// shows the page the toolbar is on.</item>
+    /// <item>The right stick pushed down, on the slot wheel, turns the external view on or off (the switch under the ring,
+    /// <see cref="SlotWheelScreen"/>); the wheel stays up.</item>
     /// <item>Clicking the left stick while the slot wheel is up swaps to the game's system radial, and the hands keep
     /// steering: the same grip or trigger then activates one of its items.</item>
     /// </list>
     /// While the wheel is open it has the sticks and the buttons: <see cref="VRControls"/> hands nothing else to the
-    /// game, so the character or ship does not move and the trigger that activates does not fire. The toolbar bar of the HUD
-    /// is not drawn on foot (<see cref="Rendering.HudToolbar"/>, the setting "Show toolbar on foot" brings it back); seated
+    /// game, so the character or ship does not move and the trigger that activates does not fire; it keeps them until the
+    /// grip, B or Y that drove it and both triggers are let go (<see cref="DrivingButtonHeld"/>), so the press that closes it
+    /// does not reach the game either. The toolbar bar of the HUD
+    /// is not drawn on foot (<see cref="Rendering.HudToolbar"/>, the setting "Toolbar on the HUD" brings it back); seated
     /// it stays on screen (the slot screen does not hide the HUD).
     /// </summary>
     internal static class ToolbarWheel
@@ -74,6 +79,9 @@ namespace SpaceEngineersVR.Input
         /// <summary>Test seam: puts the game's system radial up straight away (the swap from the slots; the open from the grip asks the gameplay screen).</summary>
         internal static Action OpenSystemScreen { get; set; } = OpenGameSystemScreen;
 
+        /// <summary>Test seam: the slot wheel's external view switch is pressed (the right stick pushed down).</summary>
+        internal static Action PressViewSwitch { get; set; } = SlotWheelScreen.PressViewSwitch;
+
         /// <summary>How long the game gets to put its radial menu up after being asked, before the wheel gives up.</summary>
         public const double OpenTimeoutSeconds = 0.5;
 
@@ -82,6 +90,18 @@ namespace SpaceEngineersVR.Input
         /// had this long ago still counts as the choice when the wheel is confirmed.
         /// </summary>
         public const double PickGraceSeconds = 0.1;
+
+        /// <summary>
+        /// A stick pushed this far (0 to 1, the dead zone already taken out) is a deliberate choice. The thumb on the stick
+        /// is the same thumb that eases off it when the grip is let go or the left trigger is pulled, and on the way back to
+        /// the middle its direction wanders, so a stick found short of this when the wheel is confirmed counts as the firm
+        /// direction it had a moment ago (<see cref="FirmLookbackSeconds"/>). The seat's right trigger never moves that thumb;
+        /// this keeps the grip and the left trigger as exact.
+        /// </summary>
+        public const float FirmStick = 0.5f;
+
+        /// <summary>How long ago the stick was last <see cref="FirmStick"/> out and still stands as the choice when it has eased off, seconds.</summary>
+        public const double FirmLookbackSeconds = 0.25;
 
         /// <summary>
         /// A left stick that had been out this long when the grip (or the Y tap) opened the wheel is the walk, or the thrust,
@@ -137,10 +157,12 @@ namespace SpaceEngineersVR.Input
         private static Kind kind;
         private static IWheelToolbar toolbar;
         private static double openedAt, yDownAt = -1d, pickedAt = -1d, stickOutSince = -1d;
-        private static Vector2 picked, pick, heldDirection;
+        private static Vector2 picked, pick, heldDirection, firm;
+        private static double firmAt = -1d;
         private static bool armed = true;
         private static bool openPulse, confirmPulse, cancelPulse, slotScreenFailed;
         private static int pageHeld, page;
+        private static bool viewHeld, viewPressed;
 
         /// <summary>The wheel has the hands: the sticks and buttons are its, and the game is not given them.</summary>
         public static bool Owns => phase != Phase.Idle;
@@ -154,14 +176,17 @@ namespace SpaceEngineersVR.Input
         /// <summary>Which wheel it is driving (Slots, System or Palette), for the log and the checks.</summary>
         internal static string Showing => kind.ToString();
 
+        /// <summary>The right stick is held down on the slot wheel's external view switch: the switch shows the wheel's highlight.</summary>
+        internal static bool ViewSwitchHeld => viewPressed && phase == Phase.Open && kind == Kind.Slots;
+
         /// <summary>The hands are not there (no source, or the game control is off): drop everything.</summary>
         public static void Reset()
         {
             phase = Phase.Idle;
             openPulse = confirmPulse = cancelPulse = false;
-            pick = picked = heldDirection = Vector2.Zero;
+            pick = picked = heldDirection = firm = Vector2.Zero;
             armed = true;
-            yDownAt = pickedAt = stickOutSince = -1d;
+            yDownAt = pickedAt = stickOutSince = firmAt = -1d;
             pageHeld = page = 0;
             toolbar = null;
         }
@@ -221,7 +246,12 @@ namespace SpaceEngineersVR.Input
                 case Phase.Done:
                     phase = Phase.Done;
                     if (!DrivingButtonHeld())
+                    {
+                        // The stick that chose may still be out, and the game's own hold on movement after a radial menu
+                        // (set as the screen closed) was ended by the frames of no input the Done phase gave it.
                         phase = Phase.Idle;
+                        VRControls.HoldMovement();
+                    }
                     break;
             }
         }
@@ -242,8 +272,8 @@ namespace SpaceEngineersVR.Input
             phase = Phase.Opening;
             gesture = how;
             openedAt = seconds;
-            picked = Vector2.Zero;
-            pickedAt = -1d;
+            picked = firm = Vector2.Zero;
+            pickedAt = firmAt = -1d;
             pageHeld = 0;
             bool held = leftStick != Vector2.Zero && stickOutSince >= 0d && seconds - stickOutSince >= HeldStickSeconds;
             armed = !held;
@@ -273,6 +303,7 @@ namespace SpaceEngineersVR.Input
 
         private static void Steer(bool usable, double seconds, Vector2 leftStick, Vector2 rightStick)
         {
+            bool opening = phase == Phase.Opening;
             if (!usable)
             {
                 Finish("the controls changed");
@@ -314,15 +345,48 @@ namespace SpaceEngineersVR.Input
             else
                 page = pageHeld;
 
-            // What ends it: the grip let go, or the trigger (activates) / B or Y again (closes).
-            bool end, cancel = false;
-            if (gesture == Gesture.Grip)
-                end = !VRInput.IsPressed(Hand.Left, VRButtons.Grip);
-            else
+            // The external view switch under the slot wheel's ring: the right stick pushed down, as it is pushed to a side for
+            // the pages. A stick already down as the wheel opens (a seat's look) is not a press until it has come back.
+            if (kind == Kind.Slots)
             {
-                cancel = VRInput.IsNewPressed(Hand.Right, VRButtons.B) || VRInput.IsNewPressed(Hand.Left, VRButtons.Y);
-                end = cancel || VRInput.IsNewPressed(Hand.Right, VRButtons.Trigger);
+                float y = rightStick.Y;
+                if (opening)
+                {
+                    viewHeld = y < -PageRelease;
+                    viewPressed = false;
+                }
+                else if (!viewHeld && y < -PagePress && -y > Math.Abs(x))
+                {
+                    viewHeld = viewPressed = true;
+                    Log.Info("Toolbar wheel: right stick down, the external view switch");
+                    try
+                    {
+                        PressViewSwitch?.Invoke();
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Error(e, "Toolbar wheel: the external view switch failed");
+                    }
+                }
+                else if (viewHeld && y > -PageRelease)
+                    viewHeld = viewPressed = false;
             }
+
+            // What ends it: either trigger pulled (activates), on foot the grip let go (activates), the right B (closes, on
+            // foot and in a seat) or in a seat Y again (closes). The trigger is the same in the seat and on foot; the thumb
+            // stays on the stick while a trigger is pulled.
+            string by = VRInput.IsNewPressed(Hand.Right, VRButtons.Trigger) ? "right trigger"
+                : VRInput.IsNewPressed(Hand.Left, VRButtons.Trigger) ? "left trigger"
+                : null;
+            bool cancel = VRInput.IsNewPressed(Hand.Right, VRButtons.B);
+            if (gesture == Gesture.Grip)
+            {
+                if (by == null && !VRInput.IsPressed(Hand.Left, VRButtons.Grip))
+                    by = "grip let go";
+            }
+            else
+                cancel |= VRInput.IsNewPressed(Hand.Left, VRButtons.Y);
+            bool end = cancel || by != null;
 
             // A stick held from before the wheel opened chooses nothing until it has been let go or turned.
             if (!armed && (leftStick == Vector2.Zero || TurnedFrom(heldDirection, leftStick) >= HeldStickTurnDegrees))
@@ -336,9 +400,16 @@ namespace SpaceEngineersVR.Input
                     picked = new Vector2(leftStick.X, -leftStick.Y);
                     pickedAt = seconds;
                     pick = picked;
+                    if (leftStick.Length() >= FirmStick)
+                    {
+                        firm = picked;
+                        firmAt = seconds;
+                    }
+                    else if (end && !cancel && EasedFromFirm(seconds))
+                        pick = firm;
                 }
                 else if (end && !cancel && pickedAt >= 0d && seconds - pickedAt <= PickGraceSeconds)
-                    pick = picked;
+                    pick = EasedFromFirm(seconds) ? firm : picked;
             }
 
             if (!end)
@@ -350,13 +421,18 @@ namespace SpaceEngineersVR.Input
 
             if (kind == Kind.Slots)
             {
-                // Activating with nothing chosen closes the wheel and does nothing else.
+                // The middle of the wheel is the empty hand, once the stick has chosen something and come back to it (the
+                // centre of the screen is lit then, SlotWheelScreen.UpdateHighlight). Activating with the stick never moved
+                // (or a cancel: the right B, or Y in a seat) closes the wheel and does nothing else.
                 int slot = !cancel && pick != Vector2.Zero ? SlotWheel.IndexAt(pick) : -1;
+                bool emptyHand = slot < 0 && !cancel && pickedAt >= 0d;
                 if (slot >= 0)
                     Activate(slot);
+                else if (emptyHand)
+                    EmptyHand();
                 CloseSlots();
                 phase = Phase.Closing;
-                Log.Info(slot >= 0 ? $"Toolbar wheel: activated slot {slot + 1}" : "Toolbar wheel: closing");
+                Log.Info(slot >= 0 ? $"Toolbar wheel: activated slot {slot + 1} ({by})" : emptyHand ? $"Toolbar wheel: empty hand ({by})" : "Toolbar wheel: closing");
                 return;
             }
 
@@ -364,8 +440,11 @@ namespace SpaceEngineersVR.Input
             confirmPulse = !cancel && pick != Vector2.Zero;
             cancelPulse = !confirmPulse;
             phase = Phase.Closing;
-            Log.Info(confirmPulse ? "Toolbar wheel: activating the chosen item" : "Toolbar wheel: closing");
+            Log.Info(confirmPulse ? $"Toolbar wheel: activating the chosen item ({by})" : "Toolbar wheel: closing");
         }
+
+        /// <summary>The stick was <see cref="FirmStick"/> out within <see cref="FirmLookbackSeconds"/>: what it points at now is a thumb easing off.</summary>
+        private static bool EasedFromFirm(double seconds) => firmAt >= 0d && seconds - firmAt <= FirmLookbackSeconds;
 
         /// <summary>How far round, in degrees, the stick has turned from one direction to another (0 to 180).</summary>
         internal static double TurnedFrom(Vector2 from, Vector2 to)
@@ -397,18 +476,43 @@ namespace SpaceEngineersVR.Input
         {
             try
             {
-                IWheelToolbar now = ToolbarSource?.Invoke();
-                if (toolbar == null || !toolbar.Equals(now))
-                    Log.Info("Toolbar wheel: the toolbar changed while the wheel was up; nothing activated");
-                else if (!toolbar.CanActivate)
-                    Log.Info("Toolbar wheel: the game does not let the player activate toolbar items now");
-                else if (slot < toolbar.SlotCount)
-                    toolbar.ActivateSlot(slot);
+                IWheelToolbar bar = UsableToolbar("activated");
+                if (bar != null && slot < bar.SlotCount)
+                    bar.ActivateSlot(slot);
             }
             catch (Exception e)
             {
                 Log.Error(e, $"Toolbar wheel: slot {slot + 1} could not be activated");
             }
+        }
+
+        /// <summary>Empties the hand with the game's own call for it (<see cref="IWheelToolbar.EmptyHand"/>), if it is still the toolbar the wheel was opened on.</summary>
+        private static void EmptyHand()
+        {
+            try
+            {
+                UsableToolbar("unequipped")?.EmptyHand();
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "Toolbar wheel: the hand could not be emptied");
+            }
+        }
+
+        /// <summary>
+        /// The toolbar the wheel was opened on, when it is still the player's and the game lets the player use it, as the number
+        /// keys ask (MyToolbarComponent.HandleInput); otherwise null, with the reason logged and <paramref name="nothing"/> done.
+        /// </summary>
+        private static IWheelToolbar UsableToolbar(string nothing)
+        {
+            IWheelToolbar now = ToolbarSource?.Invoke();
+            if (toolbar == null || !toolbar.Equals(now))
+                Log.Info("Toolbar wheel: the toolbar changed while the wheel was up; nothing " + nothing);
+            else if (!toolbar.CanActivate)
+                Log.Info("Toolbar wheel: the game does not let the player activate toolbar items now");
+            else
+                return toolbar;
+            return null;
         }
 
         /// <summary>The slot wheel's screen goes and the game's system radial takes its place; the hands keep steering.</summary>
@@ -458,11 +562,16 @@ namespace SpaceEngineersVR.Input
             phase = Phase.Done;
         }
 
-        /// <summary>The buttons that opened or closed the wheel, still down: they must not reach the game as a shot or a thrust.</summary>
+        /// <summary>
+        /// The buttons that opened or closed the wheel, still down: they must not reach the game as a shot or a thrust. Both
+        /// triggers and the right B count whichever gesture opened it: one pulled to activate or pressed to cancel is still down
+        /// when the wheel closes, and one held through the wheel would look like a fresh press the frame the hands go back to
+        /// the game (B is the thrust control on foot and a thrust or descent in a seat).
+        /// </summary>
         private static bool DrivingButtonHeld() =>
-            gesture == Gesture.Grip
-                ? VRInput.IsPressed(Hand.Left, VRButtons.Grip)
-                : VRInput.IsPressed(Hand.Left, VRButtons.Y) || VRInput.IsPressed(Hand.Right, VRButtons.Trigger) || VRInput.IsPressed(Hand.Right, VRButtons.B);
+            (gesture == Gesture.Grip ? VRInput.IsPressed(Hand.Left, VRButtons.Grip) : VRInput.IsPressed(Hand.Left, VRButtons.Y))
+            || VRInput.IsPressed(Hand.Right, VRButtons.B)
+            || VRInput.IsPressed(Hand.Left, VRButtons.Trigger) || VRInput.IsPressed(Hand.Right, VRButtons.Trigger);
 
         /// <summary>
         /// The game's answer to a question about a control. The frame a game radial opens from the grip, the gameplay

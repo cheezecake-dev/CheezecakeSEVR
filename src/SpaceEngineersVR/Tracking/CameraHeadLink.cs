@@ -23,7 +23,17 @@ namespace SpaceEngineersVR.Tracking
         private static readonly Matrix?[] heads = new Matrix?[Capacity];
         private static readonly HandResidual.Frame[] hands = new HandResidual.Frame[Capacity];
         private static readonly long[] handTimes = new long[Capacity];
+        private static readonly Rendering.MotionExtrapolation.Sample[] motion = NewSamples();
+        private static readonly Rendering.MotionExtrapolation.Sample captured = new Rendering.MotionExtrapolation.Sample();
         private static int next;
+
+        private static Rendering.MotionExtrapolation.Sample[] NewSamples()
+        {
+            var samples = new Rendering.MotionExtrapolation.Sample[Capacity];
+            for (int i = 0; i < Capacity; i++)
+                samples[i] = new Rendering.MotionExtrapolation.Sample();
+            return samples;
+        }
         private static readonly object gate = new object();
 
         /// <summary>Render thread: the head pose the current camera already includes, or null when it includes none.</summary>
@@ -67,8 +77,10 @@ namespace SpaceEngineersVR.Tracking
             HandWorld.CameraSent(viewMatrix);
             HandResidual.Frame solved = HandResidual.Take();
             long handsTime = System.Math.Max(VRInput.Get(Hand.Left).FrameTime, VRInput.Get(Hand.Right).FrameTime);
+            Rendering.MotionExtrapolation.Capture(captured, viewMatrix);
             lock (gate)
             {
+                motion[next].CopyFrom(captured);
                 headFromSent = fromCamera;
                 views[next] = viewMatrix;
                 heads[next] = head;
@@ -76,6 +88,7 @@ namespace SpaceEngineersVR.Tracking
                 handTimes[next] = handsTime;
                 next = (next + 1) % Capacity;
             }
+            ToolSteady.Camera(viewMatrix);
         }
 
         private static int misses;
@@ -93,6 +106,7 @@ namespace SpaceEngineersVR.Tracking
                         HeadInCamera = heads[index];
                         HandResidual.Drawing = hands[index];
                         HandsFrameTime = handTimes[index];
+                        Rendering.MotionExtrapolation.Take(motion[index]);
                         return;
                     }
                 }
@@ -100,6 +114,7 @@ namespace SpaceEngineersVR.Tracking
             HeadInCamera = null;
             HandResidual.Drawing = null;
             HandsFrameTime = 0;
+            Rendering.MotionExtrapolation.Take(null);
             if ((++misses & (misses - 1)) == 0)
                 Log.Warn($"Camera not found among the recent ones sent (miss {misses}); the eyes use the full head pose");
         }

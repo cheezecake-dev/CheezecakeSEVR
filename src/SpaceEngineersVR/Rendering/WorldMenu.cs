@@ -143,6 +143,18 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
+        /// Render thread: a menu stands ahead now (not on the wrist or at the hand), <see cref="VRSettings.MenuDistance"/>
+        /// from <paramref name="from"/> along <paramref name="along"/>, level, as <see cref="Locked(in Matrix, out Matrix, out float)"/>
+        /// placed it. For a screen that goes behind it (<see cref="DeathView"/>).
+        /// </summary>
+        internal static bool TryGetAhead(out Vector3 from, out Vector3 along)
+        {
+            from = anchor;
+            along = ahead;
+            return placed && !onWrist && !onWheel && !Off;
+        }
+
+        /// <summary>
         /// The panel on the wrist, from the hand's grip pose and the head, both in the tracking space: the wrist is
         /// <see cref="WristFromPalm"/> back along the forearm from the grip (the grip's own Z axis points back along the
         /// forearm), and the panel's middle is <see cref="WristLift"/> from the wrist toward the eyes, turned to face them

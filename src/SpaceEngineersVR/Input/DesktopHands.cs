@@ -24,7 +24,8 @@ namespace SpaceEngineersVR.Input
         private static readonly string ControlFile = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpaceEngineers", "SpaceEngineersVR.fakehands");
 
-        private const int PollEveryFrames = 15;
+        /// <summary>Frames between reads of the control file; RenderDebug FakeHandsPoll=N for a test that needs presses closer together than a quarter second (a double click).</summary>
+        internal static int PollEveryFrames { get; set; } = 15;
         private const int HapticLogsPerSecond = 4;
         private const float PressedAt = 0.5f;
         private static readonly Vector3 Rest = new Vector3(0.2f, -0.3f, -0.35f);
@@ -110,6 +111,19 @@ namespace SpaceEngineersVR.Input
             heldBack[i] = 0;
         }
 
+        private static readonly Matrix?[] poseOverride = new Matrix?[2];
+        private static readonly object overrideGate = new object();
+
+        /// <summary>
+        /// A test's pose for a hand (tracking space; the aim and the grip both), over what the hands file says; null gives
+        /// the file its hand back (<see cref="Hands.ScreenTest"/>'s reach).
+        /// </summary>
+        internal static void SetPoseOverride(Hand hand, Matrix? pose)
+        {
+            lock (overrideGate)
+                poseOverride[(int)hand] = pose;
+        }
+
         private HandState State(Hand hand, in Matrix head)
         {
             Setting setting = hands[(int)hand];
@@ -118,7 +132,12 @@ namespace SpaceEngineersVR.Input
             Vector3 side = new Vector3(hand == Hand.Left ? -Rest.X : Rest.X, Rest.Y, Rest.Z);
             Vector3 rest = head.Translation + Vector3.TransformNormal(side, Matrix.CreateRotationY(headYaw));
 
-            Matrix aim = Place(setting.Aim, rest);
+            Matrix? overridden;
+            lock (overrideGate)
+                overridden = poseOverride[(int)hand];
+            if (overridden.HasValue)
+                setting.Aim = setting.Grip = null;
+            Matrix aim = overridden ?? Place(setting.Aim, rest);
             VRButtons buttons = setting.Buttons;
             if (setting.Trigger >= PressedAt)
                 buttons |= VRButtons.Trigger;

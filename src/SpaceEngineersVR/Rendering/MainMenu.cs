@@ -140,6 +140,15 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
+        /// <summary>
+        /// Render thread, in a world with no eye to show it (the death view, <see cref="DeathView"/>): both eyes black with the
+        /// laser's beam, into the headset's images and the window, and <see cref="EyeRenderer.Eyes"/> set for the panel, as
+        /// for the main menu. Throws on a failure.
+        /// </summary>
+        /// <param name="headset">The eye images were filled for the headset.</param>
+        /// <returns>The eyes are drawn (false: the window has no size yet).</returns>
+        internal static bool DrawBackdrop(out bool headset) => Draw(out headset);
+
         private static bool Draw(out bool headset)
         {
             headset = false;

@@ -22,6 +22,7 @@ namespace SpaceEngineersVR.Input
         public static void Patch(Harmony harmony)
         {
             VRInput.Desktop = desktop;
+            ControlGrip.Patch(harmony);
             HandFlight.Patch(harmony);
             Drive.Patch(harmony);
 
@@ -70,6 +71,7 @@ namespace SpaceEngineersVR.Input
             desktop.Poll();
             VRInput.Update();
             VRControls.Update();
+            Hands.ViewScreenGrab.Frame();
             WristButton.Update();
             VRControls.WalkBesidePanel();
         }
@@ -96,7 +98,7 @@ namespace SpaceEngineersVR.Input
                 __result = true;
             else if (ToolbarWheel.Answer(context, controlId, type))
                 __result = true;
-            else if (VRControls.Live)
+            else if (VRControls.MayAnswer(controlId))
                 __result = VRControls.Wants(controlId, type, VRControls.ContextOf(context));
         }
 
@@ -119,7 +121,7 @@ namespace SpaceEngineersVR.Input
                 return;
             if (Drive.Wants(control, type))
                 result = true;
-            else if (VRControls.Live)
+            else if (VRControls.MayAnswer(control))
                 result = VRControls.Wants(control, type, VRControls.EntityContext());
         }
     }

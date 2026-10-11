@@ -69,6 +69,9 @@ namespace SpaceEngineersVR.OpenXR
         public static bool Focused => Running && state == XrSessionState.Focused;
 
         public static bool Exists => session != 0;
+
+        /// <summary>The session's state as the runtime last announced it.</summary>
+        public static XrSessionState State => state;
         public static int EyeWidth { get; private set; }
         public static int EyeHeight { get; private set; }
 
@@ -287,6 +290,7 @@ namespace SpaceEngineersVR.OpenXR
         private static void OnStateChanged(XrSessionState newState)
         {
             Log.Info($"OpenXR session {state} -> {newState}");
+            Rendering.PerfMeter.OnSessionChange($"session {state} -> {newState}");
             state = newState;
             switch (newState)
             {
@@ -317,7 +321,9 @@ namespace SpaceEngineersVR.OpenXR
 
             frame = new XrFrameState { Type = XrStructureType.FrameState };
             var waitInfo = new XrBaseInfo(XrStructureType.FrameWaitInfo);
+            long waitStart = Stopwatch.GetTimestamp();
             Xr.Check(Xr.xrWaitFrame(session, ref waitInfo, ref frame), "xrWaitFrame", XrRuntime.Instance);
+            Rendering.PerfMeter.Waited(waitStart, frame.PredictedDisplayTime, frame.PredictedDisplayPeriod);
             var beginInfo = new XrBaseInfo(XrStructureType.FrameBeginInfo);
             Xr.Check(Xr.xrBeginFrame(session, ref beginInfo), "xrBeginFrame", XrRuntime.Instance);
             InFrame = true;
@@ -413,6 +419,18 @@ namespace SpaceEngineersVR.OpenXR
             Xr.Check(Xr.xrReleaseSwapchainImage(swapchain, ref release), "xrReleaseSwapchainImage", XrRuntime.Instance);
         }
 
+        private static int eyeRectWidth, eyeRectHeight;
+
+        /// <summary>
+        /// This frame's eyes fill only the top left <paramref name="width"/> x <paramref name="height"/> of their images (dynamic
+        /// resolution); the runtime scales that part up. Back to the whole image after <see cref="EndFrame"/>.
+        /// </summary>
+        public static void SetEyeRect(int width, int height)
+        {
+            eyeRectWidth = width;
+            eyeRectHeight = height;
+        }
+
         /// <param name="eyesDrawn">Both eye images were filled this frame.</param>
         /// <param name="panel">The panel image was filled this frame; it is shown ahead of the eyes, or where a menu put it.</param>
         /// <param name="screen">The external view's image was filled this frame; it is shown between the eyes and the panel.</param>
@@ -435,10 +453,15 @@ namespace SpaceEngineersVR.OpenXR
                     SubImage = new XrSwapchainSubImage
                     {
                         Swapchain = swapchains[eye],
-                        ImageRect = new XrRect2Di { Width = EyeWidth, Height = EyeHeight },
+                        ImageRect = new XrRect2Di
+                        {
+                            Width = eyeRectWidth > 0 ? Math.Min(eyeRectWidth, EyeWidth) : EyeWidth,
+                            Height = eyeRectHeight > 0 ? Math.Min(eyeRectHeight, EyeHeight) : EyeHeight,
+                        },
                     },
                 };
             }
+            eyeRectWidth = eyeRectHeight = 0;
             var layer = new XrCompositionLayerProjection
             {
                 Type = XrStructureType.CompositionLayerProjection,
@@ -501,12 +524,14 @@ namespace SpaceEngineersVR.OpenXR
                 Layers = (IntPtr)layers,
             };
             Xr.Check(Xr.xrEndFrame(session, ref endInfo), "xrEndFrame", XrRuntime.Instance);
+            Rendering.PerfMeter.Submitted();
         }
 
         public static void Destroy()
         {
             if (session == 0)
                 return;
+            Rendering.PerfMeter.OnSessionChange("session destroyed");
             Running = false;
             InFrame = false;
             for (int eye = 0; eye < 2; eye++)
