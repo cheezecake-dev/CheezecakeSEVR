@@ -22,7 +22,10 @@ namespace SpaceEngineersVR.OpenXR
     /// A, B, X, Y. menu per hand: Menu. haptic output per hand. The Index controller has A/B on both hands, so its left
     /// A/B are X/Y; the Steam Frame's left controller has a D-pad and View, so its D-pad down and up are X and Y and View
     /// is Menu. Touch sensors, on the controllers that have them (the Quest family, PICO, Steam Frame): trigger_touch,
-    /// thumbstick_touch, thumbrest_touch per hand and touch_a/b/x/y: Touch, and TouchSensors for the ones bound.
+    /// thumbstick_touch, thumbrest_touch per hand and touch_a/b/x/y: Touch, and TouchSensors for the ones bound. The Vive
+    /// wand's trackpad touch is the thumbstick_touch (the thumb on the pad, for the hand's pose). A hand whose current
+    /// profile is the Vive wand's has its trackpad and Menu button put in the Quest's layout before they are reported
+    /// (<see cref="WandLayout"/>), so Stick, StickClick, B, A, Y and Menu mean what they do on a Quest.
     /// </remarks>
     internal sealed unsafe class XrInput : IVRInputSource
     {
@@ -82,6 +85,12 @@ namespace SpaceEngineersVR.OpenXR
 
         // The interaction profile last logged per hand; MaxValue until the first is read, so that one is logged too.
         private readonly ulong[] loggedProfile = { ulong.MaxValue, ulong.MaxValue };
+
+        // Render thread only: the hand's current profile is the Vive wand's (set where the profiles are read, LogProfiles), so its
+        // controls are put in the Quest's layout (WandLayout); and the right wand's Menu button timing.
+        private ulong viveProfile;
+        private readonly bool[] wand = new bool[2];
+        private WandLayout.MenuState wandMenu;
 
         // Shared with the game thread.
         private readonly object gate = new object();
@@ -388,12 +397,16 @@ namespace SpaceEngineersVR.OpenXR
             Bind(frameExtra, bTouchAction, "/user/hand/right/input/y/touch");
             Offer(taken, unoffered, "/interaction_profiles/valve/frame_controller_valve", SteamFrameExtension, frame, frameExtra);
 
-            // Vive wands: the trackpad stands in for the thumbstick, the grip buttons are clicks.
+            // Vive wands: the trackpad and its click stand in for the thumbstick and its click, the grip buttons are clicks. The wand
+            // has no A, B, X or Y, so those come from the trackpad and the Menu buttons in ReadHand (WandLayout). The trackpad's touch
+            // sensor is the thumb on the controller, for the hand's pose.
             var vive = new List<XrActionSuggestedBinding>();
             var viveExtra = new List<XrActionSuggestedBinding>();
             BindHands(vive, viveExtra, "trigger/value", "squeeze/click", "trackpad", "trackpad/click");
             BindMenuBothHands(vive);
-            Offer(taken, unoffered, "/interaction_profiles/htc/vive_controller", null, vive, viveExtra);
+            for (int h = 0; h < 2; h++)
+                Bind(viveExtra, stickTouchAction, "/user/hand/" + HandNames[h] + "/input/trackpad/touch");
+            Offer(taken, unoffered, WandLayout.Profile, null, vive, viveExtra);
 
             var windowsMixedReality = new List<XrActionSuggestedBinding>();
             var windowsMixedRealityExtra = new List<XrActionSuggestedBinding>();
@@ -732,6 +745,8 @@ namespace SpaceEngineersVR.OpenXR
             active = false;
             working[0] = working[1] = default;
             workingNow[0] = workingNow[1] = default;
+            // A Menu button down when the input stopped must not read as a tap or a hold when it is let go after.
+            wandMenu = default;
             lock (gate)
             {
                 published[0] = published[1] = default;
@@ -780,6 +795,19 @@ namespace SpaceEngineersVR.OpenXR
                 if (GetBoolean(yAction, 0))
                     buttons |= VRButtons.Y;
             }
+            bool wandMenuPulse = false;
+            if (wand[h])
+            {
+                // A Vive wand reported the trackpad as the stick and its click, and Menu: they are put in the Quest's layout. Whether a
+                // seat is being driven is the game thread's word, a volatile flag it sets each frame (VRControls.SeatDriven).
+                bool padClick = (buttons & VRButtons.StickClick) != 0, menu = (buttons & VRButtons.Menu) != 0;
+                WandLayout.Output layout = h == (int)Hand.Right
+                    ? WandLayout.Right(ref wandMenu, s.Stick, padClick, menu, VRControls.SeatDriven, displayTime / 1e9)
+                    : WandLayout.Left(s.Stick, padClick, menu);
+                buttons = (buttons & (VRButtons.Trigger | VRButtons.Grip)) | layout.Buttons;
+                s.Stick = layout.Stick;
+                wandMenuPulse = layout.GameMenu;
+            }
             s.Buttons = buttons;
 
             VRTouch sensors = VRTouch.None, touched = VRTouch.None;
@@ -811,6 +839,13 @@ namespace SpaceEngineersVR.OpenXR
                 LocatePoses(h, displayTime, ref now);
             }
             workingNow[h] = now;
+
+            // The right wand's held Menu is the game menu, which the game reads from the left hand's Menu; the left hand was read first.
+            if (wandMenuPulse)
+            {
+                working[(int)Hand.Left].Buttons |= VRButtons.Menu;
+                workingNow[(int)Hand.Left].Buttons |= VRButtons.Menu;
+            }
         }
 
         /// <summary>Grip, aim and palm at <paramref name="time"/>; a pose that is not valid keeps what it was.</summary>
@@ -960,11 +995,16 @@ namespace SpaceEngineersVR.OpenXR
             GameHead.Recentre("the headset's recentre");
         }
 
-        /// <summary>The profile the runtime picked for each hand: the first read, then only when it changes.</summary>
+        /// <summary>
+        /// The profile the runtime picked for each hand: the first read, then only when it changes. Also where a hand is found to be
+        /// on a Vive wand (or no longer), which puts its controls in the Quest's layout (<see cref="WandLayout"/>).
+        /// </summary>
         private void LogProfiles()
         {
             try
             {
+                if (viveProfile == 0)
+                    viveProfile = StringToPath(WandLayout.Profile);
                 for (int h = 0; h < 2; h++)
                 {
                     var state = new XrInteractionProfileState { Type = XrStructureType.InteractionProfileState };
@@ -973,12 +1013,29 @@ namespace SpaceEngineersVR.OpenXR
                         continue;
                     loggedProfile[h] = state.InteractionProfile;
                     Log.Info($"OpenXR {HandNames[h]} hand interaction profile: {PathName(state.InteractionProfile)}");
+                    SetWand(h, state.InteractionProfile == viveProfile);
                 }
             }
             catch (Exception e)
             {
                 Log.Warn($"Could not read the interaction profiles: {e.Message}");
             }
+        }
+
+        /// <summary>The hand is on a Vive wand now, or is not; logged once each time it switches, so a log shows the layout engaged.</summary>
+        private void SetWand(int h, bool onWand)
+        {
+            if (wand[h] == onWand)
+                return;
+            wand[h] = onWand;
+            if (h == (int)Hand.Right)
+                wandMenu = default;
+            if (!onWand)
+                return;
+            Log.Info(h == (int)Hand.Right
+                ? "OpenXR right hand is a Vive wand: Quest layout from the wand's controls (pad clicked: left or right turns, up or down jump and crouch " +
+                  "or, in a seat, A and B; centre click is the stick click; Menu tapped is B, held half a second is the game menu)"
+                : "OpenXR left hand is a Vive wand: Quest layout from the wand's controls (pad is the stick and its click the stick click; Menu is Y)");
         }
 
         /// <summary>

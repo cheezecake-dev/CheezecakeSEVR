@@ -63,6 +63,7 @@ namespace SpaceEngineersVR.Rendering
             CockpitHead.Patch(harmony);
             BodyFollow.Patch(harmony);
             ZeroGPivot.Patch(harmony);
+            MagBootsSmoothing.Patch(harmony);
             BodyGuard.Patch(harmony);
             BodyShift.Patch(harmony);
             CameraHeadLink.Patch(harmony);

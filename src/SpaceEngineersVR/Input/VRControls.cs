@@ -203,6 +203,7 @@ namespace SpaceEngineersVR.Input
 
         // The seated frame: what the sticks, buttons and grips add to the game's movement, rotation and roll.
         private static VRContext context;
+        private static volatile bool seatDriven;
         private static bool cameraView, seatSticks;
         private static Vector3 seatMove;
         private static Vector2 seatRotation;
@@ -309,6 +310,13 @@ namespace SpaceEngineersVR.Input
         /// <summary>The context is a seat: a ship controller or a turret.</summary>
         public static bool IsSeated(VRContext c) => c == VRContext.Ship || c == VRContext.Turret;
 
+        /// <summary>
+        /// A seat's controls are what the hands drive this frame: the context is a seat, and no menu or toolbar wheel has the hands
+        /// (a menu's Back is B, so the Vive wand's pad must not turn into B there). Written on the game thread, read on the render
+        /// thread by <see cref="OpenXR.XrInput"/> for the right wand's pad (<see cref="OpenXR.WandLayout"/>), so it is volatile.
+        /// </summary>
+        internal static bool SeatDriven => seatDriven;
+
         /// <summary>The hands pitch or roll the local character on the jetpack this frame (<see cref="UpdateZeroG"/>), for <see cref="Tracking.ZeroGPivot"/>.</summary>
         internal static bool ZeroGTurning => zeroGPitch != 0f || zeroGRoll != 0f;
 
@@ -319,10 +327,10 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         internal static bool ZeroGHeld => ZeroGClick() && CanPitchAndRoll(out _);
 
-        /// <summary>The left stick click is down on the jetpack, outside a camera block's view, with zero-g pitch and roll not Off, and not held to build (<see cref="Hands.BuildMode.Modifier"/>).</summary>
+        /// <summary>The left stick click is down on the jetpack, outside a camera block's view, with zero-g pitch and roll not Off, not held to build (<see cref="Hands.BuildMode.Modifier"/>) and not taken for a withdraw (<see cref="Hands.QuickInventory.TakesLeftClick"/>).</summary>
         private static bool ZeroGClick() =>
             context == VRContext.Jetpack && !cameraView && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff
-            && VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier;
+            && VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier && !Hands.QuickInventory.TakesLeftClick;
 
         /// <summary>
         /// Game thread, once per frame, right after <see cref="VRInput.Update"/>: works out which control set the
@@ -359,6 +367,7 @@ namespace SpaceEngineersVR.Input
                 Hands.PaintMode.Frame(VRContext.None, true);
                 Hands.QuickInventory.Frame(VRContext.None, true);
                 context = VRContext.None;
+                seatDriven = false;
                 cameraView = seatSticks = false;
                 ControlGrip.Frame(false);
                 HandFlight.Frame(false);
@@ -399,9 +408,11 @@ namespace SpaceEngineersVR.Input
             // it: a turn sideways, the distance up and down; with the colour tool a sideways flick of the right stick picks the
             // colour, so it does not turn.
             object menu = MenuScreen();
+            seatDriven = IsSeated(context) && menu == null && !ToolbarWheel.Owns;
             Hands.BuildMode.Frame(context, ToolbarWheel.Owns || menu != null, seconds);
             Hands.PaintMode.Frame(context, ToolbarWheel.Owns || menu != null);
-            // The right hand on a container: A and B are the game's quick take and dump there, not jump and the jetpack.
+            // Pointing at a container, or the right hand on one: the stick clicks are the game's quick take, production and dump
+            // there, and the right grip's Use waits for the grip to be let go.
             Hands.QuickInventory.Frame(context, ToolbarWheel.Owns || menu != null);
             if (Hands.BuildMode.StickBusy || Hands.PaintMode.TakesStick(rightStick))
                 rightStick = Vector2.Zero;
@@ -719,15 +730,16 @@ namespace SpaceEngineersVR.Input
 
             // With a block in hand X is symmetry (Hands.BuildMode) instead of the dampers, and A and B stay jump (the jetpack's
             // climb) and the jetpack, except a press made with the left stick click held, which steps the block's stage. A paste and
-            // the voxel hand leave A, B and X as they are; the colour tool takes A and B for its brush (Hands.PaintMode). A and B
-            // pressed with the right hand on a container are its quick take and dump (Hands.QuickInventory), with or without a block.
+            // the voxel hand leave A, B and X as they are; the colour tool takes A and B for its brush (Hands.PaintMode). The quick
+            // take, production and dump at a container are on the stick clicks, not A and B (Hands.QuickInventory); sprint, the
+            // zero-g roll and reload (Hands.Reload) leave a click while a press of it is taken there.
             bool build = Hands.BuildMode.Active;
             // A hand weapon's left trigger is only its iron sight, which in VR is the gun brought up to the eye (Hands.IronSight).
             if (Hands.IronSight.Frame())
                 SwallowTrigger(Hand.Left, "a hand weapon's left trigger (its iron sight)");
             bool paint = Hands.PaintMode.Active;
             bool place = TriggerHeld(Hand.Right), remove = TriggerHeld(Hand.Left);
-            jumpButton = !paint && !Hands.BuildMode.TakesA && !Hands.QuickInventory.TakesA && VRInput.IsPressed(Hand.Right, VRButtons.A);
+            jumpButton = !paint && !Hands.BuildMode.TakesA && VRInput.IsPressed(Hand.Right, VRButtons.A);
             // With the colour tool the triggers paint and take a colour, as the game's gamepad has them, not primary and secondary.
             Set(Intent.Primary, place && !paint);
             Set(Intent.Secondary, remove && !paint);
@@ -739,13 +751,16 @@ namespace SpaceEngineersVR.Input
             Set(Intent.CopyColor, Hands.PaintMode.CopyColor);
             Set(Intent.CycleNext, Hands.PaintMode.CycleNext);
             Set(Intent.CyclePrev, Hands.PaintMode.CyclePrev);
-            Set(Intent.Use, VRInput.IsPressed(Hand.Right, VRButtons.Grip) && Hands.GripClaim.Owner(Hand.Right) == null);
+            // At a container the grip's Use waits for the grip to be let go, so the right stick click can deposit with it held
+            // (Hands.QuickInventory.HoldsBack; the ray Use is done there on release, a grab's in Hands.GrabUse).
+            Set(Intent.Use, VRInput.IsPressed(Hand.Right, VRButtons.Grip) && Hands.GripClaim.Owner(Hand.Right) == null && !Hands.QuickInventory.HoldsBack);
             Set(Intent.Jump, jumpButton || stickUp);
             Set(Intent.Crouch, stickDown);
-            Set(Intent.Thrusts, !paint && !Hands.BuildMode.TakesB && !Hands.QuickInventory.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B));
+            Set(Intent.Thrusts, !paint && !Hands.BuildMode.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B));
             Set(Intent.Damping, !build && VRInput.IsPressed(Hand.Left, VRButtons.X));
-            // The left stick click held with a block in hand is building's (Hands.BuildMode.Modifier), not sprint.
-            Set(Intent.Sprint, VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier);
+            // The left stick click held with a block in hand is building's (Hands.BuildMode.Modifier), not sprint; pressed at a
+            // container it is the quick withdraw (Hands.QuickInventory.TakesLeftClick) until it is let go.
+            Set(Intent.Sprint, VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier && !Hands.QuickInventory.TakesLeftClick);
             Set(Intent.MoveCloser, Hands.BuildMode.Closer);
             Set(Intent.MoveFurther, Hands.BuildMode.Further);
             Set(Intent.UseSymmetry, Hands.BuildMode.SymmetryTap);
@@ -964,10 +979,18 @@ namespace SpaceEngineersVR.Input
             if (seatSticks)
             {
                 seatMove = ShipStick.Move(leftStick, up, down, feel);
-                // Holding the controls, the grips are the hold and the stick hand's sideways tilt is the roll.
-                seatRoll = ControlGrip.Gates
-                    ? ControlGrip.Roll(feel, sensitivity)
-                    : ShipStick.Roll(Squeeze(Hand.Left), Squeeze(Hand.Right), feel, sensitivity);
+                // Holding the controls, the grips are the hold and the stick hand is a flight stick: its sideways tilt is the
+                // roll, its forward and back tilt the pitch and its twist the yaw (each yaw can be turned off), added to the
+                // right stick's turn (no more than a full push of it). The stick not held, Gate takes the turn away.
+                if (ControlGrip.Gates)
+                {
+                    seatRoll = ControlGrip.Roll(feel, sensitivity);
+                    if (!VRSettings.YawFromThumbstick)
+                        seatRotation.Y = 0f;
+                    seatRotation = ShipStick.LimitTurn(seatRotation + ControlGrip.PitchAndYaw(feel, sensitivity), feel, sensitivity);
+                }
+                else
+                    seatRoll = ShipStick.Roll(Squeeze(Hand.Left), Squeeze(Hand.Right), feel, sensitivity);
                 HandFlight.Apply(ref seatRotation, ref seatMove, ref seatRoll, up, down, feel);
                 ControlGrip.Gate(leftStick, rightStick, ref seatRotation, ref seatMove, ref seatRoll, ref fire, ref secondary, ref up, ref down);
             }

@@ -52,6 +52,8 @@ namespace SpaceEngineersVR.Gui
             (Controls,  "Controllers",    "stickDeadzone"),
             (Controls,  "Controllers",    "shipStickSensitivity"),
             (Controls,  "Piloting",       "handsOnControls"),
+            (Controls,  "Piloting",       "yawFromTwist"),
+            (Controls,  "Piloting",       "yawFromThumbstick"),
             (Controls,  "Hand flying",    "handFlying"),
             (Controls,  "Hand flying",    "stickMaxAngle"),
             (Controls,  "Hand flying",    "throttleTravel"),

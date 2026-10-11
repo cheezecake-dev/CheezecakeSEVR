@@ -16,7 +16,8 @@ namespace SpaceEngineersVR.Input
     /// <summary>
     /// Hands on the controls to fly: in a pilot seat the ship flies only while the player holds its controls, at the
     /// places the game's own pilot animation puts the astronaut's hands in that seat. The dominant hand holds the stick
-    /// (turn and pitch on the right thumbstick, roll by tilting the hand, the triggers' fire), the other the throttle (the
+    /// (the right thumbstick's turn and pitch, and the hand's own: pitch by tilting it forward or back like a flight stick,
+    /// yaw by twisting it, roll by tilting it sideways; the triggers' fire), the other the throttle (the
     /// left thumbstick's move, A and B up and down). The panel buttons (dampeners, lights, landing gear, Y, Menu) work
     /// without holding anything. Letting go of a control takes its inputs away at once.
     /// </summary>
@@ -31,8 +32,8 @@ namespace SpaceEngineersVR.Input
     /// so a hand closed to point at the cab's screens and buttons is left free to press them. A grip that closes in the
     /// zone, or a closed grip that comes into it, holds the control for as long as the button stays down, wherever the
     /// hand goes: a controller out of the headset's view loses its position tracking and its reported position drifts, so
-    /// the hold never depends on the palm's place (only its turn is read for the stick's roll while the position is not
-    /// tracked: <see cref="HandState.PositionTracked"/>). A grip that starts on something else (Grab to use, the external
+    /// the hold never depends on the palm's place (only its turn is read for the stick's pitch, yaw and roll while the
+    /// position is not tracked: <see cref="HandState.PositionTracked"/>). A grip that starts on something else (Grab to use, the external
     /// view screen) is that feature's (<see cref="GripClaim"/>, which asks this one last).</para>
     /// <para>While held the astronaut's hand is drawn on the control as the animation has it, eased in and out
     /// (<see cref="DrawShare"/>); not held, the arm follows the controller. A hand coming into its zone gets a light
@@ -125,7 +126,7 @@ namespace SpaceEngineersVR.Input
             public float Distance(Vector3 p) => Vector3.Distance(p, Game);
         }
 
-        /// <summary>One control: whether held, since when, and the hand's turn when it took hold (for roll).</summary>
+        /// <summary>One control: whether held, since when, and the hand's turn when it took hold (for pitch, yaw and roll).</summary>
         private struct Control
         {
             public bool Held, InZone;
@@ -142,7 +143,9 @@ namespace SpaceEngineersVR.Input
         private static bool active, hooked;
         private static MyCockpit seat;
         private static Control stick, throttle;
-        private static float tiltRight;
+
+        /// <summary>The held stick's turn from how it was taken (<see cref="HandFlight.Tilt"/>): tilt forward, tilt right and twist right, radians; zero while it is not held.</summary>
+        private static Vector3 tilt;
         private static bool hintShown;
         private static MyCockpit noPoseLogged;
         private static int errors, drawErrors;
@@ -241,11 +244,11 @@ namespace SpaceEngineersVR.Input
                 }
                 Update(Hand.Left);
                 Update(Hand.Right);
-                tiltRight = 0f;
+                tilt = Vector3.Zero;
                 if (stick.Held)
                 {
                     Matrix delta = Matrix.Transpose(stick.Rotation) * Turn(VRInput.Get(StickHand).Grip);
-                    tiltRight = HandFlight.Tilt(delta, stick.SeatYaw).Y;
+                    tilt = HandFlight.Tilt(delta, stick.SeatYaw);
                 }
             }
             catch (Exception e)
@@ -256,12 +259,22 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>Roll from tilting the held stick sideways from how it was taken (+ right), as the pad's stick would give it.</summary>
-        public static float Roll(in GamepadFeel feel, float sensitivity) => StickHeld ? ShipStick.TiltRoll(tiltRight, feel, sensitivity) : 0f;
+        public static float Roll(in GamepadFeel feel, float sensitivity) => StickHeld ? ShipStick.TiltRoll(tilt.Y, feel, sensitivity) : 0f;
+
+        /// <summary>
+        /// Pitch and yaw from tilting and twisting the held stick from how it was taken, as the pad's right stick would give
+        /// them (x pitch, y yaw, + right, <see cref="ShipStick.Rotation"/>): tilted forward the nose goes down and pulled back
+        /// it goes up, as a flight stick's does, and twisted to the right it yaws right (unless <see cref="VRSettings.YawFromTwist"/> is off).
+        /// Nothing while the stick is not held.
+        /// </summary>
+        public static Vector2 PitchAndYaw(in GamepadFeel feel, float sensitivity) =>
+            StickHeld ? ShipStick.TiltTurn(tilt.X, VRSettings.YawFromTwist ? tilt.Z : 0f, feel, sensitivity) : Vector2.Zero;
 
         /// <summary>
         /// Game thread, in the seat's input: what the hands ask of a pilot seat, with what an unheld control drives taken
         /// out when the controls fly only while held. The throttle: the move (left stick) and up and down (A, B). The
-        /// stick: turn and pitch (right stick), roll, and fire (the triggers). Also the "take hold" hint, and the log.
+        /// stick: turn and pitch (right stick, and the hand's tilt and twist, added by the caller), roll, and fire (the
+        /// triggers). Also the "take hold" hint, and the log.
         /// </summary>
         public static void Gate(Vector2 leftStick, Vector2 rightStick, ref Vector2 rotation, ref Vector3 move, ref float roll,
                                 ref bool fire, ref bool secondary, ref bool up, ref bool down)
@@ -451,7 +464,7 @@ namespace SpaceEngineersVR.Input
             if (c.Held)
             {
                 // A controller out of the headset's view keeps reporting a position that drifts: nothing here depends on it
-                // while held, so say so, and only its turn is read (the stick's roll; hand flying's throttle keeps its last push).
+                // while held, so say so, and only its turn is read (the stick's pitch, yaw and roll; hand flying's throttle keeps its last push).
                 bool lost = !VRInput.Get(hand).PositionTracked;
                 if (lost != c.PositionLost)
                 {
@@ -647,7 +660,7 @@ namespace SpaceEngineersVR.Input
         private static void Report(string asked, string given)
         {
             double now = MySession.Static?.ElapsedGameTime.TotalSeconds ?? 0d;
-            string key = $"stick {(stick.Held ? "held" : "free")} (tilt {MathHelper.ToDegrees(tiltRight):0}), throttle {(throttle.Held ? "held" : "free")}; hands ask {asked}; to the game {given}";
+            string key = $"stick {(stick.Held ? "held" : "free")} (tilt forward {MathHelper.ToDegrees(tilt.X):0}, right {MathHelper.ToDegrees(tilt.Y):0}, twist right {MathHelper.ToDegrees(tilt.Z):0}), throttle {(throttle.Held ? "held" : "free")}; hands ask {asked}; to the game {given}";
             // The cockpit's own indicators, as its last MoveAndRotate left them (a frame behind): a change there is a line too.
             string cockpit = string.Empty;
             if (seat != null && MoveIndicator != null && RotationIndicator != null && RollIndicator != null)

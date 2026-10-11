@@ -63,6 +63,7 @@ namespace SpaceEngineersVR.Tracking
             if (!GameHead.Take())
             {
                 GameHead.GameHeadShown(__instance.HeadLocalYAngle);
+                MagBootsSmoothing.Apply(__instance, ref __result);
                 return;
             }
             // Got up from a seat: the head is placed from the on-foot centre again (the seat's was the sit-down's).
@@ -86,6 +87,8 @@ namespace SpaceEngineersVR.Tracking
             __result = result;
             if (includeX && includeY)
                 CameraShake.NoteEye(__instance, result.Translation);
+            // On magnetic boots the head rides the smoothed up, not the body's (the hands, tools and lasers are placed by it too).
+            MagBootsSmoothing.Apply(__instance, ref __result);
             GameHead.UsedForView();
         }
     }

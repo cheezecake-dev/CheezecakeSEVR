@@ -9,9 +9,10 @@ namespace SpaceEngineersVR.Input
     /// menu (B, or the left Menu button), shown the first time a menu has focus while there is a HUD to show it on; on foot,
     /// once, where the tools wheel and the wrist panel (inventory, terminal, G menu) are; and the first time the inventory
     /// opens, that the trigger twice on an item moves it to the other inventory (the game's double click,
-    /// MyTerminalInventoryController's TransferToOppositeFirst); and the first time the right hand is on a container, its quick
-    /// take and dump on A and B (Hands.QuickInventory: the game's middle mouse there has a prompt only for what the hand's ray
-    /// points at, naming the mouse, and Alt + middle mouse has none). How to leave a seat is not here: the game's own line on
+    /// MyTerminalInventoryController's TransferToOppositeFirst); and the first time the hand points at a container (empty, or with
+    /// a tool in it) or the right hand is on one, its quick take, production and dump on the stick clicks (Hands.QuickInventory:
+    /// the game's middle mouse there has a prompt only for what the hand's ray points at, naming the mouse, and Alt and Shift +
+    /// middle mouse have none). How to leave a seat is not here: the game's own line on
     /// the seat names it ("Hold Y to leave Passenger Seat 2", <see cref="VRPrompts.LeaveFormat"/>). Off with the Control
     /// hints setting (<see cref="VRSettings.ControlHints"/>); B and Menu close a menu either way.
     /// </summary>
@@ -41,8 +42,8 @@ namespace SpaceEngineersVR.Input
                 ? "X on an item: move it to the other inventory.  Hold right grip: 10, trigger: 100, both: 1000.  B: back"
                 : "A on an item: move it to the other inventory.  Hold left grip: 10, trigger: 100, both: 1000.  B: back";
 
-        /// <summary>The right hand on a container (cargo, a connector, a conveyor port), the first time in a session: A and B there, and the grip.</summary>
-        public const string ContainerText = "A: withdraw components for the Build Planner.  B: deposit all.  Right grip: open";
+        /// <summary>The hand pointing at a container (cargo, a connector, a conveyor port), or a tool in it aimed at one, or the right hand on one, the first time in a session: the stick clicks there.</summary>
+        public const string ContainerText = "Left stick click: withdraw for the Build Planner.  Right stick click: put the planner in production.  Grip + right stick click: deposit all.";
 
         /// <summary>How long a reminder stays up, milliseconds of simulation time.</summary>
         public const int Milliseconds = 4000;
@@ -70,8 +71,9 @@ namespace SpaceEngineersVR.Input
         /// <summary>
         /// Game thread, once per frame: <paramref name="menu"/> a menu (not the radial wheel) has focus,
         /// <paramref name="walking"/> on foot or on the jetpack with no menu, <paramref name="inventory"/> the
-        /// terminal's inventory page is open, and <paramref name="container"/> the right hand is on a container where A and B
-        /// take and dump.
+        /// terminal's inventory page is open, and <paramref name="container"/> the hand points at a container (a tool in it aims at
+        /// one, or it is empty) or the right hand is on one, where the stick clicks take, put the planner in production and, with
+        /// the right grip held, dump.
         /// </summary>
         public static void Update(bool menu, bool walking = false, bool inventory = false, bool container = false)
         {
@@ -86,7 +88,7 @@ namespace SpaceEngineersVR.Input
             if (!inventory)
                 inventoryPending = false;
             bool walkPending = walking && !walkShown;
-            // Pending while the hand stays on the container, as the others wait for their situation.
+            // Pending while the hand stays at the container, as the others wait for their situation.
             bool containerPending = container && !menu && !containerShown;
             if (!VRSettings.ControlHints || broken || (!menuPending && !inventoryPending && !walkPending && !containerPending))
                 return;

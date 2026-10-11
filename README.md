@@ -22,7 +22,7 @@ It is a plugin for [Pulsar](https://github.com/SpaceGT/Pulsar), installed from t
 - **A PC VR headset** with an OpenXR runtime that supports Direct3D 11.
   - **Tested:** Meta Quest 3 over Meta Link (cable), on an NVIDIA RTX 3060.
   - **Should work, untested:** Air Link, Virtual Desktop, and SteamVR headsets.
-  - **Controllers, bindings offered, untested:** Valve Index, HTC Vive, Windows Mixed Reality, HP Reverb G2, Steam
+  - **Controllers, bindings offered, untested:** Valve Index, HTC Vive (its own layout, see [Vive wands](#vive-wands)), Windows Mixed Reality, HP Reverb G2, Steam
     Frame, PICO 4, PICO 4 Ultra and PICO Neo3. Quest 3, 3S and Quest Pro controllers use the Touch bindings, the ones
     tested. None of the others has been tried yet. The bindings for the Steam Frame, PICO and HP Reverb G2 controllers
     were informed by Fuchs's
@@ -57,7 +57,8 @@ To play flat again, disable the plugin in Pulsar's Plugins menu, or start with `
   - Seated: your head becomes your astronaut's eyes, standing tall, wherever it is when you recentre.
 - **Height (Standing):** set up the headset's play area first, so it knows where the floor is. Then go to Options > VR
   > **Calibrate height**, stand straight and click. Your eye height is measured after 3 seconds and saved.
-- **Comfort:** turning is a 30 degree snap turn by default. Options > VR > **Comfort** also has:
+- **Comfort:** turning is a 30 degree snap turn by default. On magnetic boots the view is steadied against the bumps of
+  the hull or asteroid underfoot; your own turning is not slowed. Options > VR > **Comfort** also has:
   - smooth turn;
   - a comfort vignette;
   - camera shake (off by default);
@@ -84,16 +85,16 @@ example "Press [Right grip] to open".
 | | On foot / jetpack | Seat: cockpit, rover, remote control | Turret, searchlight | Build mode (block in hand) |
 |---|---|---|---|---|
 | Left stick | walk / fly, the way your head faces | forward, back, strafe (rover: throttle, steer) | - | as on foot / jetpack |
-| Left stick click | sprint; jetpack in zero g, held: the right stick pitches and rolls you | lights | - | held: the right hand, right stick, A and B work the block (see Building); no sprint, no zero-g roll |
+| Left stick click | sprint; jetpack in zero g, held: the right stick pitches and rolls you. Pointing at a container, or right hand on one: withdraw for the Build Planner (no sprint or roll) | lights | - | held: the right hand, right stick, A and B work the block (see Building); no sprint, no zero-g roll |
 | Right stick left / right | snap turn (or smooth turn) | yaw | turn | snap turn; with the left stick click held, a push turns the block 90 deg |
 | Right stick up / down | on foot: up jumps, down crouches; jetpack: up / down | pitch | pitch | as on foot / jetpack; with the left stick click held, a push moves the block farther (up) or nearer (down) |
-| Right stick click | reload, with a hand weapon | landing gear | - | large / small block |
+| Right stick click | reload, with a hand weapon. Pointing at a container, or right hand on one: put the Build Planner in production; with the right grip held: deposit all | landing gear | - | large / small block |
 | Right trigger | primary: fire, weld, grind, drill | primary | fire | place the block |
 | Left trigger | secondary (with a gun: nothing; raise the gun to your eye to use its sight) | secondary | - | remove the block (creative; in survival the grinder removes blocks) |
-| Right grip | use, or grab what your hand is on; on your helmet: suit lamp | hold the flight stick (see below) | - | as on foot: use, or grab what your hand is on |
+| Right grip | use, or grab what your hand is on; on your helmet: suit lamp. At a container the use waits until you let go of the grip | hold the flight stick: tilt it to roll or pitch, twist it to yaw (see below) | - | as on foot: use, or grab what your hand is on |
 | Left grip | in empty air: tools wheel; on something: grab; on your helmet: suit lamp; at its mouth: push to talk | hold the throttle; at the mouth: push to talk | at the mouth: push to talk | as on foot / jetpack |
-| A | jump; jetpack: up. Right hand on a container: take what the Build Planner needs | up | zoom in, held | jump; jetpack: up. With the left stick click held: the block's next stage. Right hand on a container: take, as on foot |
-| B | jetpack on / off. Right hand on a container: deposit all | down | zoom out, held | jetpack on / off. With the left stick click held: the previous stage. Right hand on a container: deposit all |
+| A | jump; jetpack: up | up | zoom in, held | jump; jetpack: up. With the left stick click held: the block's next stage |
+| B | jetpack on / off | down | zoom out, held | jetpack on / off. With the left stick click held: the previous stage |
 | X | dampeners on / off | dampeners on / off | - | tap: symmetry on / off; hold: next symmetry plane (creative) |
 | Y | wrist panel | tap: tools wheel; hold half a second: leave the seat | hold half a second: leave | wrist panel (the block menu is on its tile) |
 | Menu | tap: game menu; hold: recentre | as on foot | as on foot | as on foot |
@@ -106,19 +107,28 @@ example "Press [Right grip] to open".
   hull it grabs it, and on a cargo container, refinery, terminal, door or seat it uses it (the game's highlight and a light
   tick show your hand is on one), so you can open an inventory without putting the block away. A fingertip still presses
   buttons; a floating item is picked up with the left hand. A refused place or remove gives a double buzz.
-- **Quick take and dump:** with your right hand on a cargo container, connector, conveyor port, refinery or anything else
-  with an inventory (the highlight shows it), the right grip open and the left stick click not held, A takes the components your Build Planner needs
-  and B deposits all (but hand tools, ammunition, bottles and consumables), as the game's middle mouse and Alt + middle
-  mouse do there. With a block in hand and the planner empty, A first puts that block in the planner, as the middle mouse
-  does. The game's own messages say what happened ("All components were successfully withdrawn.", the components that
-  are missing, "All possible components were deposited."). On foot, on the jetpack and with a block in hand; not with
-  a tool in your right hand, nor with the colour tool, and not from a seat. A container you may not use leaves A and B as
-  jump and the jetpack. A reminder shows the first time your hand is on one.
+- **Quick take, production and dump:** point at a cargo container, connector, conveyor port, refinery, assembler or
+  anything else with an inventory, where the middle mouse works in the flat game (the game's highlight shows it), with
+  a welder, grinder or hand drill in your hand or with nothing in it; or rest your right hand on one (the highlight shows
+  it), which is the way with Left-handed on, where the tool or gun is in your left hand. Then the
+  **left stick click** takes the components your Build Planner needs, the **right stick click** puts the Build Planner in
+  production in the grid's assemblers, and the **right stick click with the right grip held** deposits all (but hand tools,
+  ammunition, bottles and consumables), as the game's middle mouse, Shift + middle mouse and Alt + middle mouse do there.
+  The game's own messages say what happened ("All components were successfully withdrawn.", the components that are
+  missing, "All possible components were deposited.", the production's success or failure). On foot and on the jetpack;
+  not with a block in hand (the stick clicks are building's), nor with the colour tool, and not from a seat. A click taken
+  here is not sprint, the zero-g roll or reload. At a container the right grip's use (opening the inventory) waits until
+  you let go of the grip, so a deposit does not also open it; a deposit made with the grip held cancels the use. A
+  container you may not use leaves the clicks as they were. A reminder shows the first time you point at one or your
+  hand is on one.
 - **Flying with your hands on the controls** (on by default): in a cockpit, the ship flies only while you hold its
   controls, where the astronaut's hands rest. Close your right grip near the stick and your left near the throttle. A
   light buzz tells you when a hand is close enough.
   - The throttle hand gives the left stick and A / B.
-  - The stick hand gives the right stick and the triggers, and rolls when you tilt it sideways.
+  - The stick hand gives the right stick and the triggers, and flies like a flight stick: tilt it sideways to roll,
+    forward to put the nose down, back to pull it up, and twist it to yaw. The right stick's pitch and yaw work too.
+    Options > VR > Controls has **Yaw from twisting the stick hand** and **Yaw from the thumbstick** (both on): turn
+    either off to leave the yaw to the other. Pitch and roll by tilting are always on.
   - Let go and that hand's input stops. A control stays held for as long as the grip stays closed, wherever the hand
     goes, so it keeps working with the hand out of the headset's view.
   - X, Y, Menu and the stick clicks work without holding anything.
@@ -132,6 +142,30 @@ example "Press [Right grip] to open".
 - Steam Frame controllers: the left controller's View button is Menu, and its D-pad's down and up are X and Y. The
   right controller's X and Y, the bumpers and the D-pad's left and right do nothing. PICO and HP Reverb G2 controllers
   have the Quest's buttons in the same places.
+
+### Vive wands
+
+A wand has a trackpad and one Menu button where the Quest's controller has a stick and four buttons, so the Quest's
+controls are made from them. The triggers and grips are as on the Quest. Each row below is one Quest control, so the
+controls table above applies to it.
+
+| Wand | Is the Quest's | Notes |
+|---|---|---|
+| Left trackpad, touched | left stick | walk / fly, tools wheel slots |
+| Left trackpad, clicked | left stick click | |
+| Left Menu | Y | wrist panel; in a seat tap: tools wheel, hold half a second: leave the seat |
+| Right trackpad, touched | nothing | a resting thumb never turns you |
+| Right trackpad, clicked at the left or right | right stick left / right | turn (in a seat: yaw) |
+| Right trackpad, clicked at the top or bottom | right stick up / down | on foot jump / crouch, jetpack up / down. In a seat: A (up) and B (down), the thrust up and down |
+| Right trackpad, clicked in the middle | right stick click | reload, landing gear, production, block size |
+| Right Menu, tap | B | jetpack on / off, down thrust in a seat, back in menus |
+| Right Menu, held half a second | Menu, tapped | the game menu |
+
+- There is no X: the dampeners are on the wrist panel and the actions wheel.
+- Recentre with SteamVR's own reset. The plugin follows it.
+- In a seat the right pad's up and down are thrust, so pitch comes from tilting the stick hand (see **Flying with your
+  hands on the controls**).
+- In menus and the tools wheel, the right pad clicked up or down is the stick, and a tap of the right Menu button is B.
 
 ### Menus
 
@@ -211,7 +245,10 @@ This is **early access**. These are the known issues and limits:
   - the actions wheel's Voxel material page (creative);
   - the wrist panel's Heal tile;
   - the HUD on the visor, on foot and in a seat;
-  - zero-g pitch and roll staying off while you are in gravity.
+  - zero-g pitch and roll staying off while you are in gravity;
+  - the view steadied on magnetic boots (on an asteroid your body and arms still rock; the view does not);
+  - pitch and yaw from the held flight stick;
+  - the Vive wand layout, not yet tried on real wands.
 - **In a cockpit, the controller's laser can drift while the ship falls or moves fast.** A fix is in progress.
 - **Multiplayer has not been tested.** Your arms and where you hold your tool are only shown on your own PC. Other players
   see your tool where their game animates it, but your shots still go where your hand points.

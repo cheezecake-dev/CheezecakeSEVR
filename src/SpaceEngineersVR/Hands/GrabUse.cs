@@ -52,7 +52,10 @@ namespace SpaceEngineersVR.Hands
     /// from where it took hold (in the door's own frame, so a ship's motion does not count), so a stray grip does not slam
     /// it. A use that spends money (a vending machine's Buy) needs the hand held on it for <see cref="DeliberateSeconds"/>.
     /// A use that is held (a medical room's healing, <c>ContinuousUsage</c>) goes on every frame while the hand stays on
-    /// it, and is finished when the hand moves away or lets go, as the key's hold and release do.</para>
+    /// it, and is finished when the hand moves away or lets go, as the key's hold and release do. The right grip that goes down
+    /// at a container (<see cref="QuickInventory.HoldsBack"/>: the hand points at one or rests on one) keeps its claim but waits:
+    /// the use is due as above and done when the grip is let go, once, unless a deposit was taken meanwhile (the stick click with
+    /// the grip held), which drops it (<see cref="UseOrWait"/>, <see cref="LetGo"/>).</para>
     /// <para>In a seat (first person, the seat's own view): the seat itself and everything else of the seat's own block
     /// are left out, so a grip on the armrest does nothing and standing up stays on its button. A grip anywhere that is not
     /// on a use object is the seat's: the hand flying and the roll.</para>
@@ -274,6 +277,10 @@ namespace SpaceEngineersVR.Hands
 
             /// <summary>Fired: used (or, for a paid use, given up on as the hand moved off it).</summary>
             public bool Fired, Used, Continuing;
+
+            /// <summary>The use is due but waits for the grip to be let go (<see cref="QuickInventory.HoldsBack"/>), and how it would have been said.</summary>
+            public bool HeldBack;
+            public string HeldBackHow;
             public long Since;
         }
 
@@ -370,7 +377,7 @@ namespace SpaceEngineersVR.Hands
 
         private static bool Enabled => hooked && !Off && VRSettings.GrabToUse && VRInput.Active;
 
-        /// <summary>Runs a game call with the character's detector answering with <paramref name="use"/>, as <see cref="Use"/> does (<see cref="QuickInventory"/>'s take and dump).</summary>
+        /// <summary>Runs a game call with the character's detector answering with <paramref name="use"/>, as <see cref="Use"/> does (<see cref="QuickInventory"/>'s take, dump and production).</summary>
         internal static void AnswerWith(IMyUseObject use, Action call)
         {
             answer = use;
@@ -389,6 +396,13 @@ namespace SpaceEngineersVR.Hands
         {
             IMyUseObject use = hover[(int)hand];
             return Enabled && lastPlace == Place.OnFoot && held[(int)hand] == null && use != null && !Gone(use) ? use : null;
+        }
+
+        /// <summary>What a hand has taken hold of on foot (its grip is the grab's until it is let go); null otherwise. <see cref="QuickInventory"/> keeps it as the target while the grip is held.</summary>
+        internal static IMyUseObject Grabbed(Hand hand)
+        {
+            Held grab = held[(int)hand];
+            return Enabled && lastPlace == Place.OnFoot && grab != null && !Gone(grab.Use) ? grab.Use : null;
         }
 
         /// <summary>
@@ -550,7 +564,7 @@ namespace SpaceEngineersVR.Hands
             Held grab = held[i];
             if (grab != null && !holds)
             {
-                LetGo(hand, character, grab, "let go");
+                LetGo(hand, character, grab, "let go", true);
                 grab = held[i] = null;
             }
             if (holds && grab == null)
@@ -578,7 +592,7 @@ namespace SpaceEngineersVR.Hands
                         case Kind.Door:
                             double pulled = (ToOwnerFrame(grab.Use, palm) - grab.StartLocal).Length();
                             if (pulled >= DoorPull)
-                                Use(hand, character, grab, $"; pulled {pulled * 100:0.0} cm");
+                                UseOrWait(hand, character, grab, $"; pulled {pulled * 100:0.0} cm");
                             break;
                         case Kind.Deliberate:
                             double seconds = (now - grab.Since) / (double)Stopwatch.Frequency;
@@ -588,10 +602,10 @@ namespace SpaceEngineersVR.Hands
                                 Say($"Grab use: {hand} hand moved off '{grab.Tag}' {grab.Use.GetType().Name} after {seconds:0.00} s; not used");
                             }
                             else if (seconds >= DeliberateSeconds)
-                                Use(hand, character, grab, $"; held {seconds:0.00} s");
+                                UseOrWait(hand, character, grab, $"; held {seconds:0.00} s");
                             break;
                         default:
-                            Use(hand, character, grab, string.Empty);
+                            UseOrWait(hand, character, grab, string.Empty);
                             break;
                     }
                 }
@@ -638,6 +652,22 @@ namespace SpaceEngineersVR.Hands
             {
                 hover[i] = null;
             }
+        }
+
+        /// <summary>
+        /// The grab's use, now; or, with the right grip's Use held back at a container (<see cref="QuickInventory.HoldsBack"/>:
+        /// the stick click deposits with the grip held), noted as due and done when the grip is let go (<see cref="LetGo"/>).
+        /// </summary>
+        private static void UseOrWait(Hand hand, MyCharacter character, Held grab, string how)
+        {
+            if (hand != Hand.Right || !QuickInventory.HoldsBack)
+            {
+                Use(hand, character, grab, how);
+                return;
+            }
+            grab.Fired = true;
+            grab.HeldBack = true;
+            grab.HeldBackHow = how;
         }
 
         /// <summary>The Use key's press of the grabbed object: the character's own <c>Use()</c> with the detector answering with it.</summary>
@@ -723,12 +753,65 @@ namespace SpaceEngineersVR.Hands
             }
         }
 
-        private static void LetGo(Hand hand, MyCharacter character, Held grab, string how)
+        /// <summary>The Use key's press and release of an object once, for a right grip's Use that waited (<see cref="QuickInventory"/>): the same call as <see cref="Use"/>, then <c>UseFinished()</c> for a held use. False when the game's call failed.</summary>
+        internal static bool Tap(MyCharacter character, IMyUseObject use)
         {
+            try
+            {
+                if (character.GetDetectorComponent() == null)
+                    return false;
+                answer = use;
+                try
+                {
+                    character.Use();
+                    if (use.ContinuousUsage)
+                        character.UseFinished();
+                }
+                finally
+                {
+                    answer = null;
+                }
+                Haptics.Pulse(Hand.Right, UseAmplitude, UseSeconds);
+                return true;
+            }
+            catch (Exception e)
+            {
+                if (useErrors++ < 3)
+                    Log.Error(e, $"Grab to use: the game's Use failed on {Describe(use?.Owner)}");
+                return false;
+            }
+        }
+
+        private static void LetGo(Hand hand, MyCharacter character, Held grab, string how, bool released = false)
+        {
+            if (grab.HeldBack)
+                UseHeldBack(hand, character, grab, how, released);
             if (grab.Continuing)
                 Finish(character, grab);
             double seconds = (Stopwatch.GetTimestamp() - grab.Since) / (double)Stopwatch.Frequency;
             Say($"Grab use: {hand} hand {how} '{grab.Tag}' {grab.Use?.GetType().Name} ({(grab.Used ? "used" : "not used")}, held {seconds:0.00} s)");
+        }
+
+        /// <summary>
+        /// A use that waited for the right grip, at the end of the grip: done now when the grip was <paramref name="released"/>
+        /// and no deposit was taken meanwhile (<see cref="QuickInventory.Deposited"/>), dropped otherwise. One log line either way.
+        /// </summary>
+        private static void UseHeldBack(Hand hand, MyCharacter character, Held grab, string how, bool released)
+        {
+            grab.HeldBack = false;
+            string outcome;
+            if (QuickInventory.Deposited)
+                outcome = "dropped for a deposit";
+            else if (Gone(grab.Use))
+                outcome = "dropped (the thing went away)";
+            else if (!released)
+                outcome = $"dropped ({how})";
+            else
+            {
+                Use(hand, character, grab, grab.HeldBackHow + "; held back until the grip was let go");
+                outcome = grab.Used ? "used once the grip was let go" : "not used (the game's Use failed)";
+            }
+            QuickInventory.NoteHeldBack(grab.Use, "the hand on it", outcome);
         }
 
         private static void ForgetAll(MyCharacter character, bool leftHolds, bool rightHolds)
@@ -749,7 +832,7 @@ namespace SpaceEngineersVR.Hands
             }
         }
 
-        private static bool Gone(IMyUseObject use)
+        internal static bool Gone(IMyUseObject use)
         {
             IMyEntity owner = use?.Owner;
             return owner == null || owner.Closed || owner.MarkedForClose;

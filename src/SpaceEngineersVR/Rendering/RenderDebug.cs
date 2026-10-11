@@ -118,6 +118,8 @@ namespace SpaceEngineersVR.Rendering
     /// CameraShake=0 (Off), 1 (Low, a quarter) or 2 (Full) sets how much of the game's camera shake, camera spring and walking head bob reaches the view, whatever the Camera shake setting says (<see cref="Tracking.CameraShake"/>).
     /// ExitUpright=0 leaves getting up from a seat in gravity to the game, which places the character tilted as the vehicle is and then turns it upright over the next frames, the view with it (<see cref="Tracking.ExitUpright"/>); ExitUprightTrace=1 logs every frame of the 3 s after getting up: the body's tilt and the view's pitch, roll and yaw from the frame before.
     /// ZeroGPivot=0 leaves zero-g pitch and roll from the hands turning the body about its middle, as the game's jetpack does, instead of about the eyes (<see cref="Tracking.ZeroGPivot"/>).
+    /// MagBootsSmoothing=0 gives the view on magnetic boots the body's up again, which the game turns toward the surface in 2.3 deg steps, instead of a smoothed up
+    /// (<see cref="Tracking.MagBootsSmoothing"/>; its 10 s "Magnetic boots" log line measures both either way); MagBootsSmoothingMs=n smooths over n ms (20 to 2000) instead of 200.
     /// MenuHoldRecentre=0 makes the left Menu button what it was before the hold: the game menu or Back from the press, and no recentre (<see cref="Input.VRControls.MenuHoldOff"/>).
     /// SharedShadows=1 fits one set of sun shadow cascades for both eyes (<see cref="SharedShadows"/>; off until checked in game);
     /// SharedSpotShadows=1 draws the spot light shadow maps once, in the first eye, ProbeOnce=1 steps the environment probe once a frame (<see cref="SceneOnce"/>; both off until checked in game);
@@ -333,6 +335,8 @@ namespace SpaceEngineersVR.Rendering
             Tracking.ExitUpright.Off = false;
             Tracking.ExitUpright.Trace = false;
             Tracking.ZeroGPivot.Off = false;
+            Tracking.MagBootsSmoothing.Off = false;
+            Tracking.MagBootsSmoothing.SmoothSeconds = Tracking.MagBootsSmoothing.DefaultSmoothSeconds;
             Input.DesktopHands.PollEveryFrames = 15;
             Input.VRControls.MenuHoldOff = false;
             Input.ControlGrip.Debug = null;
@@ -468,6 +472,18 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Tracking.ZeroGPivot.Off = setting == 0;
                         applied.Add($"ZeroGPivot={!Tracking.ZeroGPivot.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("MagBootsSmoothing", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.MagBootsSmoothing.Off = setting == 0;
+                        applied.Add($"MagBootsSmoothing={!Tracking.MagBootsSmoothing.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("MagBootsSmoothingMs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.MagBootsSmoothing.SmoothSeconds = Math.Max(20, Math.Min(2000, setting)) / 1000.0;
+                        applied.Add($"MagBootsSmoothingMs={Tracking.MagBootsSmoothing.SmoothSeconds * 1000.0:0}");
                         continue;
                     }
                     if (pair[0].Equals("ExitUpright", StringComparison.OrdinalIgnoreCase))

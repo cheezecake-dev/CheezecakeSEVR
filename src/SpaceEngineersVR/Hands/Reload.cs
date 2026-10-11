@@ -40,7 +40,9 @@ namespace SpaceEngineersVR.Hands
     /// hulls (a hand under the weapon is reaching for the weapon). A hand within <see cref="TwoHand.GrabReach"/> of the
     /// weapon's left-hand spot is never taken, whether or not two-handed holds are on. Nothing attaches: the claim only
     /// keeps the grip from also opening the tools wheel until it is let go.</para>
-    /// <para>The button: B is the jetpack on foot, so the right stick click, which does nothing on foot otherwise.</para>
+    /// <para>The button: B is the jetpack on foot, so the right stick click, which does nothing on foot otherwise (and with a
+    /// hand pointing at a container, or on one, it is the Build Planner's production, or its deposit with the right grip held:
+    /// <see cref="QuickInventory"/>).</para>
     /// </remarks>
     internal static class Reload
     {
@@ -165,7 +167,8 @@ namespace SpaceEngineersVR.Hands
                     down = false;
                     return false;
                 }
-                bool button = VRInput.IsPressed(ButtonHand, Button);
+                // The click taken for the Build Planner's production or deposit (QuickInventory) stays out of reload until it is let go.
+                bool button = VRInput.IsPressed(ButtonHand, Button) && !QuickInventory.TakesClick;
                 bool gesture = GripClaim.Holds(TwoHand.OffHand, ClaimName);
                 bool want = button || gesture;
                 if (want && !down)

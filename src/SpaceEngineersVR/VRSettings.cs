@@ -573,7 +573,13 @@ namespace SpaceEngineersVR
             tooltip: "How fast the right stick and the grips turn a ship, a turret or a camera. 1 matches a gamepad pushed all the way."));
 
         private static readonly FlagSetting handsOnControls = Add(new FlagSetting("handsOnControls", "Hands on the controls to fly", "Controls", true,
-            tooltip: "In a cockpit or rover seat the ship flies only while you hold its controls: close your grip with the dominant hand where the astronaut's hand holds the stick, and the other where it holds the throttle. Anywhere on that hand's side between your hips and chin counts, your lap included. The throttle hand gives the left stick's move and A/B up and down; the stick hand the right stick's turn and pitch, roll by tilting your hand sideways, and the triggers' fire. Dampeners, lights, landing gear, Y and Menu work without holding. Off: the sticks and grips fly the ship as on a gamepad."));
+            tooltip: "In a cockpit or rover seat the ship flies only while you hold its controls: close your grip with the dominant hand where the astronaut's hand holds the stick, and the other where it holds the throttle. Anywhere on that hand's side between your hips and chin counts, your lap included. The throttle hand gives the left stick's move and A/B up and down; the stick hand the right stick's turn and pitch, the triggers' fire, and a flight stick's tilt: sideways to roll, forward to put the nose down, back to pull it up, twist to yaw. Dampeners, lights, landing gear, Y and Menu work without holding. Off: the sticks and grips fly the ship as on a gamepad."));
+
+        private static readonly FlagSetting yawFromTwist = Add(new FlagSetting("yawFromTwist", "Yaw from twisting the stick hand", "Controls", true,
+            tooltip: "While you hold the stick in a ship seat, twisting your hand to the right or left yaws the ship that way, as a flight stick's twist does. Off: the twist adds no yaw. Tilting the hand forward and back (pitch) and sideways (roll) are always on."));
+
+        private static readonly FlagSetting yawFromThumbstick = Add(new FlagSetting("yawFromThumbstick", "Yaw from the thumbstick", "Controls", true,
+            tooltip: "While you hold the stick in a ship seat, the right thumbstick's left and right yaws the ship. Off: it gives no yaw there (up and down still pitches), so the stick hand's twist is the only yaw. The thumbstick is unchanged in a turret, on foot, and with Hands on the controls to fly off."));
 
         private static readonly FlagSetting handFlying = Add(new FlagSetting("handFlying", "Hand flying", "Controls", false,
             tooltip: "In a ship seat, press a grip with your hand by the stick (dominant hand) or throttle (other hand) to take hold of it, and fly by moving the controller. Off: thumbsticks and grips only."));
@@ -911,6 +917,12 @@ namespace SpaceEngineersVR
 
         /// <summary>In a pilot seat the ship flies only while its stick and throttle are held (<see cref="Input.ControlGrip"/>).</summary>
         public static bool HandsOnControls => handsOnControls.Value;
+
+        /// <summary>The held stick's twist yaws the ship (<see cref="Input.ControlGrip.PitchAndYaw"/>).</summary>
+        public static bool YawFromTwist => yawFromTwist.Value;
+
+        /// <summary>The right thumbstick's left and right yaws the ship while the stick is held (<see cref="Input.ControlGrip"/>).</summary>
+        public static bool YawFromThumbstick => yawFromThumbstick.Value;
 
         /// <summary>Grab the stick and throttle in a ship seat and fly by moving the controllers (<see cref="Input.HandFlight"/>).</summary>
         public static bool HandFlying => handFlying.Value;
