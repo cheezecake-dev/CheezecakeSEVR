@@ -12,7 +12,9 @@ using Sandbox.Game.World;
 using VRage.Game.Entity;
 using VRage.Library.Utils;
 using VRage.Render.Scene;
+using VRage.Utils;
 using VRageMath;
+using MyTransparentGeometry = VRage.Game.MyTransparentGeometry;
 
 namespace SpaceEngineersVR.Rendering
 {
@@ -34,21 +36,30 @@ namespace SpaceEngineersVR.Rendering
     /// The camera alone cannot be moved: the vehicle or body carrying it is drawn from the same 60 Hz game frame, so
     /// moving only the camera would move that judder onto the cockpit, the body and the hands. So the camera and the
     /// carrier's render roots (every grid mechanically joined to a controlled seat's grid, by their cells' cull objects;
-    /// the pilot or the character on foot by its cull object; the held tool) move together by the carrier's velocity at
+    /// the pilot or the character on foot by its cull object; the held tool and its parts) move together by the carrier's velocity at
     /// the eye times how much older this frame's game frame is than the running mean (the mean is left out, so on
     /// average everything is where the simulation put it). The roots are put back after the eyes are drawn.
     /// </para>
     /// <para>
-    /// Not moved: billboards (the lasers, hand rays and wrist screen this plugin draws, thruster and jetpack flames),
-    /// lights that are not parented to a grid cell, and loose objects riding the vehicle: they keep the game frame's place
-    /// and so show the v x 7 ms judder against the carrier instead of against the world. Rotation is not extrapolated: a
-    /// turning vehicle still turns in 60 Hz steps. RenderDebug MotionExtrapolation=0 turns it off.
+    /// A billboard given in a render object's space is placed by that object's matrix as the eyes are drawn
+    /// (MyBillboardRenderer.GatherInternal reads its parent's WorldMatrix), so one given in the local character's space
+    /// moves with the roots: the lasers (<see cref="AddLine"/>, <see cref="AddPoint"/>), and the game's own jetpack flames.
+    /// Not moved: billboards given in the world (the hand rays, the controls' rings and the wrist screen this plugin draws,
+    /// thruster flames), lights that are not parented to a grid cell, and loose objects riding the vehicle: they keep the
+    /// game frame's place and so show the v x 7 ms judder against the carrier instead of against the world. Rotation is
+    /// not extrapolated: a turning vehicle still turns in 60 Hz steps. RenderDebug MotionExtrapolation=0 turns it off.
     /// </para>
     /// </remarks>
     internal static class MotionExtrapolation
     {
         /// <summary>RenderDebug MotionExtrapolation=0 turns it off.</summary>
         public static bool On = true;
+
+        /// <summary>RenderDebug LaserRide=0: the lasers are given in the world again, as before (<see cref="AddLine"/>), for comparison.</summary>
+        public static bool RideOff { get; set; }
+
+        /// <summary>RenderDebug ToolPartsRide=0: the held tool's parts are left where the game frame put them again, as before (<see cref="AddTool"/>), for comparison.</summary>
+        public static bool PartsOff { get; set; }
 
         /// <summary>No shift beyond one game step either way, ms.</summary>
         private const double MaxShiftMs = 1000.0 / 60.0;
@@ -182,9 +193,117 @@ namespace SpaceEngineersVR.Rendering
         {
             if (((MyEntity)character).Render is MyRenderComponentCharacter render)
                 s.Add(cullRenderId(render));
-            if (character.CurrentWeapon is MyEntity tool && tool.Render?.RenderObjectIDs is uint[] ids)
+            if (character.CurrentWeapon is MyEntity tool)
+                AddTool(s, tool);
+        }
+
+        private static MyEntity loggedTool;
+        private static int loggedParts = -1;
+        private static bool loggedPartsOff;
+
+        /// <summary>
+        /// The held tool's render objects and its parts': the drill's spike, the grinder's disc, the rifle's magazine. A part
+        /// is an entity of its own (MyEntitySubpart, made from the model's subpart dummies in MyEntity.RefreshModels) with a
+        /// render object that is a root in the renderer: the game parents a part's render object to its owner only for some
+        /// blocks' parts (doors, turrets), and a part sends its own world matrix whenever the tool moves
+        /// (MyPositionComponent.OnWorldPositionChanged). So with only the tool's own render object moved on, the part kept
+        /// the game frame's place and slid against the tool and the hand by the carrier's velocity times how far the frame's
+        /// age is from the mean: walking at 6 m/s, the drill's tip went back and forth along the walk, up to 4 cm either way,
+        /// 12 times a second. Logs the tool and its parts when they change.
+        /// </summary>
+        private static void AddTool(Sample s, MyEntity tool)
+        {
+            AddRenderObjects(s, tool);
+            int before = s.Count;
+            if (!PartsOff)
+                AddParts(s, tool);
+            int parts = s.Count - before;
+            if (ReferenceEquals(tool, loggedTool) && parts == loggedParts && PartsOff == loggedPartsOff)
+                return;
+            loggedTool = tool;
+            loggedParts = parts;
+            loggedPartsOff = PartsOff;
+            string names = tool.Subparts != null && tool.Subparts.Count > 0 ? string.Join(", ", tool.Subparts.Keys) : "none";
+            Log.Info(PartsOff
+                ? $"Motion extrapolation: the held {tool.GetType().Name} moves with the carrier, its parts ({names}) are left where the game frame put them (ToolPartsRide=0)"
+                : $"Motion extrapolation: the held {tool.GetType().Name} moves with the carrier, with {parts} render object(s) of its parts ({names})");
+        }
+
+        /// <summary>The render objects of <paramref name="entity"/>'s parts, and of theirs.</summary>
+        private static void AddParts(Sample s, MyEntity entity)
+        {
+            if (entity.Subparts == null)
+                return;
+            foreach (MyEntitySubpart part in entity.Subparts.Values)
+            {
+                AddRenderObjects(s, part);
+                AddParts(s, part);
+            }
+        }
+
+        private static void AddRenderObjects(Sample s, MyEntity entity)
+        {
+            if (entity.Render?.RenderObjectIDs is uint[] ids)
                 foreach (uint id in ids)
                     s.Add(id);
+        }
+
+        // ---- game thread, in the draw: billboards that ride with the carrier ----
+
+        private static uint lastRide = uint.MaxValue;
+        private static bool rideLogged;
+
+        /// <summary>
+        /// A line from the hand, as MyTransparentGeometry.AddLineBillboard draws one, but given in the local character's
+        /// space, so the renderer places it by the character as the eyes are drawn. The character, the cockpit it sits in
+        /// and the eyes are moved on by <see cref="Begin"/>; a line given in the world is not, and so moves against the hand
+        /// and the cockpit by the carrier's velocity times how far the frame's age is from the mean, every headset frame
+        /// (up to one game step: 1.7 m at 100 m/s). Where there is no living local character it is given in the world.
+        /// </summary>
+        public static void AddLine(MyStringId material, Vector4 color, Vector3D origin, Vector3 direction, float length, float thickness)
+        {
+            if (TryRide(out uint id, out MatrixD worldToLocal))
+                MyTransparentGeometry.AddLineBillboard(material, color, origin, id, ref worldToLocal, direction, length, thickness);
+            else
+                MyTransparentGeometry.AddLineBillboard(material, color, origin, direction, length, thickness);
+        }
+
+        /// <summary>A dot facing the game's camera, given in the local character's space as <see cref="AddLine"/> gives a line.</summary>
+        public static void AddPoint(MyStringId material, Vector4 color, Vector3D origin, float radius)
+        {
+            if (TryRide(out uint id, out MatrixD worldToLocal))
+                MyTransparentGeometry.AddPointBillboard(material, color, origin, id, ref worldToLocal, radius, 0f);
+            else
+                MyTransparentGeometry.AddPointBillboard(material, color, origin, radius, 0f);
+        }
+
+        /// <summary>
+        /// The local character's cull object, which <see cref="Begin"/> moves for it on foot and in a seat, and the move
+        /// from the world into its space as the renderer has it this game frame: the inverse of the character's world
+        /// matrix, which the character sends the cull object whenever it moves (MyRenderComponentCharacter.InvalidateRenderObjects).
+        /// The game places its jetpack flames the same way. The root itself rather than the model under it: the model's
+        /// matrix is worked out from its parent's when it is read, and the billboards are read on the renderer's workers.
+        /// </summary>
+        private static bool TryRide(out uint id, out MatrixD worldToLocal)
+        {
+            id = uint.MaxValue;
+            worldToLocal = MatrixD.Identity;
+            MyCharacter body = MySession.Static?.LocalCharacter;
+            if (!RideOff && body?.PositionComp != null && !body.IsDead && !body.Closed
+                && ((MyEntity)body).Render is MyRenderComponentCharacter render)
+                id = cullRenderId(render);
+            if (id != lastRide || !rideLogged)
+            {
+                lastRide = id;
+                rideLogged = true;
+                Log.Info(id != uint.MaxValue
+                    ? $"Motion extrapolation: the lasers ride with the local character (cull object {id}), so they move with the carrier"
+                    : $"Motion extrapolation: the lasers are given in the world ({(RideOff ? "LaserRide=0" : "no living local character")})");
+            }
+            if (id == uint.MaxValue)
+                return false;
+            worldToLocal = MatrixD.Invert(body.PositionComp.WorldMatrixRef);
+            return true;
         }
 
         // ---- render thread ----

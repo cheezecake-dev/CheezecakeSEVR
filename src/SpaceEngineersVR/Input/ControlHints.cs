@@ -9,7 +9,9 @@ namespace SpaceEngineersVR.Input
     /// menu (B, or the left Menu button), shown the first time a menu has focus while there is a HUD to show it on; on foot,
     /// once, where the tools wheel and the wrist panel (inventory, terminal, G menu) are; and the first time the inventory
     /// opens, that the trigger twice on an item moves it to the other inventory (the game's double click,
-    /// MyTerminalInventoryController's TransferToOppositeFirst). How to leave a seat is not here: the game's own line on
+    /// MyTerminalInventoryController's TransferToOppositeFirst); and the first time the right hand is on a container, its quick
+    /// take and dump on A and B (Hands.QuickInventory: the game's middle mouse there has a prompt only for what the hand's ray
+    /// points at, naming the mouse, and Alt + middle mouse has none). How to leave a seat is not here: the game's own line on
     /// the seat names it ("Hold Y to leave Passenger Seat 2", <see cref="VRPrompts.LeaveFormat"/>). Off with the Control
     /// hints setting (<see cref="VRSettings.ControlHints"/>); B and Menu close a menu either way.
     /// </summary>
@@ -39,14 +41,20 @@ namespace SpaceEngineersVR.Input
                 ? "X on an item: move it to the other inventory.  Hold right grip: 10, trigger: 100, both: 1000.  B: back"
                 : "A on an item: move it to the other inventory.  Hold left grip: 10, trigger: 100, both: 1000.  B: back";
 
+        /// <summary>The right hand on a container (cargo, a connector, a conveyor port), the first time in a session: A and B there, and the grip.</summary>
+        public const string ContainerText = "A: withdraw components for the Build Planner.  B: deposit all.  Right grip: open";
+
         /// <summary>How long a reminder stays up, milliseconds of simulation time.</summary>
         public const int Milliseconds = 4000;
 
         /// <summary>Test seam: stands in for the HUD. Gets the text and the time; false when it could not be shown.</summary>
         internal static Func<string, int, bool> ShowOverride { get; set; }
 
-        private static bool wasMenu, wasInventory, menuPending, menuShown, walkShown, inventoryPending, inventoryShown, broken;
+        private static bool wasMenu, wasInventory, menuPending, menuShown, walkShown, inventoryPending, inventoryShown, containerShown, broken;
         private static MyHudNotificationBase current;
+
+        /// <summary>The reminder up is the walk or the container one: both come up on foot, and neither takes the other's place while it shows.</summary>
+        private static bool onFootHint;
 
         /// <summary>Whether the menu reminder has been shown this session.</summary>
         internal static bool MenuShown => menuShown;
@@ -54,16 +62,18 @@ namespace SpaceEngineersVR.Input
         /// <summary>Forgets what was shown (a new session in a test).</summary>
         internal static void Reset()
         {
-            wasMenu = wasInventory = menuPending = menuShown = walkShown = inventoryPending = inventoryShown = broken = false;
+            wasMenu = wasInventory = menuPending = menuShown = walkShown = inventoryPending = inventoryShown = containerShown = broken = false;
+            onFootHint = false;
             current = null;
         }
 
         /// <summary>
         /// Game thread, once per frame: <paramref name="menu"/> a menu (not the radial wheel) has focus,
-        /// <paramref name="walking"/> on foot or on the jetpack with no menu, and <paramref name="inventory"/> the
-        /// terminal's inventory page is open.
+        /// <paramref name="walking"/> on foot or on the jetpack with no menu, <paramref name="inventory"/> the
+        /// terminal's inventory page is open, and <paramref name="container"/> the right hand is on a container where A and B
+        /// take and dump.
         /// </summary>
-        public static void Update(bool menu, bool walking = false, bool inventory = false)
+        public static void Update(bool menu, bool walking = false, bool inventory = false, bool container = false)
         {
             if (menu && !wasMenu && !menuShown)
                 menuPending = true;
@@ -76,22 +86,36 @@ namespace SpaceEngineersVR.Input
             if (!inventory)
                 inventoryPending = false;
             bool walkPending = walking && !walkShown;
-            if (!VRSettings.ControlHints || broken || (!menuPending && !inventoryPending && !walkPending))
+            // Pending while the hand stays on the container, as the others wait for their situation.
+            bool containerPending = container && !menu && !containerShown;
+            if (!VRSettings.ControlHints || broken || (!menuPending && !inventoryPending && !walkPending && !containerPending))
                 return;
 
+            // The walk or the container reminder still up: the other one comes when it has gone.
+            bool onFootUp = onFootHint && current != null && current.Alive;
             if (inventoryPending && Show(InventoryText))
             {
                 // It says B: back as well, so the menu one is not needed after it.
                 inventoryPending = menuPending = false;
                 inventoryShown = menuShown = true;
+                onFootHint = false;
             }
             else if (menuPending && Show(MenuText))
             {
                 menuPending = false;
                 menuShown = true;
+                onFootHint = false;
             }
-            else if (walkPending && !menuPending && Show(WristButton.Enabled ? WalkText : WalkTextNoWrist))
+            else if (!onFootUp && containerPending && Show(ContainerText))
+            {
+                containerShown = true;
+                onFootHint = true;
+            }
+            else if (!onFootUp && walkPending && !menuPending && Show(WristButton.Enabled ? WalkText : WalkTextNoWrist))
+            {
                 walkShown = true;
+                onFootHint = true;
+            }
         }
 
         /// <summary>A reminder from elsewhere, now (the seat's "take hold of the stick", <see cref="ControlGrip"/>), under the Control hints setting; false when not shown.</summary>

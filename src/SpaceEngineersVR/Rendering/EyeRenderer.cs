@@ -519,6 +519,8 @@ namespace SpaceEngineersVR.Rendering
             var bound = new MyViewport((gui.X - gui.X * scale) / 2f, (gui.Y - gui.Y * scale) / 2f, gui.X * scale, gui.Y * scale);
             try
             {
+                // The HUD's fixed parts out of the queue first, to go on the visor (HudVisor); the rest into the panel.
+                HudVisor.Split(gui, scale);
                 object target = HudPanel.Begin(gui);
                 renderMainSprites.Invoke(null, new object[] { target, bound, full, new Vector2(gui.X, gui.Y), null });
             }

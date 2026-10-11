@@ -17,6 +17,8 @@ namespace SpaceEngineersVR.Rendering
     /// once a second, e.g. "SSAO=0 Shadows=0"; names are MyRenderDebugOverrides fields, or one of <see cref="Paths"/>.
     /// RightFirst=1 draws the right eye first; EyeOffset=0 turns off <see cref="EyeOffset"/>,
     /// SharedBillboards=1 lets the eyes share <see cref="OnceBillboards"/>, HudCamera=0 turns off <see cref="HudCamera"/>,
+    /// HudVisor=0 puts the whole HUD back on the flat panel (<see cref="HudVisor"/>), HudVisorCylinder=0 draws its pieces on flat quads
+    /// even when the runtime offers cylinder layers,
     /// PanelCursor=0 turns off <see cref="PanelCursor"/>, WorldMenu=0 makes menus head-locked like the HUD (<see cref="WorldMenu"/>),
     /// FullView=0 turns off <see cref="FullView"/>, VRInput=0 stops the hands reaching the game (<see cref="VRControls"/>),
     /// BloodPulse=0 gives the blood overlay the game's own flashes back (<see cref="BloodPulse"/>); BloodTest=N draws it as if the
@@ -38,7 +40,7 @@ namespace SpaceEngineersVR.Rendering
     /// and the 20 frames after (<see cref="Tracking.ArmJump"/>).
     /// ControlGrip=0/1 turns "Hands on the controls to fly" off or on whatever the setting says; ControlGripLog=1 logs what the hands
     /// ask of a pilot seat and what reaches the game each time it changes (<see cref="Input.ControlGrip"/>); ControlGripTake=14 how
-    /// close to the pose's palm a grip takes a stick or throttle, cm, and ControlGripRelease=22 how far it goes before letting go.
+    /// close to the pose's palm a grip takes a stick or throttle, cm.
     /// HandResidual=1 logs once a second how far the drawn palms are from the controllers; HandGhost=1 draws each controller's
     /// grip pose as a small axis triad, with a dot where the palm belongs (<see cref="Tracking.HandResidual"/>); HandGhost=2 also draws
     /// the handle as an orange bar and a cyan dot where the finger press takes the index fingertip to be (FingerReach=&lt;mm&gt; tries another reach past the finger's last joint).
@@ -91,6 +93,7 @@ namespace SpaceEngineersVR.Rendering
     /// TwoHandRoll=90 lets the other hand turn round the handle it holds to suit its forearm, up to 90 degrees each way (0, the
     /// default: exactly as the game's LeftHand spot has it); TwoHandSlide=30 moves it 30 mm along the handle toward its little finger.
     /// SurfaceStop=0 lets the drawn hands pass through hulls, walls, floors and rock (<see cref="Hands.SurfaceStop"/>);
+    /// SurfaceStopGlass=0 lets them pass through window and canopy glass only (<see cref="Hands.GlassPanes"/>);
     /// SurfaceStopTrace=1 logs each touch (depth, normal, what) and each thing passed.
     /// Kickback=0 turns off the kick of a two-handed tool or gun used in one hand, whatever the "Tool and weapon kickback" setting
     /// says; KickbackTrace=1 logs it every frame while an item is in use or settling (<see cref="Hands.Kickback"/>). These three take
@@ -120,7 +123,10 @@ namespace SpaceEngineersVR.Rendering
     /// SharedSpotShadows=1 draws the spot light shadow maps once, in the first eye, ProbeOnce=1 steps the environment probe once a frame (<see cref="SceneOnce"/>; both off until checked in game);
     /// DynamicResolution=0/1 turns dynamic resolution off or on whatever the setting says, RenderScale=n (percent) holds the eyes at n% each way
     /// (<see cref="Rendering.DynamicResolution"/>); MotionExtrapolation=0 draws the view and its carrier where the game frame put them, in 60 Hz steps,
-    /// instead of moved on by how much older the game frame is than usual (<see cref="Rendering.MotionExtrapolation"/>); DesktopIpd=0 (mm) sets how far
+    /// instead of moved on by how much older the game frame is than usual (<see cref="Rendering.MotionExtrapolation"/>); LaserRide=0 gives the lasers
+    /// in the world again, so they are not moved on with the view and the cockpit (<see cref="Rendering.MotionExtrapolation.AddLine"/>); ToolPartsRide=0 leaves
+    /// the held tool's parts (the drill's spike, the grinder's disc) where the game frame put them again, so they slide against the tool while the body moves
+    /// (<see cref="Rendering.MotionExtrapolation.PartsOff"/>); DesktopIpd=0 (mm) sets how far
     /// apart the desktop eyes are, in place of the IPD setting (0 draws both from one point, so the two halves of the window should match);
     /// ShadowFreeze=1 is the renderer's own frozen shadow camera (the cascades stop following the view), UsageSkip=0 stops it skipping
     /// cascades few pixels use.
@@ -225,9 +231,13 @@ namespace SpaceEngineersVR.Rendering
             Rendering.DynamicResolution.Debug = null;
             Rendering.DynamicResolution.FixedScale = null;
             Rendering.MotionExtrapolation.On = true;
+            Rendering.MotionExtrapolation.RideOff = false;
+            Rendering.MotionExtrapolation.PartsOff = false;
             EyeOffset.Off = false;
             OnceBillboards.Shared = false;
             HudCamera.Off = false;
+            HudVisor.Off = false;
+            HudVisor.NoCylinder = false;
             PanelCursor.Off = false;
             WorldMenu.Off = false;
             FullView.Off = false;
@@ -287,6 +297,7 @@ namespace SpaceEngineersVR.Rendering
             Hands.TwoHand.RollMost = Hands.TwoHand.DefaultRollMost;
             Hands.TwoHand.SlideDebug = 0f;
             Hands.SurfaceStop.Off = false;
+            Hands.SurfaceStop.GlassOff = false;
             Hands.SurfaceStop.Trace = false;
             Hands.Kickback.Off = false;
             Hands.Kickback.Trace = false;
@@ -327,7 +338,6 @@ namespace SpaceEngineersVR.Rendering
             Input.ControlGrip.Debug = null;
             Input.ControlGrip.LogInputs = false;
             Input.ControlGrip.TakeDebug = null;
-            Input.ControlGrip.ReleaseDebug = null;
 
             var applied = new List<string>();
             foreach (string part in (text ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries))
@@ -490,12 +500,6 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"ControlGripTake={Input.ControlGrip.TakeRadius * 100f:0} cm");
                         continue;
                     }
-                    if (pair[0].Equals("ControlGripRelease", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Input.ControlGrip.ReleaseDebug = Math.Max(1, Math.Min(80, setting)) / 100f;
-                        applied.Add($"ControlGripRelease={Input.ControlGrip.ReleaseRadius * 100f:0} cm");
-                        continue;
-                    }
                     if (pair[0].Equals("MenuHoldRecentre", StringComparison.OrdinalIgnoreCase))
                     {
                         Input.VRControls.MenuHoldOff = setting == 0;
@@ -512,6 +516,18 @@ namespace SpaceEngineersVR.Rendering
                     {
                         HudCamera.Off = setting == 0;
                         applied.Add($"HudCamera={!HudCamera.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HudVisor", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HudVisor.Off = setting == 0;
+                        applied.Add($"HudVisor={!HudVisor.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HudVisorCylinder", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HudVisor.NoCylinder = setting == 0;
+                        applied.Add($"HudVisorCylinder={!HudVisor.NoCylinder}");
                         continue;
                     }
                     if (pair[0].Equals("FullView", StringComparison.OrdinalIgnoreCase))
@@ -826,6 +842,12 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"SurfaceStop={!Hands.SurfaceStop.Off}");
                         continue;
                     }
+                    if (pair[0].Equals("SurfaceStopGlass", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.SurfaceStop.GlassOff = setting == 0;
+                        applied.Add($"SurfaceStopGlass={!Hands.SurfaceStop.GlassOff}");
+                        continue;
+                    }
                     if (pair[0].Equals("SurfaceStopTrace", StringComparison.OrdinalIgnoreCase))
                     {
                         Hands.SurfaceStop.Trace = setting != 0;
@@ -980,6 +1002,18 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Rendering.MotionExtrapolation.On = setting != 0;
                         applied.Add($"MotionExtrapolation={setting != 0}");
+                        continue;
+                    }
+                    if (pair[0].Equals("LaserRide", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Rendering.MotionExtrapolation.RideOff = setting == 0;
+                        applied.Add($"LaserRide={setting != 0}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ToolPartsRide", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Rendering.MotionExtrapolation.PartsOff = setting == 0;
+                        applied.Add($"ToolPartsRide={setting != 0}");
                         continue;
                     }
                     if (pair[0].Equals("RenderScale", StringComparison.OrdinalIgnoreCase))

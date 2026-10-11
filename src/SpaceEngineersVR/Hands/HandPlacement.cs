@@ -143,7 +143,7 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// Postfix of <c>MyGridClipboard.GetPasteMatrix()</c>: a pose at the hand, facing where it points (the game's is the
-        /// head's). While the right grip turns the paste, the ray it had when the grip closed (<see cref="BuildMode"/>).
+        /// head's). While the left stick click turns the paste, the ray it had when the click went down (<see cref="BuildMode"/>).
         /// </summary>
         private static void AfterPasteMatrix(ref MatrixD __result)
         {
@@ -178,7 +178,7 @@ namespace SpaceEngineersVR.Hands
                 Sandbox.Game.Entities.Character.MyCharacter character = MySession.Static?.LocalCharacter;
                 if (!HandTools.IsLocalOnFoot(character))
                     return false;
-                // While the right grip turns the block the ray stays where it was when the grip closed (BuildMode).
+                // While the left stick click turns the block the ray stays where it was when the click went down (BuildMode).
                 return BuildMode.TryFrozenRay(character, out origin, out direction) || HandTools.TryGetRay(out origin, out direction);
             }
             catch (Exception e)

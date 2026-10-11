@@ -43,7 +43,7 @@ namespace SpaceEngineersVR.Input
     /// turret or a camera block. The analog parts (walking, flying, steering, the snap turn) are added to the game's
     /// movement, rotation and roll input; the buttons answer the game's questions about its controls. Everything is
     /// added to what the keyboard, mouse and a gamepad give, never instead of it. With a block in hand on foot or on the jetpack the
-    /// right grip (with the right stick, A and B) and X build (<see cref="Hands.BuildMode"/>, which also has a paste and the voxel hand), and with the colour
+    /// left stick click (with the right hand, the right stick, A and B) and X build (<see cref="Hands.BuildMode"/>, which also has a paste and the voxel hand; the click is not sprint or zero-g pitch and roll then), and with the colour
     /// tool the triggers, A, B and the right stick's flick paint (<see cref="Hands.PaintMode"/>); the game's radial menu is opened and steered by
     /// <see cref="ToolbarWheel"/>, which has the hands while it is up. On the jetpack in zero g the left stick click held makes
     /// the right stick pitch and roll (<see cref="UpdateZeroG"/>); the free spectator camera is flown by the same sticks
@@ -112,10 +112,10 @@ namespace SpaceEngineersVR.Input
             /// <summary>Block in hand: the right stick click switches between the large and small block (CUBE_BUILDER_CUBESIZE_MODE).</summary>
             CubeSize,
 
-            /// <summary>Block in hand: the right grip with A steps to the block's next stage, its next variant (NEXT_BLOCK_STAGE, the mouse wheel).</summary>
+            /// <summary>Block in hand: the left stick click with A steps to the block's next stage, its next variant (NEXT_BLOCK_STAGE, the mouse wheel).</summary>
             NextStage,
 
-            /// <summary>Block in hand: the right grip with B steps to the previous stage (PREV_BLOCK_STAGE).</summary>
+            /// <summary>Block in hand: the left stick click with B steps to the previous stage (PREV_BLOCK_STAGE).</summary>
             PrevStage,
 
             // The colour tool in hand (Hands.PaintMode).
@@ -319,10 +319,10 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         internal static bool ZeroGHeld => ZeroGClick() && CanPitchAndRoll(out _);
 
-        /// <summary>The left stick click is down on the jetpack, outside a camera block's view, with zero-g pitch and roll not Off.</summary>
+        /// <summary>The left stick click is down on the jetpack, outside a camera block's view, with zero-g pitch and roll not Off, and not held to build (<see cref="Hands.BuildMode.Modifier"/>).</summary>
         private static bool ZeroGClick() =>
             context == VRContext.Jetpack && !cameraView && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff
-            && VRInput.IsPressed(Hand.Left, VRButtons.StickClick);
+            && VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier;
 
         /// <summary>
         /// Game thread, once per frame, right after <see cref="VRInput.Update"/>: works out which control set the
@@ -357,6 +357,7 @@ namespace SpaceEngineersVR.Input
             {
                 Hands.BuildMode.Frame(VRContext.None, true, seconds);
                 Hands.PaintMode.Frame(VRContext.None, true);
+                Hands.QuickInventory.Frame(VRContext.None, true);
                 context = VRContext.None;
                 cameraView = seatSticks = false;
                 ControlGrip.Frame(false);
@@ -394,12 +395,14 @@ namespace SpaceEngineersVR.Input
             rightStick = Dead(VRInput.Get(Hand.Right).Stick);
 
             ApplyWheel(seconds);
-            // With a block in hand (or a paste, or the voxel hand) the right stick is building's while the right grip is held for
+            // With a block in hand (or a paste, or the voxel hand) the right stick is building's while the left stick click is held for
             // it: a turn sideways, the distance up and down; with the colour tool a sideways flick of the right stick picks the
             // colour, so it does not turn.
             object menu = MenuScreen();
             Hands.BuildMode.Frame(context, ToolbarWheel.Owns || menu != null, seconds);
             Hands.PaintMode.Frame(context, ToolbarWheel.Owns || menu != null);
+            // The right hand on a container: A and B are the game's quick take and dump there, not jump and the jetpack.
+            Hands.QuickInventory.Frame(context, ToolbarWheel.Owns || menu != null);
             if (Hands.BuildMode.StickBusy || Hands.PaintMode.TakesStick(rightStick))
                 rightStick = Vector2.Zero;
             zoomAsked = false;
@@ -435,7 +438,8 @@ namespace SpaceEngineersVR.Input
             UpdateBack(menuNow);
             ControlHints.Update(menuNow != null && !ToolbarWheel.Owns && !(menuNow is Gui.ActionsWheelScreen),
                 walking: menuNow == null && !ToolbarWheel.Owns && (context == VRContext.OnFoot || context == VRContext.Jetpack),
-                inventory: menuNow is MyGuiScreenTerminal && MyGuiScreenTerminal.GetCurrentScreen() == VRage.Game.ModAPI.MyTerminalPageEnum.Inventory);
+                inventory: menuNow is MyGuiScreenTerminal && MyGuiScreenTerminal.GetCurrentScreen() == VRage.Game.ModAPI.MyTerminalPageEnum.Inventory,
+                container: Hands.QuickInventory.Ready);
             LogBack();
             InputLog.Frame(seconds, WhereNow);
         }
@@ -714,15 +718,16 @@ namespace SpaceEngineersVR.Input
                 flickArmed = true;
 
             // With a block in hand X is symmetry (Hands.BuildMode) instead of the dampers, and A and B stay jump (the jetpack's
-            // climb) and the jetpack, except a press made with the right grip held, which steps the block's stage. A paste and
-            // the voxel hand leave A, B and X as they are; the colour tool takes A and B for its brush (Hands.PaintMode).
+            // climb) and the jetpack, except a press made with the left stick click held, which steps the block's stage. A paste and
+            // the voxel hand leave A, B and X as they are; the colour tool takes A and B for its brush (Hands.PaintMode). A and B
+            // pressed with the right hand on a container are its quick take and dump (Hands.QuickInventory), with or without a block.
             bool build = Hands.BuildMode.Active;
             // A hand weapon's left trigger is only its iron sight, which in VR is the gun brought up to the eye (Hands.IronSight).
             if (Hands.IronSight.Frame())
                 SwallowTrigger(Hand.Left, "a hand weapon's left trigger (its iron sight)");
             bool paint = Hands.PaintMode.Active;
             bool place = TriggerHeld(Hand.Right), remove = TriggerHeld(Hand.Left);
-            jumpButton = !paint && !Hands.BuildMode.TakesA && VRInput.IsPressed(Hand.Right, VRButtons.A);
+            jumpButton = !paint && !Hands.BuildMode.TakesA && !Hands.QuickInventory.TakesA && VRInput.IsPressed(Hand.Right, VRButtons.A);
             // With the colour tool the triggers paint and take a colour, as the game's gamepad has them, not primary and secondary.
             Set(Intent.Primary, place && !paint);
             Set(Intent.Secondary, remove && !paint);
@@ -737,9 +742,10 @@ namespace SpaceEngineersVR.Input
             Set(Intent.Use, VRInput.IsPressed(Hand.Right, VRButtons.Grip) && Hands.GripClaim.Owner(Hand.Right) == null);
             Set(Intent.Jump, jumpButton || stickUp);
             Set(Intent.Crouch, stickDown);
-            Set(Intent.Thrusts, !paint && !Hands.BuildMode.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B));
+            Set(Intent.Thrusts, !paint && !Hands.BuildMode.TakesB && !Hands.QuickInventory.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B));
             Set(Intent.Damping, !build && VRInput.IsPressed(Hand.Left, VRButtons.X));
-            Set(Intent.Sprint, VRInput.IsPressed(Hand.Left, VRButtons.StickClick));
+            // The left stick click held with a block in hand is building's (Hands.BuildMode.Modifier), not sprint.
+            Set(Intent.Sprint, VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier);
             Set(Intent.MoveCloser, Hands.BuildMode.Closer);
             Set(Intent.MoveFurther, Hands.BuildMode.Further);
             Set(Intent.UseSymmetry, Hands.BuildMode.SymmetryTap);

@@ -29,10 +29,11 @@ namespace SpaceEngineersVR.Input
     /// <see cref="TakeRadius"/> of where the game's pose holds it, and never while the fingertip or the palm is within
     /// <see cref="PressRange"/> of something the fingertip presses (a screen's glass, a push-button: <see cref="NearPress"/>),
     /// so a hand closed to point at the cab's screens and buttons is left free to press them. A grip that closes in the
-    /// zone, or a closed grip that comes into it, holds the control while the button is down and the palm stays within
-    /// <see cref="ReleaseRadius"/>, the wider of the two, so the hand flying the ship can drift without dropping it. A grip
-    /// that starts on something else (Grab to use, the external view screen) is that feature's (<see cref="GripClaim"/>,
-    /// which asks this one last).</para>
+    /// zone, or a closed grip that comes into it, holds the control for as long as the button stays down, wherever the
+    /// hand goes: a controller out of the headset's view loses its position tracking and its reported position drifts, so
+    /// the hold never depends on the palm's place (only its turn is read for the stick's roll while the position is not
+    /// tracked: <see cref="HandState.PositionTracked"/>). A grip that starts on something else (Grab to use, the external
+    /// view screen) is that feature's (<see cref="GripClaim"/>, which asks this one last).</para>
     /// <para>While held the astronaut's hand is drawn on the control as the animation has it, eased in and out
     /// (<see cref="DrawShare"/>); not held, the arm follows the controller. A hand coming into its zone gets a light
     /// tick and a faint ring on the control; taking hold, a firmer pulse. Pushing a stick with nothing held shows
@@ -62,27 +63,16 @@ namespace SpaceEngineersVR.Input
         public const float DefaultTakeRadius = 0.14f;
 
         /// <summary>
-        /// A held control lets go when the palm goes further than this from the pose's palm, metres (RenderDebug
-        /// ControlGripRelease=cm): 8 cm more than the take, for a hand that drifts round a stick it cannot feel.
-        /// </summary>
-        public const float DefaultReleaseRadius = 0.22f;
-
-        /// <summary>
         /// A fingertip or palm this close to something the fingertip presses (in front of a screen's glass and over it, or a
         /// push-button's box), metres, or through the glass, is a hand at that: a grip there does not take a control.
         /// </summary>
         public const double PressRange = 0.05;
 
-        /// <summary>RenderDebug ControlGripTake=cm / ControlGripRelease=cm in place of the defaults (null: the default).</summary>
+        /// <summary>RenderDebug ControlGripTake=cm in place of the default (null: the default).</summary>
         public static float? TakeDebug { get; set; }
-
-        public static float? ReleaseDebug { get; set; }
 
         /// <summary>The take radius in use, metres.</summary>
         public static float TakeRadius => TakeDebug ?? DefaultTakeRadius;
-
-        /// <summary>The release radius in use, metres; never less than the take radius.</summary>
-        public static float ReleaseRadius => Math.Max(TakeRadius, ReleaseDebug ?? DefaultReleaseRadius);
 
         /// <summary>
         /// A hand of the game's pose is on a control only if its palm is at least this far ahead of the hips (not down by
@@ -140,8 +130,8 @@ namespace SpaceEngineersVR.Input
         {
             public bool Held, InZone;
 
-            /// <summary>Let go by the palm going past the release radius with the grip still closed (until it opens): coming back takes it again.</summary>
-            public bool LetGoFar;
+            /// <summary>Held with the hand's position not tracked (a controller out of the headset's view): only its turn is read.</summary>
+            public bool PositionLost;
             public Matrix Rotation;
             public float SeatYaw;
             public double TickedAt;
@@ -436,15 +426,15 @@ namespace SpaceEngineersVR.Input
             if (!ours)
                 held = false;
             else if (c.Held)
-                held = !known || distance <= ReleaseRadius; // held until the grip opens or the palm goes past the release
+                held = true; // held until the grip opens, wherever the hand goes
             else
-                held = inZone; // claimed as it closed in the zone, or closed elsewhere and brought into it (or back into it)
+                held = inZone; // claimed as it closed in the zone, or closed elsewhere and brought into it
             if (held && !c.Held)
             {
-                if (owner == null || c.LetGoFar)
-                    Log.Info($"Hands on the controls: {Name(hand)} hand {(c.LetGoFar ? "came back" : "came")} into its zone with the grip closed, {why}: takes the {What(hand)}");
+                if (owner == null)
+                    Log.Info($"Hands on the controls: {Name(hand)} hand came into its zone with the grip closed, {why}: takes the {What(hand)}");
                 c.Held = true;
-                c.LetGoFar = false;
+                c.PositionLost = false;
                 c.InZone = false;
                 c.Rotation = Turn(VRInput.Get(hand).Grip);
                 c.SeatYaw = SeatYaw();
@@ -454,13 +444,23 @@ namespace SpaceEngineersVR.Input
             else if (!held && c.Held)
             {
                 c.Held = false;
-                c.LetGoFar = ours;
+                c.PositionLost = false;
                 Haptics.Pulse(hand, LetGoAmplitude, LetGoSeconds);
-                Log.Info($"Hands on the controls: {What(hand)} let go" +
-                         (ours ? $" with the grip still closed: the palm went {distance * 100f:F0} cm from it, past the {ReleaseRadius * 100f:F0} cm release" : string.Empty));
+                Log.Info($"Hands on the controls: {What(hand)} let go{(down ? string.Empty : ": the grip opened")}");
             }
-            if (!down)
-                c.LetGoFar = false;
+            if (c.Held)
+            {
+                // A controller out of the headset's view keeps reporting a position that drifts: nothing here depends on it
+                // while held, so say so, and only its turn is read (the stick's roll; hand flying's throttle keeps its last push).
+                bool lost = !VRInput.Get(hand).PositionTracked;
+                if (lost != c.PositionLost)
+                {
+                    c.PositionLost = lost;
+                    Log.Info(lost
+                        ? $"Hands on the controls: the {Name(hand)} controller's position is not tracked (out of the headset's view?), {why}; the {What(hand)} stays held while the grip stays closed, read by the controller's turn alone"
+                        : $"Hands on the controls: the {Name(hand)} controller's position is tracked again, {why}; the {What(hand)} is still held");
+                }
+            }
             if (c.Held || down)
             {
                 // Still followed, so letting go in the zone is the let-go pulse alone, not a tick after it.
@@ -513,7 +513,7 @@ namespace SpaceEngineersVR.Input
             }
             Vector3 palm = (Vector3)Vector3D.Transform((Vector3D)HandIK.PalmTarget(hand, state).Translation, trackingToModel);
             distance = zones[(int)hand].Distance(palm);
-            why = $"{distance * 100f:F0} cm from the game's hand (takes within {TakeRadius * 100f:F0} cm, holds within {ReleaseRadius * 100f:F0})";
+            why = $"{distance * 100f:F0} cm from the game's hand (takes within {TakeRadius * 100f:F0} cm)";
             return true;
         }
 
@@ -640,7 +640,7 @@ namespace SpaceEngineersVR.Input
             Log.Info($"Hands on the controls: the {seat?.BlockDefinition?.Id.SubtypeName}'s pose: right hand {handWhy[1]}; left hand {handWhy[0]}: " +
                      (onControls ? $"its controls {(Enabled ? "fly only while held" : "are hand flying's grab points")}" : "no grab points, its controls work without holding"));
             Log.Info($"Hands on the controls: zones in the {seat?.BlockDefinition?.Id.SubtypeName}: {Side(1)}; {Side(0)}; a grip takes a control within " +
-                     $"{TakeRadius * 100f:F0} cm of the game's hand and not within {PressRange * 100f:F0} cm of a screen or button, holds it within {ReleaseRadius * 100f:F0} cm; " +
+                     $"{TakeRadius * 100f:F0} cm of the game's hand and not within {PressRange * 100f:F0} cm of a screen or button, holds it while the grip stays closed; " +
                      $"seat yaw {MathHelper.ToDegrees(SeatYaw()):F0} deg in the tracking space");
         }
 

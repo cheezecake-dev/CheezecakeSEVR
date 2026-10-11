@@ -38,9 +38,10 @@ namespace SpaceEngineersVR.Gui
     /// it. It is there while the VR radial menus are (<see cref="VRRadialMenus.Active"/>) and the external view works.</item>
     /// </list>
     /// The middle of the ring is the empty hand: the game's put-the-weapon-away icon (the HideWeapon cell the HUD toolbar ends
-    /// with, and the base wheel's centre) named with the game's word for the 0 key, "Unequip". Dim until the stick has chosen
-    /// something and come back to the middle, then lit with the centre circle and named outside the ring
-    /// (<see cref="UpdateHighlight"/>, <see cref="UpdateTooltip"/>); letting go there empties the hand (<see cref="ToolbarWheel"/>).
+    /// with, and the base wheel's centre) named with the game's word for the 0 key, "Unequip". It is what the wheel opens
+    /// on: lit with the centre circle and named over the ring (<see cref="UpdateHighlight"/>, <see cref="UpdateTooltip"/>)
+    /// until the stick chooses a slot, which dims it, and lit again when the stick is back; a trigger there empties the hand,
+    /// and so does letting go of the grip once the stick has chosen something and come back (<see cref="ToolbarWheel"/>).
     /// What it does not do is act: <see cref="ToolbarWheel"/> reads the hands, and activates the slot with
     /// <c>ActivateItemAtSlot</c> (the empty hand with the holster slot's) and closes the screen with the game's CANCEL.
     /// <see cref="SlotWheelItem.Activate"/> does the same call for a gamepad's confirm, which the base screen turns into an
@@ -53,7 +54,7 @@ namespace SpaceEngineersVR.Gui
         private const string CentreSelectedTexture = "Textures\\GUI\\Controls\\RadialCentralCircleSelected.dds";
         private const string HolsterIcon = "Textures\\GUI\\Icons\\HideWeapon.dds";
 
-        /// <summary>The empty hand's icon before the stick has chosen it (the centre circle is dim then too).</summary>
+        /// <summary>The empty hand's icon while a slot is chosen instead (the centre circle is dim then too).</summary>
         private static readonly Vector4 EmptyHandDim = new Vector4(1f, 1f, 1f, 0.5f);
 
         /// <summary>Where the empty hand's name goes: over the ring, centred, as the top slot's name does.</summary>
@@ -100,7 +101,6 @@ namespace SpaceEngineersVR.Gui
         private MyGuiControlLabel viewLabel;
         private bool? viewShownOn;
         private bool viewShownLit;
-        private bool touched;
 
         public SlotWheelScreen(MyToolbar toolbar)
             : base(BuildData(toolbar), MyControlsSpace.SYSTEM_RADIAL_MENU, null)
@@ -191,8 +191,9 @@ namespace SpaceEngineersVR.Gui
         }
 
         /// <summary>
-        /// The centre of the base's wheel has the put-the-weapon-away icon (the centred stick; the game's HideWeapon). It stays,
-        /// dim, as the empty hand's: <see cref="UpdateHighlight"/> lights it with the centre circle.
+        /// The centre of the base's wheel has the put-the-weapon-away icon (the centred stick; the game's HideWeapon). It stays
+        /// as the empty hand's, lit as the wheel opens with the middle chosen: <see cref="UpdateHighlight"/> dims it with the
+        /// centre circle while a slot is chosen.
         /// </summary>
         private void ShowEmptyHand()
         {
@@ -201,7 +202,7 @@ namespace SpaceEngineersVR.Gui
                 if (control is MyGuiControlImage image && image.Textures != null && image.Textures.Length > 0 && image.Textures[0].Texture == HolsterIcon)
                 {
                     emptyHandIcon = image;
-                    image.ColorMask = EmptyHandDim;
+                    image.ColorMask = Vector4.One;
                 }
             }
         }
@@ -269,23 +270,21 @@ namespace SpaceEngineersVR.Gui
             }
         }
 
-        /// <summary>The switch's textures are loaded with the wheel's, so it does not appear a frame late the first time.</summary>
+        /// <summary>The switch's textures, and the dim centre circle the ring comes up without, are loaded with the wheel's, so they do not appear a frame late the first time.</summary>
         public override void GetTexturesForPreload(HashSet<string> textures)
         {
             base.GetTexturesForPreload(textures);
             textures.Add(ViewIcon);
             textures.Add(PlateLitTexture);
+            textures.Add(CentreTexture);
         }
 
         protected override void UpdateHighlight(int oldIndex, int newIndex)
         {
-            // The centre is dim as the ring comes up and lit only once the stick has chosen a slot and come back to the middle,
-            // as the actions wheel's is (ActionsWheelScreen.Refresh): lit, it says "let go here and the hand is emptied"
-            // (ToolbarWheel), which is not so before the stick has moved: let go then and the wheel only closes. The base
-            // calls this once from its constructor with (-1, -1).
-            if (newIndex >= 0)
-                touched = true;
-            bool centre = newIndex == -1 && touched;
+            // The centre is lit as the ring comes up, with no slot chosen, and whenever the stick is back in the middle: lit,
+            // it says "pull a trigger here and the hand is emptied" (ToolbarWheel), which is so from the moment the wheel opens.
+            // A chosen slot dims it. The base calls this once from its constructor with (-1, -1).
+            bool centre = newIndex == -1;
             m_cancelButton.SetTexture(centre ? CentreSelectedTexture : CentreTexture);
             if (emptyHandIcon != null)
                 emptyHandIcon.ColorMask = centre ? Vector4.One : EmptyHandDim;
@@ -352,9 +351,10 @@ namespace SpaceEngineersVR.Gui
         protected override void UpdateTooltip()
         {
             int slot = m_selectedButton;
-            if (toolbar != null && slot == -1 && touched)
+            if (toolbar != null && slot == -1)
             {
-                // The middle, chosen: the empty hand, named with the game's word for the 0 key, over the ring's top.
+                // The middle, chosen (as it is when the wheel opens): the empty hand, named with the game's word for the 0 key,
+                // over the ring's top.
                 m_tooltipName.Text = MyTexts.GetString(MyCommonTexts.ControlName_Slot0);
                 m_tooltipName.RecalculateSize();
                 m_tooltipName.Position = EmptyHandNameAt;

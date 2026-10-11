@@ -12,7 +12,8 @@ namespace SpaceEngineersVR.Rendering
     /// eyes. Instead it goes into a texture of its own, shown as a panel: with a headset as an OpenXR quad layer (the
     /// runtime composites it, so text stays sharp), and in the window drawn into each eye where that eye sees it.
     /// In plain gameplay it is a head-locked visor, <see cref="VRSettings.HudDistance"/> ahead and
-    /// <see cref="VRSettings.HudWidthDegrees"/> wide; while a menu is open it stays where it was put when the menu
+    /// <see cref="VRSettings.HudWidthDegrees"/> wide, and the HUD's fixed parts are on the visor round it in the headset
+    /// (<see cref="HudVisor"/>); while a menu is open it stays where it was put when the menu
     /// opened (<see cref="WorldMenu"/>, <see cref="VRSettings.MenuDistance"/>, <see cref="VRSettings.MenuWidthDegrees"/>).
     /// </summary>
     internal static class HudPanel
@@ -87,7 +88,10 @@ namespace SpaceEngineersVR.Rendering
             object shown = texture;
             texture = null;
             if (shown == null)
+            {
+                HudVisor.Discard();
                 return null;
+            }
             try
             {
                 Matrix head = EyeRenderer.Head;
@@ -102,6 +106,37 @@ namespace SpaceEngineersVR.Rendering
                 Matrix inHead = locked ? pose * Matrix.Invert(head) : Matrix.CreateTranslation(0f, 0f, -distance);
                 Place(locked ? pose : inHead * head, halfWidth, halfHeight);
 
+                // The headset first: the HUD's fixed parts on the visor, when they were taken out (HudVisor), and the panel
+                // without them; any the visor cannot have are drawn back into the panel first.
+                XrSession.Panel? layer = null;
+                bool headset = XrSession.InFrame && XrSession.ShouldRender;
+                bool visor = HudVisor.Show(shown, headset && !locked);
+                if (headset)
+                {
+                    SharpDX.Direct3D11.Texture2D image = XrSession.AcquirePanelImage(size.X, size.Y);
+                    try
+                    {
+                        EyeRenderer.CopyToImage(shown, image);
+                    }
+                    finally
+                    {
+                        XrSession.ReleasePanelImage();
+                    }
+                    var panel = new XrSession.Panel
+                    {
+                        Distance = distance,
+                        Width = 2f * halfWidth,
+                        Height = 2f * halfHeight,
+                        WorldLocked = locked,
+                        Pose = locked ? ToPose(pose) : default,
+                    };
+                    if (visor)
+                        HudVisor.Attach(ref panel);
+                    layer = panel;
+                }
+
+                // The window shows the whole HUD on the flat panel, as without the visor.
+                HudVisor.Finish(shown);
                 object window = EyeRenderer.Window;
                 Vector2I windowSize = EyeRenderer.WindowSize;
                 var whole = new MyViewport(windowSize.X, windowSize.Y);
@@ -123,29 +158,11 @@ namespace SpaceEngineersVR.Rendering
                     EyeRenderer.Blend(window, shown, inAreas[0]);
                 }
                 PanelCursor.Shown(areas, inAreas);
-
-                if (!XrSession.InFrame || !XrSession.ShouldRender)
-                    return null;
-                SharpDX.Direct3D11.Texture2D image = XrSession.AcquirePanelImage(size.X, size.Y);
-                try
-                {
-                    EyeRenderer.CopyToImage(shown, image);
-                }
-                finally
-                {
-                    XrSession.ReleasePanelImage();
-                }
-                return new XrSession.Panel
-                {
-                    Distance = distance,
-                    Width = 2f * halfWidth,
-                    Height = 2f * halfHeight,
-                    WorldLocked = locked,
-                    Pose = locked ? ToPose(pose) : default,
-                };
+                return layer;
             }
             finally
             {
+                HudVisor.Discard();
                 EyeRenderer.Release(shown);
             }
         }

@@ -67,6 +67,7 @@ namespace SpaceEngineersVR.OpenXR
         HapticActionInfo = 59,
         SessionActionSetsAttachInfo = 60,
         ActionsSyncInfo = 61,
+        CompositionLayerCylinderKHR = 1000017000,
         GraphicsBindingD3D11KHR = 1000027000,
         SwapchainImageD3D11KHR = 1000027001,
         GraphicsRequirementsD3D11KHR = 1000027002,
@@ -109,6 +110,9 @@ namespace SpaceEngineersVR.OpenXR
         public const float FrequencyUnspecified = 0f;
         public const string D3D11Extension = "XR_KHR_D3D11_enable";
         public const string VisibilityMaskExtension = "XR_KHR_visibility_mask";
+
+        /// <summary>Curved layers: the HUD's pieces on the visor (<see cref="Rendering.HudVisor"/>) are drawn on cylinders round the head.</summary>
+        public const string CylinderExtension = "XR_KHR_composition_layer_cylinder";
 
         /// <summary>Adds /input/palm_ext/pose to every hand's profiles (OpenXR 1.1 calls it grip_surface; the definitions are identical).</summary>
         public const string PalmPoseExtension = "XR_EXT_palm_pose";
@@ -391,6 +395,26 @@ namespace SpaceEngineersVR.OpenXR
         public XrSwapchainSubImage SubImage;
         public XrPosef Pose;
         public XrExtent2Df Size;
+    }
+
+    /// <summary>
+    /// XR_KHR_composition_layer_cylinder: an image on the inside of a cylinder round <see cref="Pose"/>, its axis along the
+    /// pose's y, the middle of the image where the pose looks (-z), <see cref="CentralAngle"/> radians across, and
+    /// <see cref="Radius"/> * <see cref="CentralAngle"/> / <see cref="AspectRatio"/> metres high.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct XrCompositionLayerCylinderKHR
+    {
+        public XrStructureType Type;
+        public IntPtr Next;
+        public ulong LayerFlags;
+        public ulong Space;
+        public XrEyeVisibility EyeVisibility;
+        public XrSwapchainSubImage SubImage;
+        public XrPosef Pose;
+        public float Radius;
+        public float CentralAngle;
+        public float AspectRatio;
     }
 
     [StructLayout(LayoutKind.Sequential)]

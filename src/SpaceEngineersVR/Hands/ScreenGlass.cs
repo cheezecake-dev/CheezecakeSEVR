@@ -328,7 +328,7 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>The point of a triangle nearest p (Ericson, Real-Time Collision Detection 5.1.5).</summary>
-        private static Vector3 Closest(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+        internal static Vector3 Closest(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
         {
             Vector3 ab = b - a, ac = c - a, ap = p - a;
             float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);

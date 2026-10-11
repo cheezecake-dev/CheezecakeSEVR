@@ -28,6 +28,9 @@ namespace SpaceEngineersVR.OpenXR
         private static ulong screenSwapchain;
         private static Texture2D[] screenImages;
         private static int screenWidth, screenHeight;
+        private static ulong visorSwapchain;
+        private static Texture2D[] visorImages;
+        private static int visorWidth, visorHeight;
         private static XrSessionState state;
         private static XrFrameState frame;
         private static readonly XrView[] views = new XrView[2];
@@ -51,7 +54,45 @@ namespace SpaceEngineersVR.OpenXR
             public bool WorldLocked;
 
             public XrPosef Pose;
+
+            /// <summary>
+            /// The HUD's pieces on the visor (<see cref="Rendering.HudVisor"/>), from the visor swapchain, over the panel and
+            /// head-locked in the VIEW space; the first <see cref="VisorCount"/> are shown. None while the panel is world-locked.
+            /// </summary>
+            public VisorPiece[] Visor;
+            public int VisorCount;
+
+            /// <summary>The pieces are cylinder layers (XR_KHR_composition_layer_cylinder); flat quads otherwise.</summary>
+            public bool VisorCylinder;
         }
+
+        /// <summary>
+        /// One piece of the HUD on the visor: a part of the visor image, on a cylinder round the head or on a flat quad
+        /// facing it. The VIEW space, metres.
+        /// </summary>
+        public struct VisorPiece
+        {
+            /// <summary>Where the piece is in the visor image, pixels.</summary>
+            public XrRect2Di Rect;
+
+            /// <summary>The way its middle lies from the head (-z), its up turned with it: the turn of the cylinder, or the quad's.</summary>
+            public XrQuaternionf Orientation;
+
+            /// <summary>Its middle, <see cref="Radius"/> from the head along <see cref="Orientation"/>: the quad's position.</summary>
+            public XrVector3f Middle;
+
+            /// <summary>How far it is from the head, how wide along the curve and how high.</summary>
+            public float Radius, Width, Height;
+        }
+
+        /// <summary>The most layers a frame here: the eyes, the external view, the panel and the visor's pieces.</summary>
+        public const int MostLayers = 16;
+
+        /// <summary>
+        /// The runtime refused a frame with the visor's pieces in it (the name of its result), and it was sent again without
+        /// them; <see cref="Rendering.HudVisor"/> takes it and puts the HUD back on the panel. Render thread.
+        /// </summary>
+        public static string VisorRefused { get; set; }
 
         /// <summary>
         /// A picture on a flat screen standing in the tracking space (LOCAL): the external view
@@ -300,6 +341,7 @@ namespace SpaceEngineersVR.OpenXR
                     Running = true;
                     break;
                 case XrSessionState.Stopping:
+                    XrInput.SessionStopping();
                     Running = false;
                     Xr.Check(Xr.xrEndSession(session), "xrEndSession", XrRuntime.Instance);
                     break;
@@ -404,6 +446,22 @@ namespace SpaceEngineersVR.OpenXR
 
         public static void ReleaseScreenImage() => Release(screenSwapchain);
 
+        /// <summary>The visor swapchain image to copy the HUD's pieces into (made again when the size changes). Pair with <see cref="ReleaseVisorImage"/>.</summary>
+        public static Texture2D AcquireVisorImage(int width, int height)
+        {
+            if (width != visorWidth || height != visorHeight)
+            {
+                DestroySwapchain(ref visorSwapchain, ref visorImages);
+                visorSwapchain = CreateSwapchain(width, height, out visorImages);
+                visorWidth = width;
+                visorHeight = height;
+                Log.Info($"OpenXR visor swapchain {width}x{height}");
+            }
+            return visorImages[Acquire(visorSwapchain)];
+        }
+
+        public static void ReleaseVisorImage() => Release(visorSwapchain);
+
         private static uint Acquire(ulong swapchain)
         {
             var acquire = new XrBaseInfo(XrStructureType.SwapchainImageAcquireInfo);
@@ -440,7 +498,7 @@ namespace SpaceEngineersVR.OpenXR
                 return;
             InFrame = false;
             uint layerCount = 0;
-            IntPtr* layers = stackalloc IntPtr[3];
+            IntPtr* layers = stackalloc IntPtr[MostLayers];
 
             XrCompositionLayerProjectionView* projectionViews = stackalloc XrCompositionLayerProjectionView[2];
             for (int eye = 0; eye < 2; eye++)
@@ -515,6 +573,51 @@ namespace SpaceEngineersVR.OpenXR
             if (panel.HasValue && panelSwapchain != 0)
                 layers[layerCount++] = (IntPtr)(&quad);
 
+            // The HUD's pieces on the visor, over the panel: head-locked in the VIEW space like it, premultiplied alpha, each a
+            // part of the one visor image. No more than the runtime takes (its maxLayerCount) with the layers above.
+            int limit = Math.Min(XrRuntime.MaxLayerCount > 0 ? XrRuntime.MaxLayerCount : 16, MostLayers);
+            int pieces = panel.HasValue && !shown.WorldLocked && shown.Visor != null && visorSwapchain != 0
+                ? Math.Max(0, Math.Min(Math.Min(shown.VisorCount, shown.Visor.Length), limit - (int)layerCount))
+                : 0;
+            XrCompositionLayerCylinderKHR* cylinders = stackalloc XrCompositionLayerCylinderKHR[Math.Max(pieces, 1)];
+            XrCompositionLayerQuad* flats = stackalloc XrCompositionLayerQuad[Math.Max(pieces, 1)];
+            for (int i = 0; i < pieces; i++)
+            {
+                VisorPiece piece = shown.Visor[i];
+                var subImage = new XrSwapchainSubImage { Swapchain = visorSwapchain, ImageRect = piece.Rect };
+                if (shown.VisorCylinder)
+                {
+                    // The cylinder's middle is the head; the piece is the part of it straight ahead of Orientation.
+                    cylinders[i] = new XrCompositionLayerCylinderKHR
+                    {
+                        Type = XrStructureType.CompositionLayerCylinderKHR,
+                        LayerFlags = XrConst.LayerBlendTextureSourceAlpha,
+                        Space = viewSpace,
+                        EyeVisibility = XrEyeVisibility.Both,
+                        SubImage = subImage,
+                        Pose = new XrPosef { Orientation = piece.Orientation },
+                        Radius = piece.Radius,
+                        CentralAngle = piece.Width / piece.Radius,
+                        AspectRatio = piece.Width / piece.Height,
+                    };
+                    layers[layerCount++] = (IntPtr)(&cylinders[i]);
+                }
+                else
+                {
+                    flats[i] = new XrCompositionLayerQuad
+                    {
+                        Type = XrStructureType.CompositionLayerQuad,
+                        LayerFlags = XrConst.LayerBlendTextureSourceAlpha,
+                        Space = viewSpace,
+                        EyeVisibility = XrEyeVisibility.Both,
+                        SubImage = subImage,
+                        Pose = new XrPosef { Orientation = piece.Orientation, Position = piece.Middle },
+                        Size = new XrExtent2Df { Width = piece.Width, Height = piece.Height },
+                    };
+                    layers[layerCount++] = (IntPtr)(&flats[i]);
+                }
+            }
+
             var endInfo = new XrFrameEndInfo
             {
                 Type = XrStructureType.FrameEndInfo,
@@ -523,7 +626,18 @@ namespace SpaceEngineersVR.OpenXR
                 LayerCount = layerCount,
                 Layers = (IntPtr)layers,
             };
-            Xr.Check(Xr.xrEndFrame(session, ref endInfo), "xrEndFrame", XrRuntime.Instance);
+            int result = Xr.xrEndFrame(session, ref endInfo);
+            if (result < 0 && pieces > 0)
+            {
+                // Refused with the visor's pieces in it (they are the last layers): sent again without them, so the headset
+                // keeps its picture; taken without them, the HUD goes back on the panel from the next frame (HudVisor).
+                int refused = result;
+                endInfo.LayerCount = layerCount - (uint)pieces;
+                result = Xr.xrEndFrame(session, ref endInfo);
+                if (result >= 0)
+                    VisorRefused = Xr.ResultName(XrRuntime.Instance, refused);
+            }
+            Xr.Check(result, "xrEndFrame", XrRuntime.Instance);
             Rendering.PerfMeter.Submitted();
         }
 
@@ -540,6 +654,8 @@ namespace SpaceEngineersVR.OpenXR
             panelWidth = panelHeight = 0;
             DestroySwapchain(ref screenSwapchain, ref screenImages);
             screenWidth = screenHeight = 0;
+            DestroySwapchain(ref visorSwapchain, ref visorImages);
+            visorWidth = visorHeight = 0;
             XrInput.Destroy();
             if (stageSpace != 0)
                 Xr.xrDestroySpace(stageSpace);

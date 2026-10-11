@@ -136,8 +136,9 @@ namespace SpaceEngineersVR.Input
                 return walking ? "B" : null;
             if (control == MyControlsSpace.DAMPING)
                 return where == VRContext.Turret ? null : "X";
+            // With a block in hand the left stick click is building's (Hands.BuildMode.Modifier), not sprint or zero g's roll.
             if (control == MyControlsSpace.SPRINT)
-                return where == VRContext.OnFoot ? "Left stick click" : null;
+                return where == VRContext.OnFoot && !Hands.BuildMode.Active ? "Left stick click" : null;
             if (control == MyControlsSpace.MAIN_MENU)
                 return "Menu";
             if (control == MyControlsSpace.RELOAD)
@@ -145,7 +146,7 @@ namespace SpaceEngineersVR.Input
             if (control == MyControlsSpace.LANDING_GEAR)
                 return ship ? "Right stick click" : null;
             // On the jetpack the roll is zero g's only (VRControls.UpdateZeroG).
-            bool zeroGRoll = where == VRContext.Jetpack && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff;
+            bool zeroGRoll = where == VRContext.Jetpack && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff && !Hands.BuildMode.Active;
             if (control == MyControlsSpace.ROLL_LEFT)
                 return ship ? "Left grip" : zeroGRoll ? "Left stick click + right stick left" : null;
             if (control == MyControlsSpace.ROLL_RIGHT)

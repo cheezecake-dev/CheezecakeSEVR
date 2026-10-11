@@ -1255,7 +1255,9 @@ namespace SpaceEngineersVR.Gui
         /// the controller is in the camera being drawn (the seat's input worked it out from the previous draw's camera),
         /// drawn from the drawn hand's index fingertip (<see cref="FingerPress.Fingertip(Hand, in MatrixD)"/>; the aim
         /// pose's own origin is below the drawn hand); nothing when it no longer meets that screen, so no line is left
-        /// behind where the hand was.
+        /// behind where the hand was. Given in the pilot's space (<see cref="Rendering.MotionExtrapolation.AddLine"/>), so
+        /// it stays on the hand and the screen when the view and the ship are moved on past the game frame: given in the
+        /// world it moved against the cockpit while the ship fell (2026-10-11).
         /// </summary>
         private static void DrawLaser()
         {
@@ -1271,8 +1273,8 @@ namespace SpaceEngineersVR.Gui
             if (reach < 0.02)
                 return;
             var dir = (Vector3)(along / reach);
-            MyTransparentGeometry.AddLineBillboard(LaserMaterial, LaserColor, from, dir, (float)reach - 0.005f, 0.002f);
-            MyTransparentGeometry.AddPointBillboard(DotMaterial, Vector4.One, from + along * ((reach - 0.004) / reach), 0.006f, 0f);
+            Rendering.MotionExtrapolation.AddLine(LaserMaterial, LaserColor, from, dir, (float)reach - 0.005f, 0.002f);
+            Rendering.MotionExtrapolation.AddPoint(DotMaterial, Vector4.One, from + along * ((reach - 0.004) / reach), 0.006f);
         }
 
         private sealed class Claim

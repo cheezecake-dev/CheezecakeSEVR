@@ -21,8 +21,12 @@ It is a plugin for [Pulsar](https://github.com/SpaceGT/Pulsar), installed from t
   launcher (`Legacy.exe`). Pulsar's other launchers list the plugin as not supported. This is not for Space Engineers 2.
 - **A PC VR headset** with an OpenXR runtime that supports Direct3D 11.
   - **Tested:** Meta Quest 3 over Meta Link (cable), on an NVIDIA RTX 3060.
-  - **Should work, untested:** Air Link, Virtual Desktop, and SteamVR headsets. Bindings are offered for Valve Index,
-    HTC Vive and Windows Mixed Reality controllers, but none of them has been tried yet.
+  - **Should work, untested:** Air Link, Virtual Desktop, and SteamVR headsets.
+  - **Controllers, bindings offered, untested:** Valve Index, HTC Vive, Windows Mixed Reality, HP Reverb G2, Steam
+    Frame, PICO 4, PICO 4 Ultra and PICO Neo3. Quest 3, 3S and Quest Pro controllers use the Touch bindings, the ones
+    tested. None of the others has been tried yet. The bindings for the Steam Frame, PICO and HP Reverb G2 controllers
+    were informed by Fuchs's
+    [Space VR](https://github.com/gronkh68-rgb/space-engineers-vr) (MIT).
 - **A graphics card with room to spare.** The world is drawn twice every frame. **Dynamic resolution** (on by default)
   draws the eyes at down to 70% resolution while the GPU cannot keep up. To make the game cheaper still, lower the
   render resolution in your headset's PC software (for Link, in the Meta Horizon Link app's graphics settings).
@@ -60,6 +64,11 @@ To play flat again, disable the plugin in Pulsar's Plugins menu, or start with `
   - zero-g pitch and roll.
 - **Menus:** point at them with your right hand. The trigger clicks, the grip right-clicks, the stick scrolls, and B goes
   back.
+- **The HUD is on your visor:** the toolbar, suit status, block info, notifications, chat and the rest of the HUD sit
+  toward the edges of your view, curved round your head like a helmet visor, with the middle of your view clear. Each
+  part keeps its side and corner, and turns to face your eyes. Markers and the crosshair stay where they point. To have
+  the whole HUD on one flat panel ahead of you instead, turn off Options > VR > Interface > **HUD on the visor**. The
+  desktop window shows the HUD flat either way.
 - **Settings:** everything is in **Options > VR**, on five tabs: Display, Comfort, Controls, Hands and Interface.
   - Each setting's tooltip says what it does.
   - Every way out keeps your changes. **Undo changes** puts back what you had when you opened the screen.
@@ -75,29 +84,43 @@ example "Press [Right grip] to open".
 | | On foot / jetpack | Seat: cockpit, rover, remote control | Turret, searchlight | Build mode (block in hand) |
 |---|---|---|---|---|
 | Left stick | walk / fly, the way your head faces | forward, back, strafe (rover: throttle, steer) | - | as on foot / jetpack |
-| Left stick click | sprint; jetpack in zero g, held: the right stick pitches and rolls you | lights | - | as on foot / jetpack |
-| Right stick left / right | snap turn (or smooth turn) | yaw | turn | snap turn; with the right grip held, a push turns the block 90 deg |
-| Right stick up / down | on foot: up jumps, down crouches; jetpack: up / down | pitch | pitch | as on foot / jetpack; with the right grip held, a push moves the block farther (up) or nearer (down) |
+| Left stick click | sprint; jetpack in zero g, held: the right stick pitches and rolls you | lights | - | held: the right hand, right stick, A and B work the block (see Building); no sprint, no zero-g roll |
+| Right stick left / right | snap turn (or smooth turn) | yaw | turn | snap turn; with the left stick click held, a push turns the block 90 deg |
+| Right stick up / down | on foot: up jumps, down crouches; jetpack: up / down | pitch | pitch | as on foot / jetpack; with the left stick click held, a push moves the block farther (up) or nearer (down) |
 | Right stick click | reload, with a hand weapon | landing gear | - | large / small block |
 | Right trigger | primary: fire, weld, grind, drill | primary | fire | place the block |
 | Left trigger | secondary (with a gun: nothing; raise the gun to your eye to use its sight) | secondary | - | remove the block (creative; in survival the grinder removes blocks) |
-| Right grip | use, or grab what your hand is on | hold the flight stick (see below) | - | held: the block turns with your hand in 90 deg steps |
-| Left grip | in empty air: tools wheel; on something: grab; at your helmet's mouth: push to talk | hold the throttle; at the mouth: push to talk | at the mouth: push to talk | as on foot / jetpack |
-| A | jump; jetpack: up | up | zoom in, held | jump; jetpack: up. With the right grip held: the block's next stage |
-| B | jetpack on / off | down | zoom out, held | jetpack on / off. With the right grip held: the previous stage |
+| Right grip | use, or grab what your hand is on; on your helmet: suit lamp | hold the flight stick (see below) | - | as on foot: use, or grab what your hand is on |
+| Left grip | in empty air: tools wheel; on something: grab; on your helmet: suit lamp; at its mouth: push to talk | hold the throttle; at the mouth: push to talk | at the mouth: push to talk | as on foot / jetpack |
+| A | jump; jetpack: up. Right hand on a container: take what the Build Planner needs | up | zoom in, held | jump; jetpack: up. With the left stick click held: the block's next stage. Right hand on a container: take, as on foot |
+| B | jetpack on / off. Right hand on a container: deposit all | down | zoom out, held | jetpack on / off. With the left stick click held: the previous stage. Right hand on a container: deposit all |
 | X | dampeners on / off | dampeners on / off | - | tap: symmetry on / off; hold: next symmetry plane (creative) |
 | Y | wrist panel | tap: tools wheel; hold half a second: leave the seat | hold half a second: leave | wrist panel (the block menu is on its tile) |
 | Menu | tap: game menu; hold: recentre | as on foot | as on foot | as on foot |
 
-- **Building:** with a block in hand you keep jump and the jetpack (A and B), so you can build while flying. The block's
-  distance is the right grip with the right stick up or down; the game moves a block only in creative. A hand
-  closed on a hull, a door or an item still grabs it, and a refused place or remove gives a double buzz.
+- **Building:** with a block in hand you keep jump and the jetpack (A and B), so you can build while flying. Hold the
+  **left stick click** to work the block: twist your right hand to turn it in 90 deg steps, push the right stick sideways
+  to turn it a step, push it up or down to move the block farther or nearer (the game moves a block only in creative),
+  and press A or B for the block's next or previous stage. While you hold the click it is not sprint, and not the
+  zero-g roll. A pending paste and the voxel hand's brush take the same click. The right grip is as on foot: closed on a
+  hull it grabs it, and on a cargo container, refinery, terminal, door or seat it uses it (the game's highlight and a light
+  tick show your hand is on one), so you can open an inventory without putting the block away. A fingertip still presses
+  buttons; a floating item is picked up with the left hand. A refused place or remove gives a double buzz.
+- **Quick take and dump:** with your right hand on a cargo container, connector, conveyor port, refinery or anything else
+  with an inventory (the highlight shows it), the right grip open and the left stick click not held, A takes the components your Build Planner needs
+  and B deposits all (but hand tools, ammunition, bottles and consumables), as the game's middle mouse and Alt + middle
+  mouse do there. With a block in hand and the planner empty, A first puts that block in the planner, as the middle mouse
+  does. The game's own messages say what happened ("All components were successfully withdrawn.", the components that
+  are missing, "All possible components were deposited."). On foot, on the jetpack and with a block in hand; not with
+  a tool in your right hand, nor with the colour tool, and not from a seat. A container you may not use leaves A and B as
+  jump and the jetpack. A reminder shows the first time your hand is on one.
 - **Flying with your hands on the controls** (on by default): in a cockpit, the ship flies only while you hold its
   controls, where the astronaut's hands rest. Close your right grip near the stick and your left near the throttle. A
   light buzz tells you when a hand is close enough.
   - The throttle hand gives the left stick and A / B.
   - The stick hand gives the right stick and the triggers, and rolls when you tilt it sideways.
-  - Let go and that hand's input stops.
+  - Let go and that hand's input stops. A control stays held for as long as the grip stays closed, wherever the hand
+    goes, so it keeps working with the hand out of the headset's view.
   - X, Y, Menu and the stick clicks work without holding anything.
   - In a remote control, or a seat whose pose has no hand on a control, the grips roll instead.
 - **Hand flying** (off by default, Options > VR > Controls): fly by moving the controller while you hold the stick or
@@ -106,6 +129,9 @@ example "Press [Right grip] to open".
   zoomed view shows on a magnified inset. Hold Y for half a second to come back.
 - A passenger seat gets the buttons but not the sticks or grips.
 - Valve Index controllers have no Menu button the game can use. Recentre with Options > VR > **Recentre view**.
+- Steam Frame controllers: the left controller's View button is Menu, and its D-pad's down and up are X and Y. The
+  right controller's X and Y, the bumpers and the D-pad's left and right do nothing. PICO and HP Reverb G2 controllers
+  have the Quest's buttons in the same places.
 
 ### Menus
 
@@ -121,9 +147,11 @@ example "Press [Right grip] to open".
 
 - **Tools wheel** (your toolbar):
   - To open it: on foot, **hold the left grip** in empty air; in a seat, **tap Y**.
-  - To pick a slot: push the left stick at it, then let go of the grip or pull a trigger.
-  - The middle of the wheel is the empty hand. The right stick turns the toolbar page, and B closes the wheel without
-    doing anything.
+  - It opens on its middle, which is the empty hand: open it and pull a trigger straight away, and your hand is empty.
+    Letting go of the grip without moving the stick only closes the wheel, so a missed grab does not holster your tool.
+  - To pick a slot: push the left stick at it, then let go of the grip or pull a trigger. The stick back in the middle
+    is the empty hand again, for the trigger or for letting go of the grip.
+  - The right stick turns the toolbar page, and B closes the wheel without doing anything.
 - **Actions wheel**: click the left stick while the tools wheel is open. It holds the game's dampeners, lights, helmet,
   HUD and broadcasting, plus its Menu, View and Blueprint pages.
 - **Wrist panel**: on foot, press **Y**. It has big buttons for Inventory, Terminal, G menu, Lights, Helmet, Dampeners,
@@ -143,7 +171,8 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
 - **Two-handed tools:** close your other hand on the front of the tool or gun. A rifle, grinder or drill held in one hand
   kicks hard (**Tool and weapon kickback** sets how hard).
 - **Reload:** close your other hand's grip at the gun's magazine, or click the right stick.
-- **Helmet and lamp:** grip your helmet to open or close it. Tap the side of your head for the suit lamp.
+- **Suit lamp:** grip your helmet, or tap the side of your head, to switch the suit lamp. The helmet itself is on the
+  wrist panel and the actions wheel.
 - **Push to talk:** hold the left grip with your hand at your helmet's mouth.
 - **Fingertip buttons:** touch a button panel's button with your index fingertip.
 - **Grab to use:** close your hand on a seat, door, terminal, cargo container, medical room or anything else the Use key
@@ -152,6 +181,8 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
   stow it.
 - **Grab hulls** (zero g): pull yourself along a hull. Let go and you drift on.
 - **Grab ladders:** grip a rung and pull down to climb.
+- **Hands stop on glass:** your hands stop on windows and cockpit canopies, outside on foot and inside in a seat, as
+  they do on hulls.
 - **Touch toolbar** (in a cockpit): set a cockpit screen's script to "Touch Toolbar" (by default the middle screen gets
   it), then tap its slots with a fingertip.
 - **External view** (off by default, Options > VR > Interface): a small screen on the dash shows your ship from behind.
@@ -179,6 +210,7 @@ This is **early access**. These are the known issues and limits:
   - typing amounts at a store block or ATM;
   - the actions wheel's Voxel material page (creative);
   - the wrist panel's Heal tile;
+  - the HUD on the visor, on foot and in a seat;
   - zero-g pitch and roll staying off while you are in gravity.
 - **In a cockpit, the controller's laser can drift while the ship falls or moves fast.** A fix is in progress.
 - **Multiplayer has not been tested.** Your arms and where you hold your tool are only shown on your own PC. Other players

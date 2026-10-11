@@ -25,11 +25,14 @@ namespace SpaceEngineersVR.Input
     /// controllers, through those same questions:
     /// <list type="bullet">
     /// <item>On foot and on the jetpack: hold the left grip; push the left stick at a slot; either trigger, or letting
-    /// go of the grip, activates it (<c>ActivateItemAtSlot</c>, as its number key does). With the stick back in the middle
-    /// after it has chosen something that is the empty hand (<see cref="IWheelToolbar.EmptyHand"/>, the toolbar's holster
-    /// slot); with the stick never moved it just closes the wheel. The right B closes it without any effect.</item>
+    /// go of the grip, activates it (<c>ActivateItemAtSlot</c>, as its number key does). The middle is chosen when the wheel
+    /// opens, whatever the stick was doing and whatever was in the hand, and again whenever the stick is back there: that
+    /// is the empty hand (<see cref="IWheelToolbar.EmptyHand"/>, the toolbar's holster slot), so opening the wheel and
+    /// pulling a trigger at once leaves the hand empty. Letting go of the grip does the same only once the stick has chosen
+    /// something and come back; with the stick never moved it just closes the wheel, because the left grip in empty air is
+    /// also how a hand grabs and a missed grab must not holster the tool. The right B closes it without any effect.</item>
     /// <item>Seated: tap Y (let go before the hold that leaves the seat completes); either trigger activates (or empties
-    /// the hand, from the middle), B or another Y tap closes.</item>
+    /// the hand, from the middle, which is chosen as the wheel opens), B or another Y tap closes.</item>
     /// <item>The right stick, left or right, turns the toolbar's pages (<c>SwitchToPage</c>, round the ends) and the wheel
     /// shows the page the toolbar is on.</item>
     /// <item>The right stick pushed down, on the slot wheel, turns the external view on or off (the switch under the ring,
@@ -104,6 +107,14 @@ namespace SpaceEngineersVR.Input
         public const double FirmLookbackSeconds = 0.25;
 
         /// <summary>
+        /// The stick has to be pushed this far (0 to 1, the dead zone already taken out) before it chooses a slot, and back
+        /// under <see cref="SelectRelease"/> before the middle is chosen again. The middle is the empty hand, so a thumb
+        /// resting a hair past the dead zone must not pick whichever slot that hair points at; the two limits keep a thumb
+        /// at the edge from flickering between the middle and a slot.
+        /// </summary>
+        public const float SelectPress = 0.2f, SelectRelease = 0.1f;
+
+        /// <summary>
         /// A left stick that had been out this long when the grip (or the Y tap) opened the wheel is the walk, or the thrust,
         /// the thumb was in the middle of, not a choice: letting go of the grip with it still pushed forward used to
         /// activate slot 1 (the welder, on the character's usual toolbar). One that came out within this long of the open
@@ -159,7 +170,7 @@ namespace SpaceEngineersVR.Input
         private static double openedAt, yDownAt = -1d, pickedAt = -1d, stickOutSince = -1d;
         private static Vector2 picked, pick, heldDirection, firm;
         private static double firmAt = -1d;
-        private static bool armed = true;
+        private static bool armed = true, choosing;
         private static bool openPulse, confirmPulse, cancelPulse, slotScreenFailed;
         private static int pageHeld, page;
         private static bool viewHeld, viewPressed;
@@ -186,6 +197,7 @@ namespace SpaceEngineersVR.Input
             openPulse = confirmPulse = cancelPulse = false;
             pick = picked = heldDirection = firm = Vector2.Zero;
             armed = true;
+            choosing = false;
             yDownAt = pickedAt = stickOutSince = firmAt = -1d;
             pageHeld = page = 0;
             toolbar = null;
@@ -272,8 +284,10 @@ namespace SpaceEngineersVR.Input
             phase = Phase.Opening;
             gesture = how;
             openedAt = seconds;
+            // The middle is what is chosen as the wheel opens: no direction is carried over from before it.
             picked = firm = Vector2.Zero;
             pickedAt = firmAt = -1d;
+            choosing = false;
             pageHeld = 0;
             bool held = leftStick != Vector2.Zero && stickOutSince >= 0d && seconds - stickOutSince >= HeldStickSeconds;
             armed = !held;
@@ -379,10 +393,14 @@ namespace SpaceEngineersVR.Input
                 : VRInput.IsNewPressed(Hand.Left, VRButtons.Trigger) ? "left trigger"
                 : null;
             bool cancel = VRInput.IsNewPressed(Hand.Right, VRButtons.B);
+            bool gripLetGo = false;
             if (gesture == Gesture.Grip)
             {
                 if (by == null && !VRInput.IsPressed(Hand.Left, VRButtons.Grip))
+                {
                     by = "grip let go";
+                    gripLetGo = true;
+                }
             }
             else
                 cancel |= VRInput.IsNewPressed(Hand.Left, VRButtons.Y);
@@ -392,15 +410,21 @@ namespace SpaceEngineersVR.Input
             if (!armed && (leftStick == Vector2.Zero || TurnedFrom(heldDirection, leftStick) >= HeldStickTurnDegrees))
                 armed = true;
 
+            // The middle stays chosen until the stick is pushed SelectPress out, and comes back when it is under SelectRelease.
+            float length = leftStick.Length();
+            if (choosing ? length < SelectRelease : length >= SelectPress)
+                choosing = !choosing;
+            Vector2 stick = choosing ? leftStick : Vector2.Zero;
+
             // The game's stick has +Y down, as a DirectInput axis does.
             if (armed)
             {
-                if (leftStick != Vector2.Zero)
+                if (stick != Vector2.Zero)
                 {
-                    picked = new Vector2(leftStick.X, -leftStick.Y);
+                    picked = new Vector2(stick.X, -stick.Y);
                     pickedAt = seconds;
                     pick = picked;
-                    if (leftStick.Length() >= FirmStick)
+                    if (length >= FirmStick)
                     {
                         firm = picked;
                         firmAt = seconds;
@@ -421,18 +445,24 @@ namespace SpaceEngineersVR.Input
 
             if (kind == Kind.Slots)
             {
-                // The middle of the wheel is the empty hand, once the stick has chosen something and come back to it (the
-                // centre of the screen is lit then, SlotWheelScreen.UpdateHighlight). Activating with the stick never moved
-                // (or a cancel: the right B, or Y in a seat) closes the wheel and does nothing else.
+                // The middle of the wheel is the empty hand, and it is what is chosen unless the stick is out at a slot: as the
+                // wheel opens, and again once the stick is back (the centre of the screen is lit then, SlotWheelScreen.UpdateHighlight).
+                // A trigger there empties the hand. Letting go of the grip does too once the stick has chosen something and come
+                // back, but not with the stick never moved: the left grip in empty air is also how a hand grabs, and a missed grab
+                // must not holster the tool. That, and a cancel (the right B, or Y in a seat), close the wheel and do nothing else.
+                bool neverLeft = pickedAt < 0d;
                 int slot = !cancel && pick != Vector2.Zero ? SlotWheel.IndexAt(pick) : -1;
-                bool emptyHand = slot < 0 && !cancel && pickedAt >= 0d;
+                bool emptyHand = slot < 0 && !cancel && !(gripLetGo && neverLeft);
                 if (slot >= 0)
                     Activate(slot);
                 else if (emptyHand)
                     EmptyHand();
                 CloseSlots();
                 phase = Phase.Closing;
-                Log.Info(slot >= 0 ? $"Toolbar wheel: activated slot {slot + 1} ({by})" : emptyHand ? $"Toolbar wheel: empty hand ({by})" : "Toolbar wheel: closing");
+                Log.Info(slot >= 0 ? $"Toolbar wheel: activated slot {slot + 1} ({by})"
+                    : emptyHand ? $"Toolbar wheel: empty hand ({by}{(neverLeft ? ", the stick never left the middle" : string.Empty)})"
+                    : gripLetGo && !cancel ? "Toolbar wheel: closed (grip let go, the stick never left the middle)"
+                    : "Toolbar wheel: closing");
                 return;
             }
 

@@ -87,6 +87,10 @@ namespace SpaceEngineersVR.Input
         // the throttle's push right, up and back, metres (z back, as the movement input has it).
         private static Vector3 tilt, push;
 
+        // The throttle's last push from a tracked position (kept while a held hand's position is not tracked), and whether there is one.
+        private static Vector3 throttlePush;
+        private static bool throttlePushed;
+
         /// <summary>A grip that holds the stick or the throttle; it is not also a roll.</summary>
         public static bool Holds(Hand hand) => (stick.Held && stick.Hand == hand) || (throttle.Held && throttle.Hand == hand);
 
@@ -155,11 +159,19 @@ namespace SpaceEngineersVR.Input
             }
             if (throttle.Held)
             {
-                Vector3 hand = VRInput.Get(throttle.Hand).Grip.Translation;
-                push = Vector3.TransformNormal(hand - throttle.Origin, Matrix.CreateRotationY(-zonesYaw));
+                HandState throttleState = VRInput.Get(throttle.Hand);
+                Vector3 hand = throttleState.Grip.Translation;
+                // A controller out of the headset's view keeps reporting a position that drifts: the throttle stays where
+                // it was last pushed while the position is not tracked, and follows the hand again when it is.
+                if (throttleState.PositionTracked || !throttlePushed)
+                    throttlePush = Vector3.TransformNormal(hand - throttle.Origin, Matrix.CreateRotationY(-zonesYaw));
+                throttlePushed = true;
+                push = throttlePush;
                 view.ThrottleOrigin = throttle.Origin;
                 view.ThrottleHand = hand;
             }
+            else
+                throttlePushed = false;
             lock (gate)
                 ghost = view;
         }
@@ -313,6 +325,7 @@ namespace SpaceEngineersVR.Input
                 return;
             running = false;
             stick.Held = throttle.Held = false;
+            throttlePushed = false;
             lock (gate)
                 ghost = default;
         }

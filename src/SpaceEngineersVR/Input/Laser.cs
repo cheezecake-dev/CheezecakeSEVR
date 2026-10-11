@@ -493,7 +493,9 @@ namespace SpaceEngineersVR.Input
         /// <summary>
         /// Game thread, in the gameplay screen's draw: a thin line from the drawn hand's index fingertip (the aim pose's own
         /// origin is below the drawn hand) to where the ray hits the panel, as the game draws its own lines (billboards), in
-        /// the world where the hand is (<see cref="HandWorld"/>).
+        /// the world where the hand is (<see cref="HandWorld"/>). Given in the character's space
+        /// (<see cref="MotionExtrapolation.AddLine"/>), so it stays on the hand and the panel when the view is moved on past
+        /// the game frame, in a moving ship or on foot.
         /// </summary>
         private static void DrawLine()
         {
@@ -516,7 +518,7 @@ namespace SpaceEngineersVR.Input
                 double length = along.Length();
                 if (length < 0.02)
                     return;
-                MyTransparentGeometry.AddLineBillboard(LineMaterial, LineColor, start, (Vector3)(along / length), (float)length, LineThickness);
+                MotionExtrapolation.AddLine(LineMaterial, LineColor, start, (Vector3)(along / length), (float)length, LineThickness);
             }
             catch (Exception e)
             {

@@ -19,8 +19,8 @@ namespace SpaceEngineersVR.Gui
     /// each entry of the game's actions wheel names its gamepad shortcut. Here
     /// <list type="bullet">
     /// <item>the bottom line says how the hands close the wheel and use what it points at: either trigger, or letting go of
-    /// the left grip on foot and on the jetpack (with the stick centred it closes; on the toolbar's wheel the middle is the
-    /// empty hand once the stick has chosen something and come back to it), either trigger in a seat and B or Y to close;</item>
+    /// the left grip on foot and on the jetpack (with the stick centred it closes the game's own wheels; on the toolbar's
+    /// wheel the middle is the empty hand, chosen as the wheel opens), either trigger in a seat and B or Y to close;</item>
     /// <item>the page tabs say the right stick turns them, and the centre says what the left stick does;</item>
     /// <item>an entry's shortcut is the controller's way to it (<see cref="VRPrompts"/>), or nothing;</item>
     /// <item>the game's actions wheel (MyGuiControlRadialMenuSystem, opened from the tools wheel by clicking the left stick)
@@ -87,8 +87,8 @@ namespace SpaceEngineersVR.Gui
 
         /// <summary>
         /// The bottom line: how the hands close the wheel, and how they use the entry it points at. On the toolbar's wheel
-        /// (<paramref name="slots"/>) the middle is the empty hand once the stick has chosen something and come back to it, so
-        /// that is said beside "use" in a seat, where B or Y close; on foot B closes and is said with the empty hand.
+        /// (<paramref name="slots"/>) the middle is the empty hand, chosen as the wheel opens and whenever the stick is back
+        /// there, so that is said beside "use" in a seat, where B or Y close; on foot B closes and is said with the empty hand.
         /// </summary>
         internal static void BottomLine(VRContext where, bool slots, out string close, out string use)
         {

@@ -24,6 +24,8 @@ namespace SpaceEngineersVR.Hands
     /// where it was resolved last frame to this frame's target, so a fast hand cannot pass a thin wall between two frames.
     /// The first thing the sweep meets gives a plane the ball's centre may not go behind; a second sweep along that plane
     /// finds an inside corner (floor and wall). The push out of both is the contact; the palm or the tip, whichever is deeper.
+    /// Glass is swept on its own triangles as well (<see cref="GlassPanes"/>): windows and canopies stand outside their
+    /// collision, and a cockpit's interior model has none, so the seated hand stops on the canopy though its seat is passed.
     ///
     /// Not stopped by: the character, anything that is not a grid or voxels (tools, floating items, other characters,
     /// safe zones, sensors), projections, the seat's own block and the seat grid's blocks round the seated body, and a
@@ -34,13 +36,15 @@ namespace SpaceEngineersVR.Hands
     /// view screen are left alone; an empty hand and a hand on a hull (<see cref="HullGrab"/>) are stopped.
     ///
     /// Game thread (HandIK's postfix on UpdateAfterSimulation, after the physics step), never inside the simulation. Draws
-    /// only: nothing here moves the body or the camera. RenderDebug SurfaceStop=0 turns it off, SurfaceStopTrace=1 logs
-    /// each touch (depth, normal, what was hit) and each exclusion; the cost is on the Perf line.
+    /// only: nothing here moves the body or the camera. RenderDebug SurfaceStop=0 turns it off, SurfaceStopGlass=0 only the
+    /// glass, SurfaceStopTrace=1 logs each touch (depth, normal, what was hit) and each exclusion; the cost is on the Perf line.
     /// </summary>
     internal sealed class SurfaceStop : IHandContactSource
     {
         public static bool Off { get; set; }
         public static bool Trace { get; set; }
+        /// <summary>Debug: the hands pass glass again, hulls still stop them (<see cref="Rendering.RenderDebug"/> SurfaceStopGlass=0; for players, <see cref="VRSettings.HandsStopOnGlass"/>).</summary>
+        public static bool GlassOff { get; set; }
 
         private const float TipRadius = 0.01f, PalmRadius = 0.03f, InsideProbe = 0.002f, SeatProbe = 0.05f;
         /// <summary>The second sweep starts this far off the first plane, so it does not meet that plane again.</summary>
@@ -410,6 +414,22 @@ namespace SpaceEngineersVR.Hands
                 best.What = what;
             }
             hits.Clear();
+            // Glass is often outside the collision, and a cockpit's interior (seen from its seat) has none, so panes are
+            // tested on their own triangles. Never passed with the seat's block: the seated hand reaching out meets it.
+            if (!GlassOff && VRSettings.HandsStopOnGlass)
+            {
+                if (GlassPanes.Sweep(hand, frame, from, to, radius, Eye(character, frame), best.Fraction, out GlassPanes.Contact glass))
+                {
+                    best.Fraction = glass.Fraction;
+                    best.Centre = glass.Centre;
+                    best.Point = glass.Point;
+                    best.Normal = glass.Normal;
+                    best.Owner = glass.Owner;
+                    best.What = glass.What;
+                }
+                else if (glass.Behind != null)
+                    Excluded(2, hand, part, frame, "came back through it from its far side", glass.Behind);
+            }
             return best.Owner != null;
         }
 
@@ -519,8 +539,10 @@ namespace SpaceEngineersVR.Hands
 
         private static readonly Dictionary<MyEntity, Surface> surfaces = new Dictionary<MyEntity, Surface>();
 
-        private static Surface SurfaceOf(object what)
+        private static object SurfaceOf(object what)
         {
+            if (what is GlassPanes.Glass glass)
+                return glass; // a block's glass is its own surface, apart from the block's hull
             MyEntity entity = (MyEntity)(what as MyCubeBlock) ?? (MyEntity)(what as MySlimBlock)?.CubeGrid ?? what as MyEntity;
             if (entity == null)
                 return null;
@@ -543,6 +565,8 @@ namespace SpaceEngineersVR.Hands
                     return $"{slim.BlockDefinition?.Id.SubtypeName ?? "block"} on {slim.CubeGrid?.DisplayName}";
                 case MyVoxelBase voxels:
                     return $"voxels {voxels.StorageName ?? voxels.GetType().Name}";
+                case GlassPanes.Glass glass:
+                    return glass.ToString();
                 case MyEntity entity:
                     return entity.DisplayName ?? entity.GetType().Name;
                 default:
@@ -558,13 +582,15 @@ namespace SpaceEngineersVR.Hands
             long casts = Interlocked.Exchange(ref costCasts, 0);
             long probes = Interlocked.Exchange(ref costProbes, 0);
             long max = Interlocked.Exchange(ref costMaxTicks, 0);
+            long glass = GlassPanes.TakeTested();
             if (Off)
                 return "; surface stop off";
             if (frames == 0)
                 return "; surface stop not asked";
             double ms = 1000.0 / Stopwatch.Frequency;
-            return string.Format(CultureInfo.InvariantCulture, "; surface stop {0:0.000} ms/frame avg / {1:0.000} max, {2:0.0} casts + {3:0.00} probes a frame",
-                ticks * ms / frames, max * ms, (double)casts / frames, (double)probes / frames);
+            return string.Format(CultureInfo.InvariantCulture, "; surface stop {0:0.000} ms/frame avg / {1:0.000} max, {2:0.0} casts + {3:0.00} probes + {4} a frame",
+                ticks * ms / frames, max * ms, (double)casts / frames, (double)probes / frames,
+                GlassOff || !VRSettings.HandsStopOnGlass ? "glass off" : ((double)glass / frames).ToString("0", CultureInfo.InvariantCulture) + " glass triangles");
         }
     }
 }

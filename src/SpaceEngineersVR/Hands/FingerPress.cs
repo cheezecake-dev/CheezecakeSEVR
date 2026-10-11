@@ -8,7 +8,7 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Gui;
-using Sandbox.Game.SessionComponents.Clipboard;
+using Sandbox.Game.Weapons;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Input;
@@ -228,11 +228,10 @@ namespace SpaceEngineersVR.Hands
                 }
 
                 // Nothing is pressed up a ladder (Use there lets go of it) or while a menu has the focus; a hand with a tool
-                // or the builder in it does not press either. Seated, the tool is the ship's, not in the hand (as screen touch has it).
+                // in it does not press either, though a hand with a block in it does (IsHandTool). Seated, the tool is the
+                // ship's, not in the hand (as screen touch has it).
                 object focused = MyScreenManager.GetScreenWithFocus();
-                bool building = (MyCubeBuilder.Static != null && MyCubeBuilder.Static.IsActivated)
-                                || (MyClipboardComponent.Static != null && MyClipboardComponent.Static.IsActive);
-                bool holdsTool = (__instance.CurrentWeapon != null && !__instance.IsSitting) || building;
+                bool holdsTool = IsHandTool(__instance.CurrentWeapon) && !__instance.IsSitting;
                 MatrixD bodyFromWorld = __instance.PositionComp.WorldMatrixNormalizedInv;
                 MatrixD bodyToWorld = MatrixD.Invert(bodyFromWorld);
                 foreach (Hand hand in bothHands)
@@ -252,11 +251,21 @@ namespace SpaceEngineersVR.Hands
         /// <summary>
         /// Whether a hand may press now. Not up a ladder (Use there lets go of it), not unless the game screen has the
         /// focus (any menu, the terminal, the toolbar config and the chat all take it), and not the hand that holds a tool
-        /// or the builder (the dominant one: <see cref="HandTools"/> holds a tool in it). Only on foot or seated in first
-        /// person (<see cref="SeatedFirstPerson"/>), where the hands are drawn on the controllers, is a hand looked at at all.
+        /// (the dominant one: <see cref="HandTools"/> holds a tool in it; see <see cref="IsHandTool"/>). Only on foot or seated
+        /// in first person (<see cref="SeatedFirstPerson"/>), where the hands are drawn on the controllers, is a hand looked at at all.
         /// </summary>
         internal static bool MayPress(bool onLadder, object focusedScreen, bool holdsTool, Hand hand, Hand dominant) =>
             !onLadder && focusedScreen is MyGuiScreenGamePlay && !(holdsTool && hand == dominant);
+
+        /// <summary>
+        /// What the character holds is a hand tool or weapon (a grinder, welder or drill, a gun), which keeps the dominant hand
+        /// from pressing and from grabbing to use (<see cref="GrabUse"/>). The block placer is not one: the game puts it in
+        /// hand with a block or the colour tool (MyToolbarItemCubeBlock.Activate switches to MyObjectBuilder_CubePlacer), and it
+        /// has no model (MyBlockPlacerBase.Init gives it none), so the hand holds nothing and a fingertip or a grip on something
+        /// usable uses it as an empty hand's does. Build mode does not claim the right grip (<see cref="BuildMode"/>: the left
+        /// stick click turns the block), so the grip is an empty hand's everywhere.
+        /// </summary>
+        internal static bool IsHandTool(object weapon) => weapon != null && !(weapon is MyBlockPlacerBase);
 
         /// <summary>
         /// The local character sits in the seat it controls and sees from it in first person, so its arms are on the

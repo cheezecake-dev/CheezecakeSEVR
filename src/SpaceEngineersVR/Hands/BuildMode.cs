@@ -22,8 +22,8 @@ namespace SpaceEngineersVR.Hands
     /// <summary>
     /// The hands while a block is in hand on foot or on the jetpack (the toolbar slot picked is a block, so the game's
     /// cube builder is active with a block): the right trigger places and the left trigger removes, as the game's own
-    /// primary and secondary (<see cref="VRControls"/>); the right grip held turns the block with the right hand, in
-    /// 90 degree steps about the grid's axes, and while the grip is held the right stick turns it a step at a time (left,
+    /// primary and secondary (<see cref="VRControls"/>); the left stick click held turns the block with the right hand, in
+    /// 90 degree steps about the grid's axes, and while it is held the right stick turns it a step at a time (left,
     /// right) and sends it farther or brings it nearer (up, down) in the game's own steps (MOVE_FURTHER and MOVE_CLOSER, which
     /// the game acts on in creative only); a tap of X switches symmetry on or off (the game's USE_SYMMETRY, N) and X held half a
     /// second picks the next symmetry plane to set (SYMMETRY_SWITCH, M). A and B stay jump (the jetpack's climb) and the
@@ -31,34 +31,34 @@ namespace SpaceEngineersVR.Hands
     /// A pulse marks a block placed and one removed, a tick each step the block turns, and a double buzz a trigger pull that
     /// placed or removed nothing.
     /// <para>The block's size and stage: a click of the right stick switches it between large and small (the game's
-    /// CUBE_BUILDER_CUBESIZE_MODE, R). With the right grip held, A steps to its next stage (its next variant in the group:
+    /// CUBE_BUILDER_CUBESIZE_MODE, R). With the left stick click held, A steps to its next stage (its next variant in the group:
     /// NEXT_BLOCK_STAGE, the mouse wheel) and B to the previous one (PREV_BLOCK_STAGE), in creative and survival. The block
-    /// keeps the way it faces across a stage step while the grip turns it.</para>
-    /// <para>A paste pending (the game's clipboard, Ctrl+V or a blueprint) has the same right-grip turn, on the pasted grids'
-    /// own axes, and the grip with the stick up or down sends it farther or brings it nearer (MOVE_FURTHER, MOVE_CLOSER, a
-    /// tenth each). With the voxel hand the grip with the stick up or down moves the brush (VOXEL_FURTHER, VOXEL_CLOSER).</para>
+    /// keeps the way it faces across a stage step while the hand turns it.</para>
+    /// <para>A paste pending (the game's clipboard, Ctrl+V or a blueprint) has the same turn with the left stick click held, on
+    /// the pasted grids' own axes, and the click with the stick up or down sends it farther or brings it nearer (MOVE_FURTHER,
+    /// MOVE_CLOSER, a tenth each). With the voxel hand the click with the stick up or down moves the brush (VOXEL_FURTHER,
+    /// VOXEL_CLOSER).</para>
     /// </summary>
     /// <remarks>
-    /// <para>The turn: the right hand's change of orientation since the grip closed, taken into the grid's frame, is
+    /// <para>The turn: the right hand's change of orientation since the click went down, taken into the grid's frame, is
     /// matched to the nearest of the 24 turns that keep a block on the grid, with <see cref="SnapHysteresisDegrees"/> of
     /// hysteresis so the block does not flicker at the halfway point; the block's orientation is the one it had when the
-    /// grip closed, turned by that. It is set where the game's own rotate keys set it
+    /// click went down, turned by that. It is set where the game's own rotate keys set it
     /// (MyCubeBuilderGizmo.RotateAxis, MyCubeBuilder.cs:1806), with the game's turn animation and sound, and only to
     /// orientations the block allows (MyCubeBuilder.CheckValidBlockRotation). Off a grid (the game's dynamic mode) the block's
-    /// own world orientation is turned the same way. While the grip is held the builder's ray stays where it was when the
-    /// grip closed (held relative to the body), so twisting the hand turns the block without sliding it.</para>
-    /// <para>The grip is taken through <see cref="GripClaim"/> after every hand-on-something feature, so a hand closed on a
-    /// hull, a door or an item still does that. Seated, the game's controls are left as they are.</para>
+    /// own world orientation is turned the same way. While the click is held the builder's ray stays where it was when the
+    /// click went down (held relative to the body), so twisting the hand turns the block without sliding it.</para>
+    /// <para>The right grip is not building's: with a block in hand it is what it is on foot, so a hand closed on a hull, or on
+    /// anything the Use key works on (a cargo container, a refinery, a terminal, a door, a seat: <see cref="GrabUse"/>, which
+    /// does not count a block in hand as a tool), does that, and the game opens a block's inventory or terminal with a block in
+    /// hand as without one. A floating item is still only the other hand's (<see cref="ItemGrab"/> counts the builder as a tool
+    /// in the dominant hand). The left stick click is the modifier instead (<see cref="Modifier"/>): while a block, a paste or
+    /// the voxel hand is up it is not sprint and not zero-g pitch and roll. Seated, the game's controls are left as they are.</para>
     /// </remarks>
     internal static class BuildMode
     {
         /// <summary>Debug: the old on-foot buttons with a block in hand (<see cref="Rendering.RenderDebug"/> BuildMode=0).</summary>
         public static bool Off { get; set; }
-
-        public const string ClaimName = "build turn";
-
-        /// <summary>After every feature that takes a grip with the hand on something (hull grab is 40).</summary>
-        public const int ClaimPriority = 50;
 
         /// <summary>How much nearer the next 90 degree step has to be than the one shown before the block moves to it, degrees: a single-axis turn steps at 50 degrees and back at 40.</summary>
         public const double SnapHysteresisDegrees = 10.0;
@@ -78,19 +78,22 @@ namespace SpaceEngineersVR.Hands
         /// <summary>A block is in hand on foot or on the jetpack, nothing else has the hands: the build-mode buttons apply this frame.</summary>
         public static bool Active { get; private set; }
 
-        /// <summary>The right grip is turning the block.</summary>
+        /// <summary>The left stick click is held to build: a block, a paste or the voxel brush is up. The right hand turns the block or the paste, the right stick turns and moves it, A and B pick the stage; the click is not sprint or zero-g pitch and roll.</summary>
+        public static bool Modifier { get; private set; }
+
+        /// <summary>The right hand is turning the block.</summary>
         public static bool Turning => turning;
 
-        /// <summary>The right stick belongs to building: while the right grip is held for it, and after until the stick is back near the middle.</summary>
+        /// <summary>The right stick belongs to building: while the left stick click is held for it, and after until the stick is back near the middle.</summary>
         public static bool StickBusy { get; private set; }
 
-        /// <summary>A paste is pending on foot or on the jetpack (the game's clipboard is up) and no block is in hand: the grip turns it, the grip and the stick move it.</summary>
+        /// <summary>A paste is pending on foot or on the jetpack (the game's clipboard is up) and no block is in hand: the left stick click and the hand turn it, the click and the stick move it.</summary>
         public static bool Pasting { get; private set; }
 
-        /// <summary>The voxel hand is on (creative) on foot or on the jetpack: the right grip and the stick move the brush.</summary>
+        /// <summary>The voxel hand is on (creative) on foot or on the jetpack: the left stick click and the right stick move the brush.</summary>
         public static bool VoxelHand { get; private set; }
 
-        /// <summary>A is the block's stage step this frame (pressed with the right grip held), not jump or the jetpack's climb, until it is let go.</summary>
+        /// <summary>A is the block's stage step this frame (pressed with the left stick click held), not jump or the jetpack's climb, until it is let go.</summary>
         public static bool TakesA => Active && stageA;
 
         /// <summary>B is the block's stage step this frame, not the jetpack, until it is let go.</summary>
@@ -126,12 +129,12 @@ namespace SpaceEngineersVR.Hands
         private static bool rayFrozen;
         private static MyCubeBlockDefinition turnBlock;
 
-        // The right stick with the grip held: one thing a push, a turn (sideways, stickTurn for one frame) or the distance (up
-        // or down, stickDistance while held); it acts again once back near the middle.
-        private static bool gripWas, stickArmed;
+        // The right stick with the left stick click held: one thing a push, a turn (sideways, stickTurn for one frame) or the
+        // distance (up or down, stickDistance while held); it acts again once back near the middle.
+        private static bool modifierWas, stickArmed;
         private static int stickTurn, stickDistance;
 
-        // The distance, X, the stick click, A and B. stageA, stageB: pressed with the grip held for a stage step, until let go.
+        // The distance, X, the stick click, A and B. stageA, stageB: pressed with the click held for a stage step, until let go.
         private static double distanceDown = -1d, distanceNext;
         private static int distanceDirection;
         private static float distanceBefore;
@@ -154,8 +157,7 @@ namespace SpaceEngineersVR.Hands
 
         public static void Patch(Harmony harmony)
         {
-            GripClaim.Register(ClaimName, ClaimPriority, Take);
-            Log.Info("Build mode: right grip turns the block in hand or the paste, grip + stick left/right a 90 deg turn, grip + stick up/down distance, grip + A/B block stage, A/B jump and the jetpack, right stick click block size, X symmetry, haptics on place, remove and refuse");
+            Log.Info("Build mode: the left stick click held, the right hand turns the block in hand or the paste, the right stick left/right a 90 deg turn and up/down distance, A/B block stage (the click is not sprint or zero-g pitch and roll then); the right grip is as on foot (use, grab); A/B otherwise jump and the jetpack, right stick click block size, X symmetry, haptics on place, remove and refuse");
         }
 
         /// <summary>From <see cref="HandPlacement.HookNow"/>, on the first frame of a session: the cube builder's own methods can be patched by then.</summary>
@@ -173,8 +175,6 @@ namespace SpaceEngineersVR.Hands
             }
         }
 
-        private static bool Take(Hand hand) => hand == Hand.Right && (Active || Pasting || VoxelHand);
-
         /// <summary>Game thread, once per frame from <see cref="VRControls.Update(double)"/>, after the toolbar wheel has had the hands.</summary>
         internal static void Frame(VRContext context, bool blocked, double seconds)
         {
@@ -187,7 +187,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Active = Pasting = VoxelHand = false;
+                Active = Pasting = VoxelHand = Modifier = false;
                 EndTurn("an error");
                 if (errors++ < 3)
                     Log.Error(e, "Build mode failed this frame");
@@ -207,11 +207,11 @@ namespace SpaceEngineersVR.Hands
             NotePasting(clipboard);
             bool voxel = hands && !active && clipboard == null && MySessionComponentVoxelHand.Static?.Enabled == true;
             if (voxel != VoxelHand)
-                Log.Info(voxel ? $"Voxel hand on: right grip + stick up/down moves the brush; material {VoxelMaterialName()}" : "Voxel hand off");
+                Log.Info(voxel ? $"Voxel hand on: left stick click + right stick up/down moves the brush; material {VoxelMaterialName()}" : "Voxel hand off");
             VoxelHand = voxel;
             bool on = active || clipboard != null || voxel;
             if (on && !building)
-                Log.Info("Build: A/B are jump and the jetpack; distance on the right grip + stick up/down, block stage on the right grip + A/B");
+                Log.Info("Build: A/B are jump and the jetpack; turn, distance and block stage on the left stick click: the right hand turns, the right stick turns and moves, A/B pick the stage");
             building = on;
 
             if (secondBuzzAt >= 0d && seconds >= secondBuzzAt)
@@ -222,9 +222,12 @@ namespace SpaceEngineersVR.Hands
             ReportAfterGame(builder, clipboard);
 
             Vector2 stick = VRInput.Get(Hand.Right).Stick;
-            bool grip = building && GripClaim.Holds(Hand.Right, ClaimName);
-            GripStick(grip, stick);
-            StickBusy = grip || (StickBusy && stick.Length() > StickRelease);
+            bool modifier = building && VRInput.IsPressed(Hand.Left, VRButtons.StickClick);
+            if (modifier != Modifier)
+                Log.Info(modifier ? "Build: left stick click held, the right hand and stick turn and move what is in hand" : "Build: left stick click let go");
+            Modifier = modifier;
+            ModifierStick(modifier, stick);
+            StickBusy = modifier || (StickBusy && stick.Length() > StickRelease);
             if (!active)
             {
                 symmetryDown = -1d;
@@ -247,29 +250,29 @@ namespace SpaceEngineersVR.Hands
 
             CheckRefused(builder, seconds);
             Turn(builder);
-            SizeAndStage(builder, grip);
+            SizeAndStage(builder, modifier);
             Distance(seconds, "block");
             Symmetry(seconds);
         }
 
         /// <summary>
-        /// The right stick while the grip is held for building: a push sideways is one 90 degree turn (<see cref="stickTurn"/>,
+        /// The right stick while the left stick click is held for building: a push sideways is one 90 degree turn (<see cref="stickTurn"/>,
         /// this frame), up or down the distance (<see cref="stickDistance"/>, + farther, while held), whichever it is pushed
-        /// more; the stick does nothing more until it is back near the middle. A stick already out when the grip closes waits
+        /// more; the stick does nothing more until it is back near the middle. A stick already out when the click goes down waits
         /// for that too.
         /// </summary>
-        private static void GripStick(bool grip, Vector2 stick)
+        private static void ModifierStick(bool modifier, Vector2 stick)
         {
             stickTurn = 0;
-            if (!grip)
+            if (!modifier)
             {
-                gripWas = false;
+                modifierWas = false;
                 stickDistance = 0;
                 return;
             }
-            if (!gripWas)
+            if (!modifierWas)
             {
-                gripWas = true;
+                modifierWas = true;
                 stickArmed = stick.Length() < StickRelease;
                 stickDistance = 0;
             }
@@ -315,8 +318,8 @@ namespace SpaceEngineersVR.Hands
             }
             MyGridClipboard grids = clipboard.Clipboard;
             Log.Info(grids != null && grids.IsActive
-                ? $"Paste: pending, {grids.CopiedGrids.Count} grid{(grids.CopiedGrids.Count == 1 ? string.Empty : "s")} ({grids.CopiedGridsName}), {PasteDistance(grids):F1} m out; right grip turns it, grip + stick up/down farther and nearer"
-                : "Paste: pending, not grids (a floating object or voxels); right grip + stick up/down farther and nearer");
+                ? $"Paste: pending, {grids.CopiedGrids.Count} grid{(grids.CopiedGrids.Count == 1 ? string.Empty : "s")} ({grids.CopiedGridsName}), {PasteDistance(grids):F1} m out; left stick click + right hand turns it, left stick click + right stick up/down farther and nearer"
+                : "Paste: pending, not grids (a floating object or voxels); left stick click + right stick up/down farther and nearer");
         }
 
         /// <summary>The game's own test for creative building (MyCubeBuilder.HandleAdminAndCreativeInput): it moves the block nearer and farther only then.</summary>
@@ -327,10 +330,9 @@ namespace SpaceEngineersVR.Hands
 
         private static void Turn(MyCubeBuilder builder)
         {
-            bool held = GripClaim.Holds(Hand.Right, ClaimName);
-            if (!held)
+            if (!Modifier)
             {
-                EndTurn("grip let go");
+                EndTurn("left stick click let go");
                 return;
             }
             if (turning && pasteTurn)
@@ -349,14 +351,14 @@ namespace SpaceEngineersVR.Hands
             if (builder.CurrentBlockDefinition.Rotation == MyBlockRotation.None)
                 return;
 
-            // The stick: a 90 degree step per push left or right, about the body's up (GripStick).
+            // The stick: a 90 degree step per push left or right, about the body's up (ModifierStick).
             if (stickTurn != 0)
             {
                 StickStep(builder, hand, character.WorldMatrix.Up, stickTurn > 0 ? -MathHelper.PiOver2 : MathHelper.PiOver2, stickTurn > 0 ? "right" : "left");
                 return;
             }
 
-            // The hand: its turn since the grip closed, in the grid's frame (row vectors: hand = handStart * delta).
+            // The hand: its turn since the click went down, in the grid's frame (row vectors: hand = handStart * delta).
             MatrixD delta = MatrixD.Transpose(handStart) * hand;
             Matrix inFrame = (Matrix)(frame * delta * MatrixD.Transpose(frame));
             int best = Nearest(inFrame, dynamicTurn ? null : builder.CurrentBlockDefinition, false, out double bestAngle);
@@ -371,7 +373,7 @@ namespace SpaceEngineersVR.Hands
             {
                 steps++;
                 Haptics.Pulse(Hand.Right, TickAmplitude, TickSeconds);
-                Log.Info($"Build: turned by hand to {Describe(Turns[best])} from the grip's start (was {Describe(Turns[was])}; hand {shownAngle:F0} deg from the old step, {bestAngle:F0} from the new); block {facing}");
+                Log.Info($"Build: turned by hand to {Describe(Turns[best])} from the click's start (was {Describe(Turns[was])}; hand {shownAngle:F0} deg from the old step, {bestAngle:F0} from the new); block {facing}");
             }
         }
 
@@ -402,7 +404,7 @@ namespace SpaceEngineersVR.Hands
             Log.Info($"Build: turn started ({(dynamicTurn ? "off a grid, the block's own axes" : CurrentGrid(builder) != null ? "on a grid" : "on the local grid")}; ray held{(rayFrozen ? string.Empty : " not available")}; block {builder.CurrentBlockDefinition.Id.SubtypeName}, rotation {builder.CurrentBlockDefinition.Rotation})");
         }
 
-        /// <summary>Holds the builder's ray where the hand points now, relative to the body, for as long as the grip turns (<see cref="TryFrozenRay"/>).</summary>
+        /// <summary>Holds the builder's ray where the hand points now, relative to the body, for as long as the hand turns the block (<see cref="TryFrozenRay"/>).</summary>
         private static void FreezeRay(MyCharacter character)
         {
             rayFrozen = HandTools.TryGetRay(out Vector3D origin, out Vector3D direction);
@@ -423,9 +425,9 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// The block in hand changed while the grip turns it (a stage step, the size switch): the game gave the new block the
+        /// The block in hand changed while the hand turns it (a stage step, the size switch): the game gave the new block the
         /// orientation it had last, or none (MyCubeBuilder.UpdateCubeBlockStageDefinition). A block of the same size is turned
-        /// back to the way the grip holds it, so a stage step does not undo the turn; otherwise, or if the new block cannot face
+        /// back to the way the hand holds it, so a stage step does not undo the turn; otherwise, or if the new block cannot face
         /// that way, the turn starts again from what the game shows. False when the turn ended.
         /// </summary>
         private static bool KeepTurn(MyCubeBuilder builder)
@@ -451,7 +453,7 @@ namespace SpaceEngineersVR.Hands
                 Matrix held = localStart * Turns[snap];
                 if (!MyCubeBuilder.CheckValidBlockRotation(held, now.Direction, now.Rotation))
                 {
-                    EndTurn($"{Name(now)} cannot face the way the grip held {Name(was)}");
+                    EndTurn($"{Name(now)} cannot face the way the hand held {Name(was)}");
                     return false;
                 }
                 MatrixD target = held;
@@ -459,7 +461,7 @@ namespace SpaceEngineersVR.Hands
                 CustomRotation(builder);
                 gizmo.RotateAxis(ref target);
             }
-            Log.Info($"Build: the grip keeps {Name(now)} facing as it held {Name(was)} ({Describe(Turns[snap])} from the grip's start)");
+            Log.Info($"Build: the turn keeps {Name(now)} facing as it held {Name(was)} ({Describe(Turns[snap])} from the click's start)");
             return true;
         }
 
@@ -624,7 +626,7 @@ namespace SpaceEngineersVR.Hands
             return s ?? $"({v.X:F2},{v.Y:F2},{v.Z:F2})";
         }
 
-        /// <summary>The builder's (or the paste's) ray while the grip turns the block or the paste: where it was when the grip closed, held relative to the body.</summary>
+        /// <summary>The builder's (or the paste's) ray while the hand turns the block or the paste: where it was when the left stick click went down, held relative to the body.</summary>
         internal static bool TryFrozenRay(MyCharacter character, out Vector3D origin, out Vector3D direction)
         {
             origin = direction = Vector3D.Zero;
@@ -640,7 +642,7 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// The paste's turn, as a block's off a grid: the pasted grids' orientation (the clipboard's paste directions, which
-        /// the game's rotate keys turn in MyGridClipboard.RotateAroundAxis) is the one it had when the grip closed, turned by
+        /// the game's rotate keys turn in MyGridClipboard.RotateAroundAxis) is the one it had when the click went down, turned by
         /// the right hand's turn since then in 90 degree steps about the paste's own axes, and by the right stick a step at a
         /// time. Snapped to a grid the game lines the paste up with that grid's axes every frame (TrySnapToSurface), which
         /// these steps keep; snapped with one free axis (OneAxisRotationMode, where the game's keys turn it about its up only)
@@ -650,10 +652,9 @@ namespace SpaceEngineersVR.Hands
         {
             if (turning && !pasteTurn)
                 EndTurn("a paste took over from the block");
-            bool held = GripClaim.Holds(Hand.Right, ClaimName);
-            if (!held || grids == null || !grids.IsActive || grids.PreviewGrids.Count == 0)
+            if (!Modifier || grids == null || !grids.IsActive || grids.PreviewGrids.Count == 0)
             {
-                EndTurn(held ? "the paste has no grids to turn" : "grip let go");
+                EndTurn(Modifier ? "the paste has no grids to turn" : "left stick click let go");
                 return;
             }
             MyCharacter character = MySession.Static?.LocalCharacter;
@@ -667,14 +668,14 @@ namespace SpaceEngineersVR.Hands
             }
             bool upOnly = grids.OneAxisRotationMode;
 
-            // The stick: a 90 degree step per push left or right, about the paste's own axis nearest the body's up (GripStick).
+            // The stick: a 90 degree step per push left or right, about the paste's own axis nearest the body's up (ModifierStick).
             if (stickTurn != 0)
             {
                 PasteStickStep(grids, hand, character.WorldMatrix.Up, stickTurn > 0 ? -MathHelper.PiOver2 : MathHelper.PiOver2, stickTurn > 0 ? "right" : "left", upOnly);
                 return;
             }
 
-            // The hand: its turn since the grip closed, in the paste's frame (row vectors: hand = handStart * delta).
+            // The hand: its turn since the click went down, in the paste's frame (row vectors: hand = handStart * delta).
             MatrixD delta = MatrixD.Transpose(handStart) * hand;
             Matrix inFrame = (Matrix)(frame * delta * MatrixD.Transpose(frame));
             int best = Nearest(inFrame, null, upOnly, out double bestAngle);
@@ -688,7 +689,7 @@ namespace SpaceEngineersVR.Hands
             ApplyPaste(grids, Turns[best] * (Matrix)frame, out string facing);
             steps++;
             Haptics.Pulse(Hand.Right, TickAmplitude, TickSeconds);
-            Log.Info($"Paste: turned by hand to {Describe(Turns[best])} from the grip's start (was {Describe(Turns[was])}; hand {shownAngle:F0} deg from the old step, {bestAngle:F0} from the new); paste {facing}");
+            Log.Info($"Paste: turned by hand to {Describe(Turns[best])} from the click's start (was {Describe(Turns[was])}; hand {shownAngle:F0} deg from the old step, {bestAngle:F0} from the new); paste {facing}");
         }
 
         private static void BeginPasteTurn(MyGridClipboard grids, MyCharacter character, MatrixD hand)
@@ -745,11 +746,11 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// The right stick click: the block's other size (CUBE_BUILDER_CUBESIZE_MODE; the game switches only a block whose
-        /// group has one). A and B with the right grip held, in creative and survival: the next and the previous stage
+        /// group has one). A and B with the left stick click held, in creative and survival: the next and the previous stage
         /// (NEXT_BLOCK_STAGE, PREV_BLOCK_STAGE; the game steps only a block that has stages, past those not available here).
         /// A button pressed for a stage is not jump or the jetpack until it is let go (<see cref="TakesA"/>, <see cref="TakesB"/>).
         /// </summary>
-        private static void SizeAndStage(MyCubeBuilder builder, bool grip)
+        private static void SizeAndStage(MyCubeBuilder builder, bool modifier)
         {
             if (VRInput.IsNewPressed(Hand.Right, VRButtons.StickClick))
             {
@@ -757,7 +758,7 @@ namespace SpaceEngineersVR.Hands
                 sizeBefore = Name(builder.CurrentBlockDefinition);
                 sizeLogIn = 2;
             }
-            bool next = grip && VRInput.IsNewPressed(Hand.Right, VRButtons.A), previous = grip && VRInput.IsNewPressed(Hand.Right, VRButtons.B);
+            bool next = modifier && VRInput.IsNewPressed(Hand.Right, VRButtons.A), previous = modifier && VRInput.IsNewPressed(Hand.Right, VRButtons.B);
             if (next || previous)
             {
                 NextStage = next;
@@ -770,7 +771,7 @@ namespace SpaceEngineersVR.Hands
             stageB = VRInput.IsPressed(Hand.Right, VRButtons.B) && (stageB || previous);
         }
 
-        /// <summary>The right grip held with the stick up farther, down nearer: one of the game's steps on the push, then repeated while held. <paramref name="of"/>: the block, the paste or the voxel brush.</summary>
+        /// <summary>The left stick click held with the right stick up farther, down nearer: one of the game's steps on the push, then repeated while held. <paramref name="of"/>: the block, the paste or the voxel brush.</summary>
         private static void Distance(double seconds, string of)
         {
             int direction = stickDistance;

@@ -13,15 +13,15 @@ using VRageMath;
 namespace SpaceEngineersVR.Hands
 {
     /// <summary>
-    /// The helmet and the suit lamp by hand, through the game's own calls (the ones the keys make), so the sound, the
-    /// animation and the multiplayer sync are the game's.
+    /// The suit lamp by hand, through the game's own call (the one the key makes), so the sound, the animation and the
+    /// multiplayer sync are the game's. The helmet itself is not by hand: it stays on the wrist panel and the actions wheel.
     /// <list type="bullet">
-    /// <item><b>Helmet.</b> A grip with either hand on the helmet (within <see cref="HelmetReach"/> of its shell) toggles it
-    /// (<c>SwitchHelmet</c>, as the key does). Not the left hand at the helmet's mouth, the chin: that is push to talk
-    /// (<see cref="VoiceTalk"/>), which asks first.</item>
-    /// <item><b>Lamp.</b> A tap of a fingertip on the side of the head (the temple) toggles the suit lamp (<c>SwitchLights</c>):
+    /// <item><b>Lamp, by grip.</b> A grip with either hand on the helmet (within <see cref="HelmetReach"/> of its shell)
+    /// toggles the suit lamp (<c>SwitchLights</c>, as the key does). Not the left hand at the helmet's mouth, the chin: that
+    /// is push to talk (<see cref="VoiceTalk"/>), which asks first.</item>
+    /// <item><b>Lamp, by tap.</b> A tap of a fingertip on the side of the head (the temple) toggles it the same way:
     /// the tip touches, lifts within a second and a half, and no grip was pressed meanwhile (so reaching for the helmet
-    /// does not also switch the lamp). Not with a tool in that hand.</item>
+    /// does not switch the lamp twice). Not with a tool in that hand.</item>
     /// </list>
     /// Only a grip that <b>starts</b> on the helmet counts: it is claimed through <see cref="GripClaim"/> at priority 10, so the
     /// grip's old meanings (Use on the right hand, the toolbar wheel on the left) are skipped for that press, and a grip
@@ -123,12 +123,12 @@ namespace SpaceEngineersVR.Hands
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(HeadGestures), nameof(AfterSimulation)));
                 hooked = true;
-                Log.Info($"Helmet and lamp by hand: hooked (grip claim at priority {ClaimPriority}; the helmet within {HelmetReach * 100:0} cm of its {HelmetShell * 100:0} cm shell)");
+                Log.Info($"Suit lamp by hand: hooked (grip claim at priority {ClaimPriority}: a grip within {HelmetReach * 100:0} cm of the {HelmetShell * 100:0} cm helmet shell switches the lamp, as a fingertip tap on the temple does)");
             }
             catch (Exception e)
             {
                 hooked = false;
-                Log.Error(e, "The helmet and lamp gestures could not be hooked; they stay on the keys and the wrist panel");
+                Log.Error(e, "The suit lamp gestures could not be hooked; the lamp stays on the key and the wrist panel");
             }
         }
 
@@ -172,7 +172,7 @@ namespace SpaceEngineersVR.Hands
             catch (Exception e)
             {
                 if (errors++ < 3)
-                    Log.Error(e, "The helmet and lamp gestures failed" + (errors >= 3 ? "; they stay off for this run" : string.Empty));
+                    Log.Error(e, "The suit lamp gestures failed" + (errors >= 3 ? "; they stay off for this run" : string.Empty));
             }
         }
 
@@ -231,7 +231,7 @@ namespace SpaceEngineersVR.Hands
             {
                 run.Holding = true;
                 changed = true;
-                ToggleHelmet(hand, character);
+                ToggleLamp(hand, character, "grip on the helmet", "lamp grip");
             }
             else if (!holds && run.Holding)
             {
@@ -249,13 +249,14 @@ namespace SpaceEngineersVR.Hands
             Lamp(hand, run, character, tip, frame, gripPressed, hand == VRSettings.DominantHand, now);
         }
 
-        private static void ToggleHelmet(Hand hand, MyCharacter character)
+        /// <summary>The game's SwitchLights, as the key calls it; <paramref name="how"/> and <paramref name="check"/> name the gesture in the log.</summary>
+        private static void ToggleLamp(Hand hand, MyCharacter character, string how, string check)
         {
-            bool before = character.OxygenComponent?.HelmetEnabled ?? false;
-            ((VRage.Game.ModAPI.Interfaces.IMyControllableEntity)character).SwitchHelmet();
+            bool before = character.LightEnabled;
+            character.SwitchLights();
             Haptics.Pulse(hand, FirmAmplitude, FirmSeconds);
-            Note($"Helmet: {hand} grip on the helmet: {(before ? "closed" : "open")} -> toggled");
-            Verify($"{hand} helmet toggle", () => "helmet " + ((character.OxygenComponent?.HelmetEnabled ?? false) ? "closed" : "open"));
+            Note($"Lamp: {hand} {how}: lamp {(before ? "on" : "off")} -> toggled");
+            Verify($"{hand} {check}", () => "lamp " + (character.LightEnabled ? "on" : "off"));
         }
 
         // ---- The tick: a hand reaching the helmet ----
@@ -310,11 +311,7 @@ namespace SpaceEngineersVR.Hands
 
             // Lifted off in time: a tap.
             run.LampTouching = false;
-            bool before = character.LightEnabled;
-            character.SwitchLights();
-            Haptics.Pulse(hand, FirmAmplitude, FirmSeconds);
-            Note($"Lamp: {hand} fingertip tapped the temple: lamp {(before ? "on" : "off")} -> toggled");
-            Verify($"{hand} lamp tap", () => "lamp " + (character.LightEnabled ? "on" : "off"));
+            ToggleLamp(hand, character, "fingertip tapped the temple", "lamp tap");
         }
 
         // ---- The log: lines for the grabs and the releases (rate-limited), and what the game says a moment later ----
@@ -370,7 +367,7 @@ namespace SpaceEngineersVR.Hands
                     continue;
                 Check check = checks[i];
                 checks.RemoveAt(i);
-                Log.Info($"Helmet and lamp: {check.What} -> {check.Read()}");
+                Log.Info($"Suit lamp by hand: {check.What} -> {check.Read()}");
             }
         }
     }

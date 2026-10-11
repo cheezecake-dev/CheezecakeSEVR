@@ -467,6 +467,8 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting wristStatus = Add(new FlagSetting("wristStatus", "Status on the wrist", "Interface", true,
             tooltip: "A screen on the gauntlet of your astronaut's left forearm shows your suit and body status, on foot and in a seat: the helmet, jetpack, broadcast and lamp icons, radiation, the health, food, energy, oxygen and hydrogen bars, the medicine and cryo marks, the inventory fill, and the oxygen and temperature outside. It brightens when you look at it, and the HUD leaves these out (the speed, dampeners and gravity stay on the HUD). Off: no screen on the wrist, and the HUD shows them as the game does."));
+        private static readonly FlagSetting hudVisor = Add(new FlagSetting("hudVisor", "HUD on the visor", "Interface", true,
+            tooltip: "The HUD's parts sit on your helmet's visor: the toolbar, suit and ship status, block info, chat, notifications and the rest each move out toward their own edge or corner, curve round your head and face your eyes, so the middle of your view stays clear. Markers on things in the world (ore, antennas, target locks, the selection box) and the crosshair stay where they are. Off: the whole HUD on one flat panel ahead of you, as before. The distance and width under HUD set how far and how wide the visor is."));
         private static readonly FlagSetting showToolbarOnFoot = Add(new FlagSetting("showToolbarOnFoot", "Toolbar on the HUD", "Interface", false,
             tooltip: "The HUD's bottom toolbar (the hotbar, its page numbers, the Customize Toolbar and Color lines, and the plate behind them) on foot and on the jetpack. Off: left out there, since the tools wheel and the wrist panel do its job, and a short label names the tool you pick; in a seat, a camera view, the G menu and the terminal it is shown as the game shows it."));
         private static readonly FlagSetting controlHints = Add(new FlagSetting("controlHints", "Control hints", "Interface", true,
@@ -603,8 +605,8 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting fingerPress = Add(new FlagSetting("fingerPress", "Press with fingertip", "Controls", true,
             tooltip: "On foot, touching a push-button with the tip of a controller's index finger presses it, as the Use key does: the buttons of a button panel, and the next, previous and pause buttons of a jukebox. Doors, seats, terminals and cargo are not touched. Not while that hand holds a tool, a menu is up or you are on a ladder or seated. Off: only the Use key and the hand's ray."));
 
-        private static readonly FlagSetting helmetAndLamp = Add(new FlagSetting("helmetAndLamp", "Helmet and lamp by hand", "Controls", true,
-            tooltip: "On foot, grip your helmet with either hand to open or close it, and tap the side of your head with a fingertip to switch the suit lamp. A grip anywhere else keeps its old job (Use, the toolbar wheel). Off: the keys and the wrist panel only."));
+        private static readonly FlagSetting helmetAndLamp = Add(new FlagSetting("helmetAndLamp", "Suit lamp by hand", "Controls", true,
+            tooltip: "On foot, grip your helmet with either hand, or tap the side of your head with a fingertip, to switch the suit lamp. A grip anywhere else keeps its old job (Use, the toolbar wheel). The helmet itself is on the wrist panel and the actions wheel. Off: the key and the wrist panel only."));
         private static readonly FlagSetting moveViewByHand = Add(new FlagSetting("moveViewByHand", "Move the external view by hand", "Controls", true,
             tooltip: "Grip the external view screen with either hand to pick it up and put it anywhere; it stays where you let go, the next time too. The External view page's Reset puts it back on the dash. Off: it stays on the dash."));
         private static readonly FlagSetting touchToolbar = Add(new FlagSetting("touchToolbar", "Touch toolbar on the cockpit screen", "Controls", true,
@@ -616,6 +618,8 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting grabLadders = Add(new FlagSetting("grabLadders", "Grab ladders", "Controls", true,
             tooltip: "Press a grip with your hand on a ladder to get on it, then pull your hand down to climb a step up, or push it up to climb down. Off: ladders by the Use key and the move stick only."));
+        private static readonly FlagSetting handsStopOnGlass = Add(new FlagSetting("handsStopOnGlass", "Hands stop on glass", "Controls", true,
+            tooltip: "Your hands stop on window glass and cockpit canopies as they stop on hulls: from outside on foot, and from inside in a seat. Off: they pass through glass, and stop only where the block's own collision is."));
 
         private static readonly FlagSetting twoHandedTools = Add(new FlagSetting("twoHandedTools", "Two-handed tools", "Controls", true,
             tooltip: "On foot, close your other hand's grip on the front of the tool or gun you hold, where the astronaut's other hand goes, to hold it with both hands: it then points along the line from your tool hand to your other hand. A light tick tells you the hand is close enough. Let go and it goes back to one hand. A pistol is steadied but still aims with the tool hand. A grip anywhere else keeps its old job (the toolbar wheel). Off: tools in one hand only."));
@@ -672,6 +676,9 @@ namespace SpaceEngineersVR
 
         /// <summary>The game's toolbar stays on the HUD on foot too; off (the default) it is left out there (<see cref="Rendering.HudToolbar"/>).</summary>
         public static bool ShowToolbarOnFoot => showToolbarOnFoot.Value;
+
+        /// <summary>The HUD's parts are on the visor, curved round the head, and its markers on the flat panel (<see cref="Rendering.HudVisor"/>); off, all of it is on the panel.</summary>
+        public static bool HudVisor => hudVisor.Value;
 
         /// <summary>How far ahead of the eyes the GUI and HUD panel floats, metres (-hudDistance 1.5).</summary>
         public static float HudDistance => hudDistance.Value;
@@ -943,6 +950,9 @@ namespace SpaceEngineersVR
         public static bool GrabItems => grabItems.Value;
         /// <summary>With no gravity, a grip on a hull takes hold of it and the body follows the hand (<see cref="Hands.HullGrab"/>).</summary>
         public static bool GrabHulls => grabHulls.Value;
+
+        /// <summary>The hands stop on window and canopy glass as on hulls (<see cref="Hands.GlassPanes"/>).</summary>
+        public static bool HandsStopOnGlass => handsStopOnGlass.Value;
 
         /// <summary>A grip on a ladder gets on it and climbs it by the hand's pull (<see cref="Hands.HullGrab"/>).</summary>
         public static bool GrabLadders => grabLadders.Value;

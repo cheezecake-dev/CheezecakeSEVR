@@ -31,6 +31,16 @@ namespace SpaceEngineersVR.OpenXR
 
         public static bool HasSystem => SystemId != 0;
 
+        /// <summary>XR_KHR_composition_layer_cylinder is enabled: layers can be curved round the head (<see cref="Rendering.HudVisor"/>).</summary>
+        public static bool HasCylinder { get; private set; }
+
+        /// <summary>The most composition layers the headset takes in one frame (the spec's minimum is 16); 0 before <see cref="TryGetSystem"/>.</summary>
+        public static int MaxLayerCount { get; private set; }
+
+        /// <summary>The largest swapchain image the headset takes, pixels.</summary>
+        public static int MaxImageWidth { get; private set; }
+        public static int MaxImageHeight { get; private set; }
+
         /// <summary>XR_OCULUS_audio_device_guid is enabled: the runtime names the headset's audio output (<see cref="AudioOutputDeviceId"/>).</summary>
         public static bool HasAudioDeviceGuid { get; private set; }
 
@@ -84,6 +94,7 @@ namespace SpaceEngineersVR.OpenXR
             }
 
             var extensions = new List<string> { XrConst.D3D11Extension };
+            XrInput.AddProfileExtensions(available, extensions); // the controllers with their own profile, those the runtime lists
             HasVisibilityMask = available.Contains(XrConst.VisibilityMaskExtension);
             if (HasVisibilityMask)
                 extensions.Add(XrConst.VisibilityMaskExtension);
@@ -95,6 +106,11 @@ namespace SpaceEngineersVR.OpenXR
             HasAudioDeviceGuid = available.Contains(XrConst.AudioDeviceGuidExtension);
             if (HasAudioDeviceGuid)
                 extensions.Add(XrConst.AudioDeviceGuidExtension);
+            HasCylinder = available.Contains(XrConst.CylinderExtension);
+            if (HasCylinder)
+                extensions.Add(XrConst.CylinderExtension);
+            else
+                Log.Info($"The OpenXR runtime does not offer {XrConst.CylinderExtension}; the HUD on the visor is drawn on flat pieces turned to face the eyes");
 
             IntPtr[] names = new IntPtr[extensions.Count];
             try
@@ -189,6 +205,9 @@ namespace SpaceEngineersVR.OpenXR
             var properties = new XrSystemProperties { Type = XrStructureType.SystemProperties };
             Xr.Check(Xr.xrGetSystemProperties(Instance, systemId, ref properties), "xrGetSystemProperties", Instance);
             SystemName = Xr.ReadString(properties.SystemName, 256);
+            MaxLayerCount = (int)Math.Min(properties.MaxLayerCount, 64u);
+            MaxImageWidth = (int)Math.Min(properties.MaxSwapchainImageWidth, 16384u);
+            MaxImageHeight = (int)Math.Min(properties.MaxSwapchainImageHeight, 16384u);
 
             // The runtime requires this call before a D3D11 session can be created.
             var requirements = new XrGraphicsRequirementsD3D11KHR { Type = XrStructureType.GraphicsRequirementsD3D11KHR };
@@ -209,7 +228,9 @@ namespace SpaceEngineersVR.OpenXR
 
             SystemId = systemId;
             Log.Info($"Headset: {SystemName}, eye {EyeWidth}x{EyeHeight}, GPU LUID {AdapterLuid:X}, " +
-                     $"tracking orientation={properties.OrientationTracking != 0} position={properties.PositionTracking != 0}");
+                     $"tracking orientation={properties.OrientationTracking != 0} position={properties.PositionTracking != 0}, " +
+                     $"up to {properties.MaxLayerCount} layers a frame, images up to {properties.MaxSwapchainImageWidth}x{properties.MaxSwapchainImageHeight}, " +
+                     $"cylinder layers {(HasCylinder ? "offered" : "not offered")}");
             return true;
         }
 

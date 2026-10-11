@@ -12,7 +12,6 @@ using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.Gui;
-using Sandbox.Game.SessionComponents.Clipboard;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Input;
@@ -35,9 +34,12 @@ namespace SpaceEngineersVR.Hands
     /// </summary>
     /// <remarks>
     /// <para>Who owns the grip: <see cref="GripClaim"/>. <see cref="Take"/> is the taker (priority 30, after the helmet and
-    /// floating items, before the hull and ladder grab): it is asked when a grip is pressed and says yes when the palm is
-    /// within <see cref="Reach"/> of something this takes. Then the grip is this feature's until it is let go, and the Use
-    /// key is not also pressed by the right hand, nor does the grip fly the ship in a seat.</para>
+    /// floating items, before the hull and ladder grab and before the colour tool): it is asked when a
+    /// grip is pressed and says yes when the palm is within <see cref="Reach"/> of something this takes. Then the grip is this
+    /// feature's until it is let go, and the Use key is not also pressed by the right hand, nor does the grip fly the ship in
+    /// a seat. A hand that holds a tool or a weapon does not grab; a block in hand is not a tool
+    /// (<see cref="FingerPress.IsHandTool"/>), so with a block in hand the right grip on a cargo container, a terminal, a
+    /// door or a seat uses it as on foot (build mode no longer claims the grip: the left stick click turns the block).</para>
     /// <para>What it takes: the game keeps every use object as a detector box in its block's space
     /// (<see cref="MyUseObjectsComponent.DetectorInteractiveObjects"/>), which is what <see cref="FingerPress"/> reads
     /// too; the box nearest the palm that is taken wins. Every kind is taken (<see cref="Classify"/>) except a short list,
@@ -368,6 +370,27 @@ namespace SpaceEngineersVR.Hands
 
         private static bool Enabled => hooked && !Off && VRSettings.GrabToUse && VRInput.Active;
 
+        /// <summary>Runs a game call with the character's detector answering with <paramref name="use"/>, as <see cref="Use"/> does (<see cref="QuickInventory"/>'s take and dump).</summary>
+        internal static void AnswerWith(IMyUseObject use, Action call)
+        {
+            answer = use;
+            try
+            {
+                call();
+            }
+            finally
+            {
+                answer = null;
+            }
+        }
+
+        /// <summary>What a hand is on now on foot (in reach, nothing in the way, highlighted), with nothing held in it; null otherwise.</summary>
+        internal static IMyUseObject OnFoot(Hand hand)
+        {
+            IMyUseObject use = hover[(int)hand];
+            return Enabled && lastPlace == Place.OnFoot && held[(int)hand] == null && use != null && !Gone(use) ? use : null;
+        }
+
         /// <summary>
         /// Where the local character is for grabbing, and the seat it sits in. Seated means the player's own character
         /// sits in the seat it controls and sees from it in first person (the hands are drawn there); a camera block, a
@@ -388,14 +411,14 @@ namespace SpaceEngineersVR.Hands
             return Place.Seated;
         }
 
-        /// <summary>Whether a hand may grab now: not up a ladder, not with a menu up, not the hand that holds a tool or the builder.</summary>
-        private static bool MayGrab(MyCharacter character, Hand hand)
-        {
-            bool building = (MyCubeBuilder.Static != null && MyCubeBuilder.Static.IsActivated)
-                            || (MyClipboardComponent.Static != null && MyClipboardComponent.Static.IsActive);
-            bool holdsTool = character.CurrentWeapon != null || building;
-            return FingerPress.MayPress(character.IsOnLadder, MyScreenManager.GetScreenWithFocus(), holdsTool, hand, VRSettings.DominantHand);
-        }
+        /// <summary>
+        /// Whether a hand may grab now: not up a ladder, not with a menu up, not the hand that holds a tool. A block in hand is
+        /// not a tool (<see cref="FingerPress.IsHandTool"/>): with a block or the colour tool in hand, or a paste up with no tool
+        /// in hand, the right grip on something usable uses it as on foot, as does the right grip anywhere else (build mode no
+        /// longer claims it), and this claim is asked before the colour tool's.
+        /// </summary>
+        private static bool MayGrab(MyCharacter character, Hand hand) =>
+            FingerPress.MayPress(character.IsOnLadder, MyScreenManager.GetScreenWithFocus(), FingerPress.IsHandTool(character.CurrentWeapon), hand, VRSettings.DominantHand);
 
         // ---- The grip claim ----
 
@@ -446,10 +469,20 @@ namespace SpaceEngineersVR.Hands
             hover[(int)hand] = null;
             Say($"Grab use: {hand} hand took hold of '{best.Tag}' {best.Use.GetType().Name} on {Describe(best.Use.Owner)} " +
                 $"({best.Distance * 100:0.0} cm from the box; {Verb(best)}; {(place == Place.Seated ? $"seated in {Describe(seat)}" : "on foot")})");
+            string instead = GripInstead(hand);
+            if (instead != null)
+                Log.Info($"Build: {hand.ToString().ToLowerInvariant()} grip on {Describe(best.Use.Owner)} ('{best.Tag}' {best.Use.GetType().Name}) uses it ({Verb(best)}) instead of {instead}");
             if (best.Kind == Kind.Door || best.Kind == Kind.Deliberate)
                 Haptics.Pulse(hand, TakeAmplitude, TakeSeconds);
             return true;
         }
+
+        /// <summary>
+        /// For the log: what the right grip would have done had this not taken it (the colour tool's claim is asked after this
+        /// one), or null when the grip is not its now.
+        /// </summary>
+        private static string GripInstead(Hand hand) =>
+            hand == Hand.Right && PaintMode.Active ? "the colour tool's skin cycle" : null;
 
         private static string Verb(in Candidate c)
         {
@@ -1124,7 +1157,7 @@ namespace SpaceEngineersVR.Hands
                    $"{found.Count} use objects within {radius:0.#} m: {list}";
         }
 
-        private static string Describe(IMyEntity owner)
+        internal static string Describe(IMyEntity owner)
         {
             if (owner == null)
                 return "nothing";

@@ -52,6 +52,7 @@ namespace SpaceEngineersVR.Rendering
             HudCamera.Patch(harmony);
             HudToolbar.Patch(harmony);
             WristStatus.Patch(harmony);
+            HudVisor.Patch(harmony);
             WorldMenu.Patch(harmony);
             MainMenu.Patch(harmony);
             PanelCursor.Patch(harmony);
@@ -80,6 +81,7 @@ namespace SpaceEngineersVR.Rendering
             Hands.ScreenTouch.Patch(harmony);
             Gui.TouchToolbar.Patch(harmony);
             Hands.GrabUse.Patch(harmony);
+            Hands.QuickInventory.Patch(harmony);
             Hands.HeadGestures.Patch(harmony);
             Hands.VoiceTalk.Register();
             Hands.ItemGrab.Patch(harmony);

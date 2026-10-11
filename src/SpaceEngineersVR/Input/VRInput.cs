@@ -91,6 +91,14 @@ namespace SpaceEngineersVR.Input
         /// <see cref="Palm"/> as last located (OpenXR's valid and tracked bits, 0x1 to 0x8); 0 from a source without them.
         /// </summary>
         public byte GripFlags, AimFlags, PalmFlags;
+
+        /// <summary>
+        /// The grip's position is actively tracked (OpenXR's position-tracked bit), not just valid. A controller out of the
+        /// headset's cameras' view stays valid but loses it, and its position then drifts or freezes while its turn, from
+        /// the inertial sensors, stays good. True from a source without location flags (the desktop hands) while
+        /// <see cref="Tracked"/>.
+        /// </summary>
+        public bool PositionTracked => Tracked && (GripFlags == 0 || (GripFlags & (byte)OpenXR.XrConst.SpaceLocationPositionTracked) != 0);
     }
 
     /// <summary>
