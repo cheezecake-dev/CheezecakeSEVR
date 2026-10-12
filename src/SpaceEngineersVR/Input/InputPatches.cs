@@ -67,7 +67,9 @@ namespace SpaceEngineersVR.Input
             VRInput.Update();
             VRControls.Update();
             Hands.ViewScreenGrab.Frame();
+            Hands.ShipModel.Frame();
             WristButton.Update();
+            Hands.Datapad.Update();
             VRControls.WalkBesidePanel();
         }
 

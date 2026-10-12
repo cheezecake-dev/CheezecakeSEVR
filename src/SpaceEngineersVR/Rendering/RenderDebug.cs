@@ -51,20 +51,22 @@ namespace SpaceEngineersVR.Rendering
     /// before the slots), =3 the block palette (<see cref="ToolbarWheel"/>).
     /// VRKeyboard=0 turns off the on-screen keyboard (<see cref="VRKeyboardHook"/>).
     /// HandTools=0 turns off the hand as the tool, aim and build ray, back to the head's (<see cref="Hands.HandTools"/>).
+    /// Ping=0 turns off the ping and the GPS mark, and X is the dampeners on its press again (<see cref="Hands.Ping"/>).
     /// ExternalView=1 forces the chase-camera screen on, =0 off, whatever the setting says (<see cref="ExternalView"/>).
     /// Laser=0 turns off the laser pointer, back to the plain mouse (<see cref="Laser"/>).
     /// PerfMeter=0 turns off the frame-time meter, the "Perf" lines in the log every 10 s (<see cref="PerfMeter"/>).
     /// GpuPasses=1 puts the per-pass GPU timestamps back, for the Perf line's GPU time by pass (<see cref="PerfMeter.PassMarks"/>; off by default: with them the game ended in NVIDIA's driver).
     /// ChaseCamera=0 gives the game's own third-person ship camera (<see cref="Tracking.ChaseCamera"/>).
     /// WristPanel=0 turns off the wrist button and the wrist panel (<see cref="WristButton"/>).
+    /// Datapad=0 turns off the datapad on the forearm (<see cref="Hands.Datapad"/>).
     /// WristStatus=0 gives the HUD its status bars and suit icons back and takes the screen off the gauntlet (<see cref="WristStatus"/>).
     /// WristStatusBright=N scales the gauntlet screen's brightness to N percent (100 as built, and at most), to judge it in the headset.
     /// WristStatusAll=1 draws the gauntlet screen's parts that show only at times (radiation panel, medicine, cryo and bottle marks) all the time, to check their place.
     /// QuickMenuNative=0 gives the wrist panel its plain look back, a flat background and text-only buttons, in place of the game's own menu look (<see cref="QuickActionsScreen.Plain"/>; from the next opening).
     /// MainMenuVR=0 gives the main menu back as a flat panel stretched over the window (<see cref="MainMenu"/>).
-    /// ZoomInset=0 takes the zoom inset away: a camera block's, turret's or searchlight's zoom changes nothing in the headset, as before (<see cref="ZoomInset"/>);
-    /// ZoomInsetHalfRate=1 draws the inset's picture every other frame, to weigh its cost.
-    /// DeathView=0 makes the game's death camera and the respawn screen's camera the view again, as before (<see cref="DeathView"/>).
+    /// ForcedView=0 makes the game's death camera, the respawn screen's camera and a cutscene's the view again, as before, and a block's fixed camera the eyes' own, the head's turn and move taken out (<see cref="ForcedView"/>).
+    /// CameraCut=0 lets the view cut straight to a new place, with no fade from black (<see cref="CameraCut"/>).
+    /// StandUpright=0 leaves standing upright in gravity to the game, a step a frame, the view rolling with it (<see cref="Tracking.StandUpright"/>).
     /// SoftwareCursor=0 stops the game drawing its own cursor into the panel; only the OS cursor is left, which is not in the panel (<see cref="SoftwareCursor"/>).
     /// FingerPress=0 turns off pressing buttons, doors and terminals by touching them with a fingertip (<see cref="Hands.FingerPress"/>).
     /// FingerPress=0 turns off pressing buttons by touching them with a fingertip (<see cref="Hands.FingerPress"/>);
@@ -79,6 +81,7 @@ namespace SpaceEngineersVR.Rendering
     /// and the one as the arms are solved): placed or why not, the hand snapshot read, the grip, aim and palm poses against
     /// each other, the weapon written and read back, and the arm target taken from it (<see cref="Hands.HeldTrace"/>).
     /// ViewGrab=0 turns off moving the external view screen with a grip on it (<see cref="Hands.ViewScreenGrab"/>).
+    /// ShipModel=0 puts away the ship model and keeps it off the actions wheel (<see cref="Hands.ShipModel"/>).
     /// GrabUse=0 turns off using things by closing the grip on them (<see cref="Hands.GrabUse"/>); the right grip is then Use along the ray only.
     /// GrabUseTrace=1 logs each grab-to-use grip's line of reach from the shoulder: clear, or the block in the way.
     /// HeadGestures=0 turns off the helmet grip and the temple tap for the lamp (<see cref="Hands.HeadGestures"/>).
@@ -119,6 +122,8 @@ namespace SpaceEngineersVR.Rendering
     /// SharedShadows=1 fits one set of sun shadow cascades for both eyes (<see cref="SharedShadows"/>; off until checked in game);
     /// SharedSpotShadows=1 draws the spot light shadow maps once, in the first eye, ProbeOnce=1 steps the environment probe once a frame (<see cref="SceneOnce"/>; both off until checked in game);
     /// ParticlesEachPass=1 steps the GPU particles in every pass again, as the renderer does, instead of once a frame in the first eye (<see cref="ParticlesOnce"/>);
+    /// ExposureEachPass=1 adapts the auto exposure in every pass again, as the renderer does, instead of once a frame to both eyes (<see cref="ExposureOnce"/>);
+    /// AOCentred=1 has the ambient occlusion take each eye's view as centred again, as the renderer does, instead of rebuilding positions for its off-centre field of view (<see cref="OffCentreAO"/>);
     /// FlaresPerEye=1 places light flares' ghosts and streaks from each eye's own view again, instead of from the middle of the eyes (<see cref="CentredFlares"/>);
     /// DynamicResolution=0/1 turns dynamic resolution off or on whatever the setting says, RenderScale=n (percent) holds the eyes at n% each way
     /// (<see cref="Rendering.DynamicResolution"/>); MotionExtrapolation=0 draws the view and its carrier where the game frame put them, in 60 Hz steps,
@@ -207,6 +212,8 @@ namespace SpaceEngineersVR.Rendering
             SceneOnce.ProbeEachPass = true;
             ParticlesOnce.EachPass = false;
             CentredFlares.PerEye = false;
+            ExposureOnce.EachPass = false;
+            OffCentreAO.Centred = false;
             Rendering.DynamicResolution.Debug = null;
             Rendering.DynamicResolution.FixedScale = null;
             Rendering.MotionExtrapolation.On = true;
@@ -240,20 +247,22 @@ namespace SpaceEngineersVR.Rendering
             ToolbarWheel.Mode = ToolbarWheel.ModeSlots;
             VRKeyboardHook.Off = false;
             Hands.HandTools.Off = false;
+            Hands.Ping.Off = false;
             ExternalView.Debug = null;
             PerfMeter.Off = false;
             PerfMeter.PassMarks = false;
             StallWatchdog.Off = true;
             Tracking.ChaseCamera.Off = false;
             WristButton.Off = false;
+            Hands.Datapad.Off = false;
             WristStatus.Off = false;
             WristStatus.Brightness = 1f;
             WristStatus.ShowAll = false;
             QuickActionsScreen.Plain = false;
             MainMenu.Off = false;
-            ZoomInset.Off = false;
-            ZoomInset.HalfRate = false;
-            DeathView.Off = false;
+            ForcedView.Off = false;
+            CameraCut.Off = false;
+            Tracking.StandUpright.Off = false;
             SoftwareCursor.Off = false;
             Hands.FingerPress.Off = false;
             Hands.ScreenGlass.Off = false;
@@ -265,6 +274,7 @@ namespace SpaceEngineersVR.Rendering
             Hands.GrabUse.Off = false;
             Hands.GrabUse.Trace = false;
             Hands.ViewScreenGrab.Off = false;
+            Hands.ShipModel.Off = false;
             Hands.HeadGestures.Off = false;
             Hands.HeldItem.WristGrasp = false;
             Hands.TwoHand.Off = false;
@@ -624,6 +634,12 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"HandTools={!Hands.HandTools.Off}");
                         continue;
                     }
+                    if (pair[0].Equals("Ping", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.Ping.Off = setting == 0;
+                        applied.Add($"Ping={!Hands.Ping.Off}");
+                        continue;
+                    }
                     if (pair[0].Equals("ExternalView", StringComparison.OrdinalIgnoreCase))
                     {
                         ExternalView.Debug = setting != 0;
@@ -660,6 +676,12 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"WristPanel={!WristButton.Off}");
                         continue;
                     }
+                    if (pair[0].Equals("Datapad", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.Datapad.Off = setting == 0;
+                        applied.Add($"Datapad={!Hands.Datapad.Off}");
+                        continue;
+                    }
                     if (pair[0].Equals("WristStatus", StringComparison.OrdinalIgnoreCase))
                     {
                         WristStatus.Off = setting == 0;
@@ -690,22 +712,22 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"MainMenuVR={!MainMenu.Off}");
                         continue;
                     }
-                    if (pair[0].Equals("ZoomInset", StringComparison.OrdinalIgnoreCase))
+                    if (pair[0].Equals("ForcedView", StringComparison.OrdinalIgnoreCase))
                     {
-                        ZoomInset.Off = setting == 0;
-                        applied.Add($"ZoomInset={!ZoomInset.Off}");
+                        ForcedView.Off = setting == 0;
+                        applied.Add($"ForcedView={!ForcedView.Off}");
                         continue;
                     }
-                    if (pair[0].Equals("ZoomInsetHalfRate", StringComparison.OrdinalIgnoreCase))
+                    if (pair[0].Equals("CameraCut", StringComparison.OrdinalIgnoreCase))
                     {
-                        ZoomInset.HalfRate = setting != 0;
-                        applied.Add($"ZoomInsetHalfRate={ZoomInset.HalfRate}");
+                        CameraCut.Off = setting == 0;
+                        applied.Add($"CameraCut={!CameraCut.Off}");
                         continue;
                     }
-                    if (pair[0].Equals("DeathView", StringComparison.OrdinalIgnoreCase))
+                    if (pair[0].Equals("StandUpright", StringComparison.OrdinalIgnoreCase))
                     {
-                        DeathView.Off = setting == 0;
-                        applied.Add($"DeathView={!DeathView.Off}");
+                        Tracking.StandUpright.Off = setting == 0;
+                        applied.Add($"StandUpright={!Tracking.StandUpright.Off}");
                         continue;
                     }
                     if (pair[0].Equals("SoftwareCursor", StringComparison.OrdinalIgnoreCase))
@@ -760,6 +782,12 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Hands.ViewScreenGrab.Off = setting == 0;
                         applied.Add($"ViewGrab={!Hands.ViewScreenGrab.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ShipModel", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.ShipModel.Off = setting == 0;
+                        applied.Add($"ShipModel={!Hands.ShipModel.Off}");
                         continue;
                     }
                     if (pair[0].Equals("GrabUse", StringComparison.OrdinalIgnoreCase))
@@ -940,6 +968,18 @@ namespace SpaceEngineersVR.Rendering
                     {
                         CentredFlares.PerEye = setting != 0;
                         applied.Add($"FlaresPerEye={CentredFlares.PerEye}");
+                        continue;
+                    }
+                    if (pair[0].Equals("AOCentred", StringComparison.OrdinalIgnoreCase))
+                    {
+                        OffCentreAO.Centred = setting != 0;
+                        applied.Add($"AOCentred={OffCentreAO.Centred}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ExposureEachPass", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ExposureOnce.EachPass = setting != 0;
+                        applied.Add($"ExposureEachPass={ExposureOnce.EachPass}");
                         continue;
                     }
                     if (pair[0].Equals("ParticlesEachPass", StringComparison.OrdinalIgnoreCase))

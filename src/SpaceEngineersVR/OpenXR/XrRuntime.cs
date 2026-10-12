@@ -5,12 +5,14 @@ using System.IO;
 using System.Reflection;
 #endif
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace SpaceEngineersVR.OpenXR
 {
     /// <summary>
-    /// The OpenXR instance and headset system. Created before the game starts so the render device can be put on
-    /// the GPU the headset runtime requires; the session itself needs that device and is created later.
+    /// The OpenXR instance and headset system. Looked for before the game starts so the render device can be put on
+    /// the GPU the headset runtime requires, and while it runs by <see cref="HeadsetWatcher"/>; the session itself needs
+    /// that device and is created later.
     /// </summary>
     internal static unsafe class XrRuntime
     {
@@ -18,8 +20,12 @@ namespace SpaceEngineersVR.OpenXR
         // bound through a DllImport resolver); LINUX is the operating system (library names and runtime discovery). Linux
         // builds always run on CoreCLR, so LINUX implies NETCOREAPP; Windows builds may be either.
 
-        public static ulong Instance { get; private set; }
-        public static ulong SystemId { get; private set; }
+        // Written by the headset watcher's thread (HeadsetWatcher) and read by the render thread; SystemId is written last,
+        // so a render thread that sees it also sees everything TryGetSystem set before it.
+        private static ulong instance, systemId;
+
+        public static ulong Instance => Volatile.Read(ref instance);
+        public static ulong SystemId => Volatile.Read(ref systemId);
         public static string SystemName { get; private set; }
 
         /// <summary>LUID of the GPU the runtime requires, or 0 when no headset system was found.</summary>
@@ -47,6 +53,9 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>The largest swapchain image the headset takes, pixels.</summary>
         public static int MaxImageWidth { get; private set; }
         public static int MaxImageHeight { get; private set; }
+
+        /// <summary>XR_FB_display_refresh_rate is enabled: the refresh rate can be listed and requested (<see cref="XrSession.RequestRefreshRate"/>).</summary>
+        public static bool HasRefreshRate { get; private set; }
 
         /// <summary>XR_OCULUS_audio_device_guid is enabled: the runtime names the headset's audio output (<see cref="AudioOutputDeviceId"/>).</summary>
         public static bool HasAudioDeviceGuid { get; private set; }
@@ -180,11 +189,20 @@ namespace SpaceEngineersVR.OpenXR
         }
 #endif
 
+#if LINUX
+        private static bool runtimeChosen;
+
+#endif
         /// <summary>Loads the Khronos loader from the plugin folder (<see cref="FindLoader"/>) and creates the instance. False when OpenXR is unusable.</summary>
         public static bool CreateInstance(string pluginDir)
         {
 #if LINUX
-            XrRuntimeDiscovery.Apply(); // before the loader reads XR_RUNTIME_JSON
+            // Before the loader reads XR_RUNTIME_JSON; once, as the variable it sets lasts for the run.
+            if (!runtimeChosen)
+            {
+                runtimeChosen = true;
+                XrRuntimeDiscovery.Apply();
+            }
 #endif
             string loaderPath = FindLoader(pluginDir);
             if (!LoadLoader(ref loaderPath, out string loadError))
@@ -193,7 +211,7 @@ namespace SpaceEngineersVR.OpenXR
                 return false;
             }
             LoaderPath = loaderPath;
-            Log.Info("OpenXR loader: " + loaderPath);
+            Once("OpenXR loader: " + loaderPath);
 
             HashSet<string> available = EnumerateExtensions();
             HasD3D11 = available.Contains(XrConst.D3D11Extension);
@@ -217,15 +235,18 @@ namespace SpaceEngineersVR.OpenXR
             if (HasPalmPose)
                 extensions.Add(XrConst.PalmPoseExtension);
             else
-                Log.Info($"The OpenXR runtime does not offer {XrConst.PalmPoseExtension}; the palm is placed from the grip pose");
+                Once($"The OpenXR runtime does not offer {XrConst.PalmPoseExtension}; the palm is placed from the grip pose");
             HasAudioDeviceGuid = available.Contains(XrConst.AudioDeviceGuidExtension);
             if (HasAudioDeviceGuid)
                 extensions.Add(XrConst.AudioDeviceGuidExtension);
+            HasRefreshRate = available.Contains(XrConst.DisplayRefreshRateExtension);
+            if (HasRefreshRate)
+                extensions.Add(XrConst.DisplayRefreshRateExtension);
             HasCylinder = available.Contains(XrConst.CylinderExtension);
             if (HasCylinder)
                 extensions.Add(XrConst.CylinderExtension);
             else
-                Log.Info($"The OpenXR runtime does not offer {XrConst.CylinderExtension}; the HUD on the visor is drawn on flat pieces turned to face the eyes");
+                Once($"The OpenXR runtime does not offer {XrConst.CylinderExtension}; the HUD on the visor is drawn on flat pieces turned to face the eyes");
 
             IntPtr[] names = new IntPtr[extensions.Count];
             try
@@ -247,8 +268,8 @@ namespace SpaceEngineersVR.OpenXR
                     info.ApplicationInfo.EngineVersion = 1;
                     info.ApplicationInfo.ApiVersion = XrConst.ApiVersion_1_0;
 
-                    Xr.Check(Xr.xrCreateInstance(ref info, out ulong instance), "xrCreateInstance");
-                    Instance = instance;
+                    Xr.Check(Xr.xrCreateInstance(ref info, out ulong created), "xrCreateInstance");
+                    Volatile.Write(ref instance, created);
                 }
             }
             finally
@@ -279,6 +300,33 @@ namespace SpaceEngineersVR.OpenXR
 
             Log.Info($"OpenXR instance created (extensions: {string.Join(", ", extensions)})");
             return true;
+        }
+
+        /// <summary>Forgets the headset, so that <see cref="TryGetSystem"/> looks for it again. No session may be using it.</summary>
+        public static void ForgetSystem() => Volatile.Write(ref systemId, 0);
+
+        /// <summary>Destroys the instance after it was lost (or the runtime failed); <see cref="CreateInstance"/> makes a new one. No session may exist.</summary>
+        public static void DestroyInstance()
+        {
+            ForgetSystem();
+            ulong lost = Instance;
+            Volatile.Write(ref instance, 0);
+            if (lost != 0)
+                Xr.xrDestroyInstance(lost); // its result is of no use: the instance is gone either way
+        }
+
+        private static readonly HashSet<string> said = new HashSet<string>();
+
+        /// <summary>Logs a line about the runtime once a run: a new instance (after a lost one, or a retry) would only repeat it.</summary>
+        private static void Once(string message, bool warn = false)
+        {
+            lock (said)
+                if (!said.Add(message))
+                    return;
+            if (warn)
+                Log.Warn(message);
+            else
+                Log.Info(message);
         }
 
         /// <summary>
@@ -325,13 +373,13 @@ namespace SpaceEngineersVR.OpenXR
                 return true;
 
             var getInfo = new XrSystemGetInfo { Type = XrStructureType.SystemGetInfo, FormFactor = XrConst.FormFactorHeadMountedDisplay };
-            int result = Xr.xrGetSystem(Instance, ref getInfo, out ulong systemId);
+            int result = Xr.xrGetSystem(Instance, ref getInfo, out ulong found);
             if (result == XrResult.ErrorFormFactorUnavailable)
                 return false;
             Xr.Check(result, "xrGetSystem", Instance);
 
             var properties = new XrSystemProperties { Type = XrStructureType.SystemProperties };
-            Xr.Check(Xr.xrGetSystemProperties(Instance, systemId, ref properties), "xrGetSystemProperties", Instance);
+            Xr.Check(Xr.xrGetSystemProperties(Instance, found, ref properties), "xrGetSystemProperties", Instance);
             SystemName = Xr.ReadString(properties.SystemName, 256);
             MaxLayerCount = (int)Math.Min(properties.MaxLayerCount, 64u);
             MaxImageWidth = (int)Math.Min(properties.MaxSwapchainImageWidth, 16384u);
@@ -341,7 +389,7 @@ namespace SpaceEngineersVR.OpenXR
             if (HasD3D11)
             {
                 var requirements = new XrGraphicsRequirementsD3D11KHR { Type = XrStructureType.GraphicsRequirementsD3D11KHR };
-                Xr.Check(GetD3D11Requirements(Instance, systemId, ref requirements), "xrGetD3D11GraphicsRequirementsKHR", Instance);
+                Xr.Check(GetD3D11Requirements(Instance, found, ref requirements), "xrGetD3D11GraphicsRequirementsKHR", Instance);
                 AdapterLuid = requirements.AdapterLuid;
                 MinFeatureLevel = requirements.MinFeatureLevel;
             }
@@ -349,24 +397,24 @@ namespace SpaceEngineersVR.OpenXR
             if (HasVulkan)
             {
                 var vulkan = new XrGraphicsRequirementsVulkanKHR { Type = XrStructureType.GraphicsRequirementsVulkanKHR };
-                Xr.Check(getVulkanRequirements(Instance, systemId, ref vulkan),
+                Xr.Check(getVulkanRequirements(Instance, found, ref vulkan),
                     getVulkanDevice != null ? "xrGetVulkanGraphicsRequirementsKHR" : "xrGetVulkanGraphicsRequirements2KHR", Instance);
                 VulkanMinApiVersion = vulkan.MinApiVersionSupported;
                 VulkanMaxApiVersion = vulkan.MaxApiVersionSupported;
             }
 
-            Xr.Check(Xr.xrEnumerateViewConfigurationViews(Instance, systemId, XrConst.ViewConfigurationPrimaryStereo, 0, out uint viewCount, null),
+            Xr.Check(Xr.xrEnumerateViewConfigurationViews(Instance, found, XrConst.ViewConfigurationPrimaryStereo, 0, out uint viewCount, null),
                 "xrEnumerateViewConfigurationViews", Instance);
             var views = new XrViewConfigurationView[viewCount];
             for (int i = 0; i < views.Length; i++)
                 views[i].Type = XrStructureType.ViewConfigurationView;
             fixed (XrViewConfigurationView* viewsPtr = views)
-                Xr.Check(Xr.xrEnumerateViewConfigurationViews(Instance, systemId, XrConst.ViewConfigurationPrimaryStereo, viewCount, out viewCount, viewsPtr),
+                Xr.Check(Xr.xrEnumerateViewConfigurationViews(Instance, found, XrConst.ViewConfigurationPrimaryStereo, viewCount, out viewCount, viewsPtr),
                     "xrEnumerateViewConfigurationViews", Instance);
             EyeWidth = views[0].RecommendedImageRectWidth;
             EyeHeight = views[0].RecommendedImageRectHeight;
 
-            SystemId = systemId;
+            Volatile.Write(ref systemId, found);
             Log.Info($"Headset: {SystemName}, eye {EyeWidth}x{EyeHeight}, GPU LUID {AdapterLuid:X}, " +
                      $"tracking orientation={properties.OrientationTracking != 0} position={properties.PositionTracking != 0}, " +
                      $"up to {properties.MaxLayerCount} layers a frame, images up to {properties.MaxSwapchainImageWidth}x{properties.MaxSwapchainImageHeight}, " +
@@ -404,13 +452,13 @@ namespace SpaceEngineersVR.OpenXR
             else if (available.Contains(XrConst.Vulkan2Extension))
                 VulkanExtension = XrConst.Vulkan2Extension;
             if (VulkanExtension == XrConst.VulkanExtension)
-                Log.Info($"The game's DXGI is DXVK ({module}): the headset session will run on DXVK's Vulkan device through {VulkanExtension}");
+                Once($"The game's DXGI is DXVK ({module}): the headset session will run on DXVK's Vulkan device through {VulkanExtension}");
             else if (HasVulkan)
-                Log.Warn($"The game's DXGI is DXVK ({module}): the headset session will run on DXVK's Vulkan device through {VulkanExtension}, " +
-                         $"as the runtime has no {XrConst.VulkanExtension}; enable2 expects an instance and device the runtime made, which DXVK's are not");
+                Once($"The game's DXGI is DXVK ({module}): the headset session will run on DXVK's Vulkan device through {VulkanExtension}, " +
+                     $"as the runtime has no {XrConst.VulkanExtension}; enable2 expects an instance and device the runtime made, which DXVK's are not", warn: true);
             else
-                Log.Warn($"The game's DXGI is DXVK ({module}) but the OpenXR runtime offers neither {XrConst.VulkanExtension} nor {XrConst.Vulkan2Extension}; " +
-                         "only Direct3D 11 is left, which a runtime cannot normally use on DXVK");
+                Once($"The game's DXGI is DXVK ({module}) but the OpenXR runtime offers neither {XrConst.VulkanExtension} nor {XrConst.Vulkan2Extension}; " +
+                     "only Direct3D 11 is left, which a runtime cannot normally use on DXVK", warn: true);
         }
 
 #if LINUX

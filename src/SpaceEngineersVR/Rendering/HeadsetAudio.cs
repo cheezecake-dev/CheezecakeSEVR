@@ -24,7 +24,8 @@ namespace SpaceEngineersVR.Rendering
     /// so the game's playback streams follow the desktop default; this moves them (found through its PipeWire client's process id in
     /// <c>pw-dump</c>) to the WiVRn sink with the "target.object" metadata the session manager obeys (<c>pw-metadata</c>), the same
     /// as pavucontrol's move. When the sink goes away, and when the game exits, the metadata is deleted so the stream goes back to
-    /// the default output. Nothing in the game is patched; if pw-dump or pw-metadata is missing the sound stays on the default.
+    /// the default output, and so it does while the picture is the game's because the headset is away
+    /// (<see cref="StereoPatches.PlayingFlat"/>). Nothing in the game is patched; if pw-dump or pw-metadata is missing the sound stays on the default.
     /// No microphone: neither linux-compat's shim nor the Windows plugin opens a capture device, so there is nothing to route.
     /// </summary>
     internal static class HeadsetAudio
@@ -33,6 +34,9 @@ namespace SpaceEngineersVR.Rendering
         private const int ToolTimeoutMs = 4000;
 
         private static readonly List<uint> moved = new List<uint>();
+
+        /// <summary>Wakes the poll when the picture switches, so the sound follows at once.</summary>
+        private static readonly AutoResetEvent pictureChanged = new AutoResetEvent(false);
 
         public static void Patch(Harmony harmony)
         {
@@ -46,11 +50,9 @@ namespace SpaceEngineersVR.Rendering
                 Log.Info("Sound: HeadsetAudio=0 in the render debug file");
                 return;
             }
-            if (!XrRuntime.HasSystem)
-            {
-                Log.Info("Sound: no headset was connected when the game started");
-                return;
-            }
+            // Started with or without a headset: the WiVRn sink appearing is what moves the sound, so a headset that
+            // connects later in the run gets it too.
+            StereoPatches.PictureChanged += _ => pictureChanged.Set();
             new Thread(Run) { IsBackground = true, Name = "SEVR headset audio", Priority = ThreadPriority.BelowNormal }.Start();
             AppDomain.CurrentDomain.ProcessExit += (_, __) => MoveBack();
         }
@@ -71,9 +73,14 @@ namespace SpaceEngineersVR.Rendering
                         return;
                     }
                     FindNodes(dump, pid, out string sink, out List<uint> streams);
+                    bool flat = sink != null && StereoPatches.PlayingFlat;
+                    if (flat)
+                        sink = null;
                     if (sink != lastSink)
                     {
-                        Log.Info(sink != null ? $"Sound: the headset's audio sink is {sink}" : "Sound: the headset's audio sink is gone; back on the default output");
+                        Log.Info(sink != null ? $"Sound: the headset's audio sink is {sink}"
+                            : flat ? "Sound: playing flat while the headset is away; back on the default output"
+                            : "Sound: the headset's audio sink is gone; back on the default output");
                         if (sink == null)
                             MoveBack();
                         lastSink = sink;
@@ -113,7 +120,7 @@ namespace SpaceEngineersVR.Rendering
                     Log.Error(e, "Sound: choosing the headset's audio sink failed");
                     return;
                 }
-                Thread.Sleep(PollMs);
+                pictureChanged.WaitOne(PollMs);
             }
         }
 
@@ -310,7 +317,8 @@ namespace SpaceEngineersVR.Rendering
             }
             if (!XrRuntime.HasSystem)
             {
-                reason = "no headset was connected when the game started";
+                // The voice is made when the game's sound starts; a headset that connects later does not move it.
+                reason = "no headset was connected when the game's sound started";
                 return null;
             }
             string id = XrRuntime.AudioOutputDeviceId(out reason);

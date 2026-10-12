@@ -221,11 +221,12 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// Main thread, MyGuiControlBloodOverlay.Draw, for the local character: the alpha while it is alive. A dead
-        /// character's (the cause of death screen, the respawn wait) is left to the game, and so is everything after a failure.
+        /// character's (the cause of death screen, the respawn wait) is left to the game, and so is everything after a failure
+        /// and before the picture is VR's (<see cref="StereoPatches.VRPicture"/>).
         /// </summary>
         private static bool Alpha(MyRenderComponentCharacter __instance, ref float __result)
         {
-            if (failed)
+            if (failed || !StereoPatches.VRPicture)
                 return true;
             try
             {

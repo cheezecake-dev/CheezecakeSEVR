@@ -2,7 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using SpaceEngineersVR.OpenXR;
+using SpaceEngineersVR.Rendering;
 using VRage.Plugins;
+
+#if NETCOREAPP && !LINUX
+// Pulsar defines LINUX on every platform but Windows, so a CoreCLR build without it is a Windows build.
+[assembly: System.Runtime.Versioning.SupportedOSPlatform("windows")]
+#endif
 
 namespace SpaceEngineersVR
 {
@@ -16,7 +22,7 @@ namespace SpaceEngineersVR
         /// <summary>The name of the openxr_loader.dll asset in SpaceEngineersVR.xml.</summary>
         private const string LoaderAsset = "openxr_loader";
 
-        private readonly FeatureGuard updateGuard = new FeatureGuard("PatchNotice");
+        private readonly FeatureGuard updateGuard = new FeatureGuard("Patches");
 
         public Plugin()
         {
@@ -50,18 +56,24 @@ namespace SpaceEngineersVR
             Log.Info("Plugin.Init");
         }
 
-        /// <summary>Called by the game once a frame, on the game thread. Only shows the notice about patches that failed.</summary>
+        /// <summary>
+        /// Called by the game once a frame, on the game thread: patches what changes play once the headset is first found,
+        /// turns the picture to the game's while the headset is away and back when it returns, and shows the notice about
+        /// patches that failed.
+        /// </summary>
         public void Update()
         {
             if (!updateGuard.On)
                 return;
             try
             {
+                StereoPatches.PatchForHeadset();
+                StereoPatches.FollowHeadset();
                 PatchRegistry.Update();
             }
             catch (Exception e)
             {
-                updateGuard.Failed(e, "The patch notice failed");
+                updateGuard.Failed(e, "Patching for the headset, following it, or the patch notice failed");
             }
         }
 

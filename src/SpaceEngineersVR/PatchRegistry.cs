@@ -29,14 +29,14 @@ namespace SpaceEngineersVR
     {
         /// <summary>
         /// The features VR cannot work without: the device settings, the headset's GPU, the per-eye renderer (it makes the
-        /// headset session and runs its frames), the eye's place in the frame constants, and the head tracking (on foot, in
-        /// a seat, and the renderer's late turn of the eyes). Every other feature is optional: when it fails it is off and
-        /// VR goes on.
+        /// headset session and runs its frames), the eye's place in the frame constants, the head tracking (on foot, in
+        /// a seat, and the renderer's late turn of the eyes), and the wall fade, without which a tracked eye could see
+        /// through walls. Every other feature is optional: when it fails it is off and VR goes on.
         /// </summary>
         private static readonly HashSet<string> Core = new HashSet<string>
         {
             nameof(StereoPatches), nameof(HeadsetGpu), nameof(EyeRenderer), nameof(EyeOffset),
-            nameof(CharacterHead), nameof(CockpitHead), nameof(CameraHeadLink),
+            nameof(CharacterHead), nameof(CockpitHead), nameof(CameraHeadLink), nameof(WallFade),
         };
 
         /// <summary>
@@ -144,9 +144,10 @@ namespace SpaceEngineersVR
         }
 
         /// <summary>
-        /// The end of patching before the game creates its render device: one summary line; if a core feature failed, every
-        /// patch of ours comes off (but those on <paramref name="running"/>, the method our caller is a patch of, which come
-        /// off on the first frame) and the main menu will say VR is off; if only optional ones did, it will say which are off.
+        /// The end of a round of patching (before the game creates its render device, and again when the headset is first
+        /// found later): one summary line; if a core feature failed, every patch of ours comes off (but those on
+        /// <paramref name="running"/>, the method our caller is a patch of, which come off on the first frame) and the main
+        /// menu will say VR is off; if only optional ones did, it will say which are off.
         /// </summary>
         public static void Finish(MethodBase running)
         {

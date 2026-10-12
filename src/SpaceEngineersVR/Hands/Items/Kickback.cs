@@ -9,6 +9,7 @@ using Sandbox.Game.World;
 using SpaceEngineersVR.Common;
 using SpaceEngineersVR.Input;
 using SpaceEngineersVR.OpenXR;
+using SpaceEngineersVR.Tracking;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRageMath;
@@ -29,9 +30,10 @@ namespace SpaceEngineersVR.Hands
     /// and the block placer have SimulateLeftHand false and never kick.</para>
     /// <para>Guns kick per shot from the gun's own recoil (the weapon definition's vertical and horizontal ground recoil, times
     /// the game's multiplier for stance and aiming; off with the world's EnableRecoil), scaled up. The game applies that recoil
-    /// to the character instead, turning the head on foot and spinning the body in zero g; in a headset that would turn the
-    /// view, so for the local character, while the headset session has the focus, it is kept off the head and body
-    /// (<see cref="KeepsRecoil"/>, <see cref="BeforeGameRecoil"/>, <see cref="AfterGunUpdate"/>) and lands at the wrist here.</para>
+    /// to the character instead, turning the head on foot and spinning the body in zero g; in a headset that turns the view.
+    /// For the local character, while the headset session has the focus, it is left out for a shot only when this kick
+    /// reaches that shot and is at least as strong (<see cref="Judge"/>); otherwise the game's recoil applies as usual
+    /// (<see cref="KeepsRecoil"/>, <see cref="BeforeGameRecoil"/>, <see cref="AfterGunUpdate"/>).</para>
     /// <para>The grinder and drill fight the hand whenever they run (less in the air, <see cref="AirShare"/>): a yank on
     /// spin-up, a climb and a sideways pull while the trigger stays down, and jerks. Amounts are in units of the tool's own
     /// camera shake, so the drill, which the game shakes harder, kicks harder. The drill also twists the hand about its bit.</para>
@@ -106,9 +108,35 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The game's own sideways draw (-1..1) for the shot being fired, kept from its recoil (<see cref="BeforeGameRecoil"/>) for the wrist; null when it has none.</summary>
         private static float? gameSide;
 
-        /// <summary>The game's recoil kept off the local character since the last log line: shots, and the most its head angles were turned back in a frame (degrees).</summary>
-        private static int recoilKept;
+        /// <summary>The game's recoil since the last log line: shots it was left out of and shots it applied to, and the most the head angles were turned back in a frame (degrees).</summary>
+        private static int recoilKept, recoilLet;
         private static double headUndone;
+
+        /// <summary>The shot whose kick was already judged and applied as the game's recoil arrived inside it (on the server, <see cref="BeforeGameRecoil"/>), so <see cref="AfterShoot"/> does not kick it again.</summary>
+        private static MyAutomaticRifleGun judgedShot;
+
+        /// <summary>On a client: the verdicts of the local shots whose recoil has not arrived from the server yet, oldest first.</summary>
+        private static readonly Queue<Verdict> unanswered = new Queue<Verdict>();
+
+        /// <summary>The gun whose own recoil was let through and is still running (rising or going back): its head animation is left to it.</summary>
+        private static MyAutomaticRifleGun gameRecoilGun;
+
+        /// <summary>
+        /// What the game's recoil would hold over the current burst (degrees, <see cref="Judge"/>): the gun, its total and
+        /// the game time of its last shot (milliseconds).
+        /// </summary>
+        private static MyAutomaticRifleGun burstGun;
+        private static double burstGame;
+        private static int burstAt;
+
+        /// <summary>The reason last logged for the game's recoil being left out or applied, and how many such lines so far.</summary>
+        private static string recoilWhy, recoilMode;
+        private static int recoilLines;
+
+        private const int MaxRecoilLines = 40, MaxUnanswered = 16;
+
+        /// <summary>On a client, how long a shot's verdict waits for its recoil from the server (seconds); later, the recoil applies.</summary>
+        private const double UnansweredSeconds = 1.0;
 
         // ---- One use, for the log ----
 
@@ -147,9 +175,10 @@ namespace SpaceEngineersVR.Hands
             }, "Kickback could not be hooked; tools and guns in one hand do not kick"))
                 hooked = false;
 
-            // The game's own recoil, kept off the local character's head and body in VR whatever the kickback setting: the shot's
-            // recoil as it arrives (on the server at once, on a client when the server's value does), and the head angles the
-            // gun's update animates (a save and restore around it, so nothing it does to the head is missed).
+            // The game's own recoil on the local character in VR, left out of a shot only when the wrist kick reaches it and is
+            // at least as strong: the shot's recoil as it arrives (on the server at once, on a client when the server's value
+            // does), and the head angles the gun's update animates (a save and restore around it, so nothing it does to the
+            // head is missed while its recoil is left out).
             PatchRegistry.Apply("game recoil", () =>
             {
                 harmony.Patch(AccessTools.Method(typeof(MyAutomaticRifleGun), "RecoilValueChangedCallback"),
@@ -157,8 +186,8 @@ namespace SpaceEngineersVR.Hands
                 harmony.Patch(AccessTools.Method(typeof(MyAutomaticRifleGun), nameof(MyAutomaticRifleGun.UpdateAfterSimulation)),
                     prefix: new HarmonyMethod(typeof(Kickback), nameof(BeforeGunUpdate)),
                     postfix: new HarmonyMethod(typeof(Kickback), nameof(AfterGunUpdate)));
-                Log.Info("Kickback: the game's own gun recoil is kept off the local character while the headset has the focus (no head turn on foot, no body spin on the jetpack); it kicks at the wrist instead");
-            }, "Kickback: the game's own gun recoil could not be kept off the local character; each shot turns the head (or spins the body on the jetpack), and the view with it");
+                Log.Info("Kickback: while the headset has the focus, the game's own gun recoil is left out of a shot the wrist kick replaces at least as strongly; otherwise it applies as usual");
+            }, "Kickback: the game's own gun recoil could not be hooked; each shot turns the head (or spins the body on the jetpack), and the view with it");
         }
 
         /// <summary>The share of the one-handed kick the setting asks for: 0 (Off, or RenderDebug Kickback=0), a half (Light), all (Full).</summary>
@@ -223,15 +252,16 @@ namespace SpaceEngineersVR.Hands
         {
             try
             {
-                if (action != MyShootActionEnum.PrimaryAction || current == null || !IsGun(currentKind) || !ReferenceEquals(__instance, current)
-                    || !Haptics.IsLocal(__instance.Owner) || MySession.Static?.Settings?.EnableRecoil == false)
+                if (ReferenceEquals(judgedShot, __instance) || action != MyShootActionEnum.PrimaryAction)
                     return;
-                double shotDrive = Share * Math.Max(0.0, Scale) * hands;
-                if (!(shotDrive > 0.0))
-                    return;
-                if (!episode)
-                    Begin(currentItem, Stopwatch.GetTimestamp());
-                Shot(__instance, shotDrive);
+                Verdict verdict = KickShot(__instance, 1f, null);
+                // A client hears the shot's recoil later, from the server; the verdict waits for it.
+                if (!Sandbox.Game.Multiplayer.Sync.IsServer && KeepsRecoil(__instance.Owner))
+                {
+                    if (unanswered.Count >= MaxUnanswered)
+                        unanswered.Dequeue();
+                    unanswered.Enqueue(verdict);
+                }
             }
             catch (Exception e)
             {
@@ -240,26 +270,28 @@ namespace SpaceEngineersVR.Hands
             }
             finally
             {
+                judgedShot = null;
                 gameSide = null;
             }
+        }
+
+        /// <summary>A shot of the gun: judged against the game's recoil for it (<see cref="Judge"/>, before its kick lands), then kicked if the kick is on for it.</summary>
+        private static Verdict KickShot(MyAutomaticRifleGun gun, float vertical, float? side)
+        {
+            Verdict verdict = Judge(gun, gun.Owner, vertical, side);
+            if (verdict.Drive > 0.0)
+            {
+                if (!episode)
+                    Begin(currentItem, Stopwatch.GetTimestamp());
+                Shot(gun, verdict.Drive);
+            }
+            return verdict;
         }
 
         /// <summary>One shot's kick, <paramref name="shotDrive"/> of the one-handed kick at Full.</summary>
         private static void Shot(MyAutomaticRifleGun gun, double shotDrive)
         {
-            MyWeaponDefinition definition = gun.GunBase?.WeaponDefinition;
-            double vertical = definition?.RecoilGroundVertical ?? 0.0, horizontal = definition?.RecoilGroundHorizontal ?? 0.0;
-            if (!(vertical > 0.0) && !(horizontal > 0.0))
-            {
-                vertical = GunFallbackVertical;
-                horizontal = GunFallbackHorizontal;
-            }
-            else if (RecoilMultipliers != null && gun.Owner != null)
-            {
-                RecoilMultipliers(gun, gun.Owner, out float v, out float h);
-                vertical *= v;
-                horizontal *= h;
-            }
+            ShotRecoil(gun, out double vertical, out double horizontal);
             // Sideways: the game's own draw for this shot when its recoil came with it (on the server, at once), else a draw like it.
             double draw = gameSide.HasValue ? MathHelper.Clamp(gameSide.Value, -1.0, 1.0) : random.NextDouble() * 2.0 - 1.0;
             if (currentKind == Kind.Pistol)
@@ -291,6 +323,25 @@ namespace SpaceEngineersVR.Hands
                 Rumble(ShotKickAmplitude, ShotKickSeconds);
         }
 
+        /// <summary>The gun's recoil for a shot that the kick is scaled from, degrees: its ground recoil times the game's multiplier for the stance, or the fallback for a gun with none.</summary>
+        private static void ShotRecoil(MyAutomaticRifleGun gun, out double vertical, out double horizontal)
+        {
+            MyWeaponDefinition definition = gun.GunBase?.WeaponDefinition;
+            vertical = definition?.RecoilGroundVertical ?? 0.0;
+            horizontal = definition?.RecoilGroundHorizontal ?? 0.0;
+            if (!(vertical > 0.0) && !(horizontal > 0.0))
+            {
+                vertical = GunFallbackVertical;
+                horizontal = GunFallbackHorizontal;
+            }
+            else if (RecoilMultipliers != null && gun.Owner != null)
+            {
+                RecoilMultipliers(gun, gun.Owner, out float v, out float h);
+                vertical *= v;
+                horizontal *= h;
+            }
+        }
+
         /// <summary>The kick's own pulse on the tool hand, and how long the tool's contact buzz waits for it (<see cref="Rumbling"/>).</summary>
         private static void Rumble(float amplitude, float seconds)
         {
@@ -301,7 +352,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>
         /// A kick's pulse is still playing. The grinder's and drill's light contact buzz is asked for every frame, and the runtime
         /// replaces a vibration in progress with the next one, so it would cut each jerk to a frame; it waits for it instead
-        /// (<see cref="Haptics.ToolContact"/>).
+        /// (<see cref="Haptics.ToolFrame"/>).
         /// </summary>
         internal static bool Rumbling => Stopwatch.GetTimestamp() < rumbleUntil;
 
@@ -311,12 +362,12 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The fast spring's rate for the item in hand: a pistol's flick is slower than a rifle's snap.</summary>
         private static double FastOmega => currentKind == Kind.Pistol ? PistolOmega : JoltOmega;
 
-        // ---- The game's own recoil, kept off the local character ----
+        // ---- The game's own recoil on the local character ----
 
         /// <summary>
-        /// The game's recoil is kept off <paramref name="owner"/>: the local character, while the headset session has the
-        /// focus. Without a headset in use (none connected, it was lost, or the runtime's dashboard is up) the head is the
-        /// game's and the recoil turns it as usual.
+        /// The game's recoil on <paramref name="owner"/> is judged shot by shot (<see cref="Judge"/>): the local character,
+        /// while the headset session has the focus. Without a headset in use (none connected, it was lost, or the runtime's
+        /// dashboard is up) the head is the game's and the recoil turns it as usual.
         /// </summary>
         private static bool KeepsRecoil(MyCharacter owner) => XrSession.Focused && Haptics.IsLocal(owner);
 
@@ -326,9 +377,9 @@ namespace SpaceEngineersVR.Hands
         /// and Horizontal, degrees a second): the whole character turns. Otherwise it sets the head's next pitch
         /// (RecoilGroundVertical times the movement multiplier, animated over the next frames by AnimateRecoil) and turns
         /// the head sideways at once (RecoilGroundHorizontal times its draw, AddHorizontalRecoil). For the local character in
-        /// VR (<see cref="KeepsRecoil"/>) none of it runs: the head and the body are the player's, and the recoil is the wrist's
-        /// (<see cref="Shot"/>, with the game's sideways draw). Without it the gun is never recoiling, so the jetpack's own
-        /// damping (MyCharacter, IsRecoiling) stops any spin as usual.
+        /// VR (<see cref="KeepsRecoil"/>) none of it runs when the shot's verdict says the wrist kick replaces it: the gun is
+        /// then never recoiling, so the jetpack's own damping (MyCharacter, IsRecoiling) stops any spin as usual. Any other
+        /// verdict, or an error here, lets it run.
         /// </summary>
         private static bool BeforeGameRecoil(MyAutomaticRifleGun __instance)
         {
@@ -337,11 +388,31 @@ namespace SpaceEngineersVR.Hands
                 MyCharacter owner = __instance.Owner;
                 if (!KeepsRecoil(owner))
                     return true;
+                owner.GetRecoilData(out float vertical, out float side);
+                Verdict verdict;
                 if (Sandbox.Game.Multiplayer.Sync.IsServer)
                 {
-                    // On the server it arrives inside the shot, before AfterShoot: that shot's own draw.
-                    owner.GetRecoilData(out _, out float side);
+                    // On the server it arrives inside the shot, before AfterShoot: the shot is judged and kicked here, with its own draw.
                     gameSide = side;
+                    judgedShot = __instance;
+                    verdict = KickShot(__instance, vertical, side);
+                }
+                else
+                {
+                    verdict = Answer();
+                }
+                if (!verdict.Replaces && ComfortOff())
+                {
+                    verdict.Replaces = true;
+                    verdict.Why = "Game recoil in VR is Off (single player)";
+                    verdict.Figures = null;
+                }
+                Note(verdict);
+                if (!verdict.Replaces)
+                {
+                    recoilLet++;
+                    gameRecoilGun = __instance;
+                    return true;
                 }
                 recoilKept++;
                 return false;
@@ -349,9 +420,178 @@ namespace SpaceEngineersVR.Hands
             catch (Exception e)
             {
                 if (shotErrors++ < 3)
-                    Log.Error(e, "Kickback could not keep the game's recoil off the character");
+                    Log.Error(e, "Kickback could not judge the game's recoil; it applies");
                 return true;
             }
+        }
+
+        /// <summary>
+        /// The "Game recoil in VR" setting is Off and in force: only with no one else in the session, that is the game's own
+        /// single-player test (Sync.MultiplayerActive false: no MyMultiplayer, an offline world) or a host alone in its
+        /// session (Sync.IsServer, MyPlayerCollection.GetOnlineHumanPlayerCount 1). Anywhere else Off works as Auto. The
+        /// mode in force is logged when it changes.
+        /// </summary>
+        private static bool ComfortOff()
+        {
+            bool alone = Sandbox.Game.Multiplayer.Sync.IsServer
+                         && (!Sandbox.Game.Multiplayer.Sync.MultiplayerActive || (MySession.Static?.Players?.GetOnlineHumanPlayerCount() ?? 2) <= 1);
+            bool off = VRSettings.GameRecoilOff && alone;
+            string mode = off ? "Off (single player): the game's view recoil is always left out"
+                : VRSettings.GameRecoilOff ? "Auto (set to Off, but others are in the session)" : "Auto";
+            if (mode != recoilMode)
+            {
+                recoilMode = mode;
+                Log.Info($"Kickback: Game recoil in VR is {mode}");
+            }
+            return off;
+        }
+
+        /// <summary>On a client: the verdict of the oldest local shot still waiting for its recoil, or one that lets the recoil through when there is none.</summary>
+        private static Verdict Answer()
+        {
+            long now = Stopwatch.GetTimestamp();
+            while (unanswered.Count > 0)
+            {
+                Verdict verdict = unanswered.Dequeue();
+                if (now - verdict.At <= UnansweredSeconds * Stopwatch.Frequency)
+                    return verdict;
+            }
+            return new Verdict { Why = "no wrist kick is known for this shot" };
+        }
+
+        /// <summary>The kick for one shot, set against the game's recoil for it.</summary>
+        private struct Verdict
+        {
+            /// <summary>The share of the one-handed kick at Full the shot kicks with; 0 when it does not kick.</summary>
+            public double Drive;
+
+            /// <summary>The kick reaches the shot and is at least as strong as the game's recoil for it, which can then be left out.</summary>
+            public bool Replaces;
+
+            /// <summary>Why (logged when it changes), and the figures behind it.</summary>
+            public string Why, Figures;
+
+            /// <summary>When it was judged (<see cref="Stopwatch"/> ticks).</summary>
+            public long At;
+        }
+
+        /// <summary>
+        /// The kick for a shot of <paramref name="gun"/>, worked out before it lands, set against the game's recoil for it
+        /// (<paramref name="vertical"/> and <paramref name="side"/>: the game's synced values, the side null where not known
+        /// yet). Both are measured as how far the shot turns the aim, in degrees.
+        /// <list type="bullet">
+        /// <item>The game's, a shot: on foot, the head's pitch and turn, RecoilGround times the stance's multiplier
+        /// (sideways at the full draw where the draw is not known). On the jetpack, the most the body's spin can turn it
+        /// before the character's damping stops it: the speed squared over twice the damping.</item>
+        /// <item>The game's, over the burst: those added up while it would keep them (shots within the gun's reset time),
+        /// and going back as fast as at most the game's return once it would let go.</item>
+        /// <item>The kick's, a shot: only its snap up, the fast spring's peak, as much of it as gets past the soft limits
+        /// with the gun already climbed and thrown aside as far as its burst can take it. The climb a shot adds, the sideways
+        /// throw and the shove back are not counted.</item>
+        /// <item>The kick's, over the burst: where the item is pushed now, with this shot's snap, past the soft limits.</item>
+        /// </list>
+        /// The game's recoil is left out only when the kick reaches the shot (the kick is on for this gun, and the hand is
+        /// tracked, so the shot leaves along the kicked aim) and is at least the game's by both measures.
+        /// </summary>
+        private static Verdict Judge(MyAutomaticRifleGun gun, MyCharacter owner, float vertical, float? side)
+        {
+            var verdict = new Verdict { At = Stopwatch.GetTimestamp() };
+            if (MySession.Static?.Settings?.EnableRecoil == false)
+                return Against(ref verdict, "the world has recoil off");
+            if (!hooked)
+                return Against(ref verdict, "the wrist kick is not hooked");
+            if (!(Share > 0.0))
+                return Against(ref verdict, Off ? "kickback off (RenderDebug)" : "kickback Off");
+            if (current == null || !IsGun(currentKind) || !ReferenceEquals(gun, current) || !Haptics.IsLocal(owner))
+                return Against(ref verdict, "no wrist kick for this gun");
+            verdict.Drive = Share * Math.Max(0.0, Scale) * hands;
+            if (!(verdict.Drive > 0.0))
+            {
+                verdict.Drive = 0.0;
+                return Against(ref verdict, "nothing is left of the wrist kick");
+            }
+            if (HandTools.Off || !HandWorld.TryGetNow(owner, VRSettings.DominantHand, out _, out _, out _))
+                return Against(ref verdict, "the hand is not tracked");
+            MyWeaponDefinition definition = gun.GunBase?.WeaponDefinition;
+            if (definition == null || RecoilMultipliers == null)
+                return Against(ref verdict, "the game's recoil figures could not be read");
+
+            double game;
+            if (owner.ShouldRecoilRotate && owner.JetpackRunning)
+            {
+                double damping = MathHelper.ToDegrees((double)(owner.Definition?.RecoilJetpackDampeningRadPerFrame ?? 0f)) / Step;
+                double pitch = definition.RecoilJetpackVertical * vertical;
+                double offset = MyAutomaticRifleGun.HORIZONTAL_RECOIL_OFFSET;
+                double yaw = definition.RecoilJetpackHorizontal * (side.HasValue ? Math.Abs(side.Value) * (1.0 - offset) + offset : 1.0);
+                game = damping > 0.0 ? (pitch * pitch + yaw * yaw) / (2.0 * damping) : double.PositiveInfinity;
+            }
+            else
+            {
+                RecoilMultipliers(gun, owner, out float v, out float h);
+                double pitch = definition.RecoilGroundVertical * vertical * v;
+                double yaw = definition.RecoilGroundHorizontal * (side.HasValue ? Math.Abs(side.Value) : 1.0) * h;
+                game = Math.Sqrt(pitch * pitch + yaw * yaw);
+            }
+
+            int now = Sandbox.MySandboxGame.TotalGamePlayTimeInMilliseconds;
+            double reset = gun.GunBase.WeaponProperties.RecoilResetTimeMilliseconds;
+            double since = now - burstAt;
+            if (!ReferenceEquals(gun, burstGun))
+                burstGame = 0.0;
+            else if (since > reset)
+                burstGame *= Math.Max(0.0, 1.0 - MyAutomaticRifleGun.RECOIL_RETURN_SPEED * (since - reset) / (Step * 1000.0));
+            burstGun = gun;
+            burstAt = now;
+            burstGame += game;
+
+            ShotRecoil(gun, out double up, out _);
+            bool rifle = currentKind == Kind.Gun;
+            double snap = up * (rifle ? GunJoltScale : PistolClimbScale) * verdict.Drive;
+            double climbed = (rifle ? Math.Max(slowUp, GunMaxClimb * verdict.Drive) : Math.Max(0.0, slowUp)) + Math.Max(0.0, fastUp);
+            double aside = (rifle ? Math.Max(Math.Abs(slowSide), GunMaxSide * verdict.Drive) : Math.Abs(slowSide)) + Math.Abs(fastSide);
+            double kick = LimitedUp(climbed + snap, aside) - LimitedUp(climbed, aside);
+            double held = LimitedUp(slowUp + Math.Max(0.0, fastUp) + snap, Math.Abs(slowSide) + Math.Abs(fastSide));
+
+            if (!(kick >= game))
+                return Against(ref verdict, "the wrist kick is weaker", $"{kick:0.0} deg a shot against the game's {game:0.0}");
+            if (!(held >= burstGame))
+                return Against(ref verdict, "the burst has outgrown the wrist kick", $"the game would hold {burstGame:0.0} deg, the wrist kick {held:0.0}");
+            verdict.Replaces = true;
+            verdict.Why = "the wrist kick replaces it";
+            verdict.Figures = $"{kick:0.0} deg a shot against the game's {game:0.0}";
+            return verdict;
+        }
+
+        private static Verdict Against(ref Verdict verdict, string why, string figures = null)
+        {
+            verdict.Replaces = false;
+            verdict.Why = why;
+            verdict.Figures = figures;
+            return verdict;
+        }
+
+        /// <summary>How far up the item is turned once <paramref name="up"/> and <paramref name="side"/> (degrees) have been through the soft limits (<see cref="Limit"/>).</summary>
+        private static double LimitedUp(double up, double side)
+        {
+            double twist = 0.0, back = 0.0;
+            Limit(ref up, ref side, ref twist, ref back);
+            return up;
+        }
+
+        /// <summary>One log line when the reason the game's recoil is left out or applies changes, up to <see cref="MaxRecoilLines"/>.</summary>
+        private static void Note(in Verdict verdict)
+        {
+            if (verdict.Why == recoilWhy)
+                return;
+            recoilWhy = verdict.Why;
+            if (++recoilLines > MaxRecoilLines)
+            {
+                if (recoilLines == MaxRecoilLines + 1)
+                    Log.Info("Kickback: further changes to whether the game's recoil applies are not logged; each use's settle line counts them");
+                return;
+            }
+            string figures = verdict.Figures != null ? ": " + verdict.Figures : string.Empty;
+            Log.Info(verdict.Replaces ? $"Kickback: the game's recoil is left out, {verdict.Why}{figures}" : $"Kickback: the game's recoil applies ({verdict.Why}{figures})");
         }
 
         /// <summary>The local character's head angles around a gun's update (Harmony's state, as ExitUpright's).</summary>
@@ -361,12 +601,21 @@ namespace SpaceEngineersVR.Hands
             public float X, Y;
         }
 
-        /// <summary>The local character's head angles before the gun's update, which animates the game's recoil into them.</summary>
+        /// <summary>
+        /// The local character's head angles before the gun's update, which animates the game's recoil into them; none taken
+        /// while a recoil the game was let apply is still running (rising or going back), which is left to it.
+        /// </summary>
         private static void BeforeGunUpdate(MyAutomaticRifleGun __instance, out HeadAngles __state)
         {
             __state = default;
             try
             {
+                if (ReferenceEquals(gameRecoilGun, __instance))
+                {
+                    if (__instance.IsRecoiling)
+                        return;
+                    gameRecoilGun = null;
+                }
                 MyCharacter owner = __instance.Owner;
                 if (KeepsRecoil(owner))
                     __state = new HeadAngles { Owner = owner, X = owner.HeadLocalXAngle, Y = owner.HeadLocalYAngle };
@@ -380,8 +629,8 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// After the gun's update: whatever its recoil animation did to the local character's head angles (AnimateRecoil,
-        /// AnimateRecoilHorizontal; with no recoil started there is normally nothing, but a recoil the game had going, or its
-        /// return to a stale angle, would turn the game's head) is put back.
+        /// AnimateRecoilHorizontal; with no recoil started there is normally nothing, but a stale return angle would turn
+        /// the game's head) is put back.
         /// </summary>
         private static void AfterGunUpdate(HeadAngles __state)
         {
@@ -436,7 +685,7 @@ namespace SpaceEngineersVR.Hands
             {
                 End("switched");
                 Still();
-                recoilKept = 0;
+                recoilKept = recoilLet = 0;
                 headUndone = 0.0;
                 current = kind != Kind.None ? tool : null;
                 currentItem = item;

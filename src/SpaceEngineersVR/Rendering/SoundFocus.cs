@@ -56,11 +56,11 @@ namespace SpaceEngineersVR.Rendering
         private static bool IsWindowActive(MethodBase method) =>
             method.DeclaringType == typeof(IVRageWindow) && method.Name == "get_" + nameof(IVRageWindow.IsActive);
 
-        /// <summary>What UpdateSound sees as the game window's IsActive: true while the headset session runs.</summary>
+        /// <summary>What UpdateSound sees as the game window's IsActive: true while the picture is VR's and the headset session runs.</summary>
         public static bool WindowActive(IVRageWindow window)
         {
             bool active = window.IsActive;
-            if (active || GameMute || !XrSession.Running)
+            if (active || GameMute || !StereoPatches.VRPicture || !XrSession.Running)
                 return active;
 
             if (!logged)

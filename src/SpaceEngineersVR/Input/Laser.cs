@@ -153,16 +153,18 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// The beam as the last frame left it, both ends in the tracking space: from the controller's aim pose (no hand is
-        /// drawn there) to where the ray meets the panel.
-        /// For the main menu, where the game draws no world and so no billboard (<see cref="Rendering.MainMenu"/> draws it in the eyes).
+        /// The beam as the last frame left it, both ends in the tracking space, to where the ray meets the panel: from the
+        /// drawn hand's fingertip, as <see cref="DrawLine"/> starts it, or from the controller's aim pose where no hand is drawn
+        /// (the main menu and the forced view, where <see cref="Rendering.MainMenu"/> draws the beam into the eyes). The
+        /// headset's beam over the panel draws it too, and has to meet the world's beam at the hand.
         /// Any thread. False when the laser is not on the panel.
         /// </summary>
         public static bool TryGetLine(out Vector3 from, out Vector3 to)
         {
+            bool handDrawn = !Rendering.MainMenu.Wanted && !Rendering.ForcedView.Showing;
             lock (gate)
             {
-                from = lineFrom;
+                from = handDrawn ? lineTip : lineFrom;
                 to = lineTo;
                 return lineOn && !Off;
             }
@@ -202,7 +204,8 @@ namespace SpaceEngineersVR.Input
             float seconds = lastFrame == 0 ? 0f : Math.Min((now - lastFrame) / (float)Stopwatch.Frequency, 0.1f);
             lastFrame = now;
 
-            Hand hand = VRSettings.DominantHand;
+            // While the datapad is held, the hand not holding it points.
+            Hand hand = Hands.Datapad.LaserHand(VRSettings.DominantHand);
             HandState state = VRInput.Get(hand);
             bool cursorShown = MySandboxGame.Static != null && MySandboxGame.Static.IsCursorVisible;
 
@@ -229,6 +232,30 @@ namespace SpaceEngineersVR.Input
                 }
                 return;
             }
+
+            // A fingertip at the held datapad has the cursor instead of the ray (PanelTouch).
+            if (cursorShown && !Off && PanelTouch.Frame(Gui, out Vector2 touched, out bool touchLeft, out int touchWheel))
+            {
+                leftHeld = rightHeld = mouseWins = pressHeld = false;
+                scrollCarry = 0f;
+                ref MyMouseState touchState = ref Actual(input);
+                if (touchLeft)
+                    touchState.LeftButton = true;
+                if (!gameFocused && VRInput.Active)
+                    touchState.ScrollWheelValue = Previous(input).ScrollWheelValue + touchWheel;
+                else
+                    touchState.ScrollWheelValue += touchWheel;
+                lock (gate)
+                {
+                    holds = true;
+                    cursor = touched;
+                    lineOn = PanelTouch.TryGetBeam(out lineFrom, out lineTo);
+                    lineTip = lineFrom;
+                }
+                return;
+            }
+            if (!cursorShown)
+                PanelTouch.Reset();
 
             // Where the ray meets the panel.
             LaserRay.Hit hit = default;
@@ -274,7 +301,7 @@ namespace SpaceEngineersVR.Input
             {
                 if (hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Trigger))
                     leftHeld = true;
-                if (hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Grip))
+                if (hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Grip) && !Hands.Datapad.OwnsGrip(hand))
                     rightHeld = true;
                 leftHeld &= trigger;
                 rightHeld &= grip;
@@ -512,9 +539,9 @@ namespace SpaceEngineersVR.Input
                     from = lineTip;
                     to = lineTo;
                 }
-                // In the death view no eye sees the world: the beam is drawn into the black eyes instead (Rendering.MainMenu),
+                // In the forced view no eye sees the world: the beam is drawn into the black eyes instead (Rendering.MainMenu),
                 // and a billboard here would hang in the game camera's picture on the screen ahead.
-                if (Off || Rendering.DeathView.Showing || !MyTransparentGeometry.HasCamera || !HandWorld.TryGetTrackingToWorld(out MatrixD toWorld))
+                if (Off || Rendering.ForcedView.Showing || !MyTransparentGeometry.HasCamera || !HandWorld.TryGetTrackingToWorld(out MatrixD toWorld))
                     return;
                 Vector3D start = Vector3D.Transform((Vector3D)from, toWorld);
                 Vector3D along = Vector3D.Transform((Vector3D)to, toWorld) - start;

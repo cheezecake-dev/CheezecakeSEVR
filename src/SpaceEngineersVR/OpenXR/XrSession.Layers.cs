@@ -14,6 +14,8 @@ namespace SpaceEngineersVR.OpenXR
             if (!InFrame)
                 return;
             InFrame = false;
+            if (lostInFrame != null)
+                throw lostInFrame;
             uint layerCount = 0;
             IntPtr* layers = stackalloc IntPtr[MostLayers];
 

@@ -51,7 +51,7 @@ namespace SpaceEngineersVR.Input
         /// is a wrist watch, glanced at while walking.
         /// </summary>
         internal static bool WalksBesidePanel(object menu, VRContext c, bool wheelOwns) =>
-            !wheelOwns && menu is QuickActionsScreen && (c == VRContext.OnFoot || c == VRContext.Jetpack);
+            !wheelOwns && (menu is QuickActionsScreen || menu is DatapadScreen) && (c == VRContext.OnFoot || c == VRContext.Jetpack);
 
         /// <summary>The hands walk, turn, jump and fly beside the wrist panel this frame (<see cref="WalkBesidePanel"/> runs).</summary>
         internal static bool WalkingBesidePanel => panelWalk;
@@ -105,6 +105,10 @@ namespace SpaceEngineersVR.Input
         private static void UpdateBack(object menu)
         {
             int bit = 1 << (int)Intent.Back;
+            // A cutscene on the forced view's screen: B is its skip. The game asks the same GUI CANCEL while it plays, beside
+            // Enter and Space (MyGuiScreenGamePlay.HandleInput, with DisableInput set), and no gameplay control is read then.
+            if (menu == null && Rendering.ForcedView.InCutscene)
+                menu = CutsceneSkip;
             if (menu == null || ToolbarWheel.Owns)
             {
                 before &= ~bit;
@@ -130,6 +134,9 @@ namespace SpaceEngineersVR.Input
                 backScreen = menu;
             now |= bit;
         }
+
+        /// <summary>Stands for the cutscene as the screen a Back press began in (<see cref="UpdateBack"/>).</summary>
+        private static readonly object CutsceneSkip = new object();
 
         /// <summary>How long the left Menu button is held to recentre the view, seconds (<see cref="MenuButton"/>).</summary>
         public const double MenuHoldSeconds = 0.6;

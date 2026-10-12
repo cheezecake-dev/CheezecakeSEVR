@@ -235,6 +235,7 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>Handles the runtime's events: starts and stops the session as the headset comes and goes.</summary>
         public static void PollEvents()
         {
+            ApplyRefreshRateSetting();
             var buffer = new XrEventDataBuffer();
             while (true)
             {
@@ -251,8 +252,7 @@ namespace SpaceEngineersVR.OpenXR
                 }
                 else if (buffer.Type == XrStructureType.EventDataInstanceLossPending)
                 {
-                    Log.Warn("OpenXR instance is being lost (runtime shutting down); VR stops");
-                    Destroy();
+                    Lose("the runtime is shutting down", instance: true);
                     return;
                 }
                 else if (buffer.Type == XrStructureType.EventDataVisibilityMaskChangedKHR)
@@ -260,6 +260,10 @@ namespace SpaceEngineersVR.OpenXR
                     XrEventDataVisibilityMaskChangedKHR changed = *(XrEventDataVisibilityMaskChangedKHR*)&buffer;
                     VisibilityMaskChanges++;
                     Log.Info($"OpenXR visibility mask of view {changed.ViewIndex} changed; the lens mask reads it again");
+                }
+                else if (buffer.Type == XrStructureType.EventDataDisplayRefreshRateChangedFB)
+                {
+                    OnRefreshRateChanged((XrEventDataDisplayRefreshRateChangedFB*)&buffer);
                 }
                 else
                 {
@@ -272,6 +276,8 @@ namespace SpaceEngineersVR.OpenXR
         {
             Log.Info($"OpenXR session {state} -> {newState}");
             Rendering.PerfMeter.OnSessionChange($"session {state} -> {newState}");
+            if (state == XrSessionState.Synchronized && newState == XrSessionState.Visible)
+                OnSessionVisibleAgain();
             state = newState;
             switch (newState)
             {
@@ -282,13 +288,14 @@ namespace SpaceEngineersVR.OpenXR
                     VisibilityMaskChanges++; // a runtime may only have the masks once the session runs
                     break;
                 case XrSessionState.Stopping:
+                    StopIdleFrames();
                     XrInput.SessionStopping();
                     Running = false;
                     Xr.Check(Xr.xrEndSession(session), "xrEndSession", XrRuntime.Instance);
                     break;
                 case XrSessionState.Exiting:
                 case XrSessionState.LossPending:
-                    Destroy();
+                    Lose("session " + newState, instance: false);
                     break;
             }
         }
@@ -301,6 +308,7 @@ namespace SpaceEngineersVR.OpenXR
         {
             if (!Running)
                 return false;
+            StopIdleFrames(); // the frame calls are this thread's again
 
             frame = new XrFrameState { Type = XrStructureType.FrameState };
             var waitInfo = new XrBaseInfo(XrStructureType.FrameWaitInfo);
@@ -367,16 +375,52 @@ namespace SpaceEngineersVR.OpenXR
             eyeRectHeight = height;
         }
 
+        /// <summary>Why the session was lost, from <see cref="Lose"/> until <see cref="TakeLoss"/>; null otherwise.</summary>
+        private static string lostReason;
+        private static bool lostInstance;
+
+        /// <summary>
+        /// Destroys the session after the runtime lost it (or failed), and remembers why for <see cref="TakeLoss"/>.
+        /// <paramref name="instance"/>: the instance has to be made again too.
+        /// </summary>
+        public static void Lose(string reason, bool instance)
+        {
+            Destroy();
+            lostReason = reason;
+            lostInstance |= instance;
+        }
+
+        /// <summary>True once after <see cref="Lose"/>, with its reason; the render thread then hands the headset back to be looked for again.</summary>
+        public static bool TakeLoss(out string reason, out bool instance)
+        {
+            reason = lostReason;
+            instance = lostInstance;
+            lostReason = null;
+            lostInstance = false;
+            return reason != null;
+        }
+
         public static void Destroy()
         {
+            StopIdleFrames();
             if (session == 0)
             {
                 ReleaseDxvk(); // a Vulkan session that failed to be created
                 return;
             }
             Rendering.PerfMeter.OnSessionChange("session destroyed");
+            ResetRefreshRate();
             Running = false;
             InFrame = false;
+            ShouldRender = false;
+            // A later session starts from nothing: no state, no frame, the head at the origin.
+            state = XrSessionState.Unknown;
+            frame = default;
+            Head = XrPosef.Identity;
+            for (int eye = 0; eye < 2; eye++)
+                views[eye] = new XrView { Type = XrStructureType.View, Pose = XrPosef.Identity };
+            eyeRectWidth = eyeRectHeight = 0;
+            lostInFrame = null;
             for (int eye = 0; eye < 2; eye++)
                 DestroySwapchain(ref swapchains[eye], ref images[eye]);
             DestroySwapchain(ref panelSwapchain, ref panelImages);

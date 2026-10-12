@@ -37,6 +37,9 @@ namespace SpaceEngineersVR.Rendering
         private static float placedHalfWidth, placedHalfHeight;
         private static long placedAt;
 
+        /// <summary>The panel's height over its width: the GUI's shape (16:9 before the first panel).</summary>
+        public static float Aspect => size.X > 0 ? (float)size.Y / size.X : 9f / 16f;
+
         /// <summary>A panel was drawn this frame and has not been shown yet.</summary>
         public static bool Pending => texture != null;
 

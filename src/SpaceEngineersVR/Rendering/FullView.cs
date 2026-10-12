@@ -295,7 +295,7 @@ namespace SpaceEngineersVR.Rendering
         private static void DrawSprite(string texture, ref RectangleF destination, Rectangle? sourceRectangle, Color color, float rotation,
             bool ignoreBounds, bool waitTillLoaded, string targetTexture, string maskTexture, float rotSpeed)
         {
-            string target = Off || targetTexture != null ? targetTexture : Target;
+            string target = Off || targetTexture != null || !StereoPatches.VRPicture ? targetTexture : Target;
             if (Trace)
             {
                 lock (sentGate)

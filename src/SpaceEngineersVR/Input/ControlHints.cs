@@ -120,6 +120,44 @@ namespace SpaceEngineersVR.Input
             }
         }
 
+        /// <summary>A cutscene plays on the forced view's screen: how to skip it (<see cref="VRControls"/>' Back).</summary>
+        public const string CutsceneText = "B: skip";
+
+        private static MyHudNotificationBase cutsceneHint;
+
+        /// <summary>
+        /// Game thread, once per frame: <paramref name="skippable"/> a cutscene that can be skipped is on the screen. Its prompt
+        /// stays up for as long, put back when its time runs out, and goes when the cutscene does. Not under the Control hints
+        /// setting: it is the only way to know the button.
+        /// </summary>
+        public static void Cutscene(bool skippable)
+        {
+            if (broken || ShowOverride != null)
+                return;
+            try
+            {
+                MyHudNotifications notifications = MyHud.Notifications;
+                if (notifications == null || MySession.Static == null)
+                    return;
+                if (!skippable)
+                {
+                    if (cutsceneHint != null)
+                        notifications.Remove(cutsceneHint);
+                    cutsceneHint = null;
+                    return;
+                }
+                if (cutsceneHint != null && cutsceneHint.Alive)
+                    return;
+                cutsceneHint = new MyHudNotificationDebug(CutsceneText, Milliseconds, level: MyNotificationLevel.Important);
+                notifications.Add(cutsceneHint);
+            }
+            catch (Exception e)
+            {
+                broken = true;
+                Log.Error(e, "The cutscene's skip prompt could not be shown; control hints are off for this session");
+            }
+        }
+
         /// <summary>A reminder from elsewhere, now (the seat's "take hold of the stick", <see cref="ControlGrip"/>), under the Control hints setting; false when not shown.</summary>
         internal static bool ShowNow(string text) => VRSettings.ControlHints && !broken && Show(text);
 

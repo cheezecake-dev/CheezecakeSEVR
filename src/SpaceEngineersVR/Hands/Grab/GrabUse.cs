@@ -53,8 +53,9 @@ namespace SpaceEngineersVR.Hands
     /// are left out, so a grip on the armrest does nothing and standing up stays on its button. A grip anywhere that is not
     /// on a use object is the seat's: the hand flying and the roll.</para>
     /// <para>Line of reach (<see cref="LineOfReach"/>): a use object is taken only when nothing solid lies between the arm's
-    /// shoulder (the eyes before the arms are known) and the palm, other than the target's own block and the seat, so a
-    /// real hand pushed through a wall or a cockpit's side does not use what is behind it. The line is swept with a 1 cm
+    /// shoulder (the eyes before the arms are known) and the palm, other than the target's own block (the seat's own block
+    /// counts, but for the collision shape the line starts in), and, in a closed cockpit, the line stays within its cells, so a
+    /// real hand pushed through a wall, a cockpit's side or its canopy does not use what is behind it. The line is swept with a 1 cm
     /// ball the way <see cref="SurfaceStop"/> sweeps the drawn hands (the character collision layer; solid is a grid that is
     /// not a projection, or voxels). What is blocked is not highlighted and gets no grip claim, so the hull grab or nothing
     /// takes that grip. RenderDebug GrabUseTrace=1 logs each grip's line: clear, or the block in the way.</para>

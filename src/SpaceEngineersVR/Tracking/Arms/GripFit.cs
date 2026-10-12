@@ -116,11 +116,33 @@ namespace SpaceEngineersVR.Tracking
             Log.Info(note);
         }
 
+        /// <summary>The profiles the hands are on now, as the fit screen names them: "oculus/touch_controller", or "oculus/touch_controller, htc/vive_controller" when they differ.</summary>
+        public static string ProfilesInUse()
+        {
+            lock (gate)
+            {
+                Refresh(locked: true);
+                return string.Join(", ", InUse());
+            }
+        }
+
+        /// <summary>The fit stored for the first of the profiles in use (the one the fit screen shows); <see cref="Fit.None"/> when nothing is stored for it.</summary>
+        public static Fit InUseFit()
+        {
+            lock (gate)
+            {
+                Refresh(locked: true);
+                fits.TryGetValue(InUse()[0], out Fit fit);
+                return fit ?? Fit.None;
+            }
+        }
+
         /// <summary>
-        /// RenderDebug HandIKPitch, HandIKRoll, HandIKYaw, HandIKX, HandIKY, HandIKZ: sets one number of the fit of the
-        /// profile each hand is on now (both, when they differ), keeps it, and has it saved (<see cref="SaveIfDirty"/>).
+        /// RenderDebug HandIKPitch, HandIKRoll, HandIKYaw, HandIKX, HandIKY, HandIKZ and the fit screen: sets one number of
+        /// the fit of the profile each hand is on now (both, when they differ), keeps it, and has it saved
+        /// (<see cref="SaveIfDirty"/>). <paramref name="quiet"/> leaves the log alone, for a slider that sets many in a drag.
         /// </summary>
-        public static void Set(Axis axis, float value)
+        public static void Set(Axis axis, float value, bool quiet = false)
         {
             string note;
             lock (gate)
@@ -136,10 +158,11 @@ namespace SpaceEngineersVR.Tracking
                 Store();
                 note = "Grip fit set: " + string.Join("; ", changed);
             }
-            Log.Info(note);
+            if (!quiet)
+                Log.Info(note);
         }
 
-        /// <summary>RenderDebug HandIKFitReset=1: forgets the fit of the profile each hand is on now, back to the plugin's own placement.</summary>
+        /// <summary>RenderDebug HandIKFitReset=1 and the fit screen's reset: forgets the fit of the profile each hand is on now, back to the plugin's own placement.</summary>
         public static void Reset()
         {
             string note;

@@ -6,7 +6,7 @@ using System.Text;
 namespace SpaceEngineersVR
 {
     /// <summary>A number, in a range, moved in steps. Stored as a float; <see cref="Integer"/> ones are whole.</summary>
-    internal sealed class NumberSetting : Setting
+    internal class NumberSetting : Setting
     {
         private float effective, pending;
         private bool effectiveSet, pendingSet;
@@ -63,7 +63,7 @@ namespace SpaceEngineersVR
         /// the range, and code knows what it measured). Null unsets an optional setting; a number that is not a
         /// number is ignored.
         /// </summary>
-        public void Set(float? value)
+        public virtual void Set(float? value)
         {
             if (!Accept(ref value))
                 return;

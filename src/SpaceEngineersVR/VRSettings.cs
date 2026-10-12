@@ -26,6 +26,10 @@ namespace SpaceEngineersVR
             55f, 20f, 120f, 1f, unit: "deg", decimals: 0,
             tooltip: "How wide the HUD looks, in degrees of your view (-hudWidth). You see the change once the menu is closed."));
 
+        private static readonly ChoiceSetting refreshRate = Add(new ChoiceSetting("refreshRate", "Refresh rate", "Display",
+            new[] { "Runtime default" }, 0, open: true,
+            tooltip: "The rate the headset's screen runs at. Runtime default leaves it as the headset has it; the others are the rates the headset offers, listed once VR is running. A saved rate the headset does not offer is replaced by the nearest it does; a headset whose runtime has no refresh-rate control ignores this. A lower rate gives the GPU more time for each frame. Takes effect at once while a game runs."));
+
         private static readonly FlagSetting dynamicResolution = Add(new FlagSetting("dynamicResolution", "Dynamic resolution", "Display", true,
             tooltip: "Draw the eyes at a lower resolution, down to 70% each way, while the GPU cannot keep up with the headset; back up when it can. A frame the GPU misses is shown again, which can feel like judder."));
 
@@ -35,6 +39,9 @@ namespace SpaceEngineersVR
         private static readonly NumberSetting comfortVignette = Add(new NumberSetting("comfortVignette", "Comfort vignette", "Display",
             0f, 0f, 1f, 0.05f, decimals: 2,
             tooltip: "Darkens the edges of your view while the thumbsticks move or turn you, which eases motion sickness. 0 turns it off. Moving your head never triggers it."));
+
+        private static readonly FlagSetting comfortFade = Add(new FlagSetting("comfortFade", "Fade on camera cuts", "Display", true,
+            tooltip: "When the game puts your view somewhere else at once - getting into or out of a seat, a camera block or a turret, a respawn, a jump drive's jump, a teleport, or standing upright as you come into gravity - the view goes black and the world fades back in over a moment. Off: the view cuts straight to the new place."));
 
         private static readonly ChoiceSetting cameraShake = Add(new ChoiceSetting("cameraShake", "Camera shake", "Display",
             new[] { "Off", "Low", "Full" }, 0,
@@ -50,6 +57,12 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting wristStatus = Add(new FlagSetting("wristStatus", "Status on the wrist", "Interface", true,
             tooltip: "A screen on the gauntlet of your astronaut's left forearm shows your suit and body status, on foot and in a seat: the helmet, jetpack, broadcast and lamp icons, radiation, the health, food, energy, oxygen and hydrogen bars, the medicine and cryo marks, the inventory fill, and the oxygen and temperature outside. It brightens when you look at it, and the HUD leaves these out (the speed, dampeners and gravity stay on the HUD). Off: no screen on the wrist, and the HUD shows them as the game does."));
+        private static readonly NumberSetting hudTextSize = Add(new NumberSetting("hudTextSize", "HUD text size", "Interface",
+            1f, 0.8f, 2f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "How large the HUD's parts on the visor are drawn, text with its plates and bars, from the middle of the view outward: each grows away from its own edge or corner. The parts are drawn at the larger size, so the text stays sharp (the game's own fonts, as it draws them at a larger UI scale); only when the visor image is full are the largest parts drawn smaller and sampled up. 100% is as wide as the HUD width gives. Needs HUD on the visor; the flat panel is sized by HUD width. You see the change once the menu is closed."));
+        private static readonly NumberSetting hudTextBacking = Add(new NumberSetting("hudTextBacking", "HUD text backing", "Interface",
+            0f, 0f, 0.9f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "A dark plate behind each block of HUD text on the visor, so it can be read against a bright sky or planet. The number is how solid the plate is; 0 draws none. Needs HUD on the visor. You see the change once the menu is closed."));
         private static readonly FlagSetting hudVisor = Add(new FlagSetting("hudVisor", "HUD on the visor", "Interface", true,
             tooltip: "The HUD's parts sit on your helmet's visor: the toolbar, suit and ship status, block info, chat, notifications and the rest each move out toward their own edge or corner, curve round your head and face your eyes, so the middle of your view stays clear. Markers on things in the world (ore, antennas, target locks, the selection box) and the crosshair stay where they are. Off: the whole HUD on one flat panel ahead of you, as before. The distance and width under HUD set how far and how wide the visor is."));
         private static readonly FlagSetting showToolbarOnFoot = Add(new FlagSetting("showToolbarOnFoot", "Toolbar on the HUD", "Interface", false,
@@ -187,19 +200,31 @@ namespace SpaceEngineersVR
             tooltip: "How fast the held stick turns a ship. 1 matches a gamepad pushed all the way."));
 
         private static readonly FlagSetting leftHanded = Add(new FlagSetting("leftHanded", "Left-handed", "Controls", false,
-            tooltip: "Point the menu laser with your left hand: its trigger clicks, its grip right-clicks, its thumbstick scrolls. Off: the right hand."));
+            tooltip: "Your left hand is the main one. It points the menu laser (its trigger clicks, its grip right-clicks, its thumbstick scrolls) and holds tools and guns, with the right hand on the front grip. Its trigger fires, welds, grinds and drills, the right trigger is the secondary, and its stick click reloads. The datapad stows on your right forearm. Building and seats keep their buttons. Off: the right hand."));
 
         private static readonly TextSetting gripFit = Add(new TextSetting("gripFit", "Grip fit", "Controls", hidden: true,
             tooltip: "How your character's hand sits on each kind of controller, one entry per OpenXR interaction profile, separated by semicolons: profile:pitch,roll,yaw,x,y,z (degrees, then millimetres), as the RenderDebug keys HandIKPitch, HandIKRoll, HandIKYaw, HandIKX, HandIKY and HandIKZ set them for the controllers in use. A controller with no entry gets the plugin's own placement."));
 
         private static readonly NumberSetting hapticStrength = Add(new NumberSetting("hapticStrength", "Haptic strength", "Controls",
             1f, 0f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
-            tooltip: "How hard the controllers buzz when you fire, weld, grind or drill, place a block or get hit. 0 turns it off."));
+            tooltip: "How hard the controllers buzz when you fire, weld, grind or drill, place a block or get hit, and for the heartbeat. 0 turns all of it off."));
+        private static readonly FlagSetting hapticHeartbeat = Add(new FlagSetting("hapticHeartbeat", "Heartbeat", "Controls", true,
+            tooltip: "A slow double pulse in both controllers while your health or your suit's oxygen is low, until it recovers. Off: hits and tools still buzz."));
         private static readonly FlagSetting grabToUse = Add(new FlagSetting("grabToUse", "Grab to use", "Controls", true,
             tooltip: "Closing the grip with your hand on anything the Use key works on uses it, as the key does: seats, terminals, screens, cargo and connectors, medical rooms (heals while held), stores and the rest. A door or hatch has to be pulled or pushed a hand's width while held; a vending machine's Buy held for a moment. In a seat it works on what is within arm's reach, not the seat itself. With nothing in reach the grip keeps its usual job. Ladders and buttons have their own grab and fingertip. Not while that hand holds a tool, a menu is up or you are on a ladder."));
 
+        private static readonly NumberSetting wristPanelSize = Add(new NumberSetting("wristPanelSize", "Wrist panel size", "Controls",
+            0.3f, 0.2f, 0.5f, 0.01f, unit: "m", decimals: 2,
+            tooltip: "How wide the quick-actions panel is when it opens on your left wrist, in metres. A larger one is easier to read and to point at, and covers more of your view. You see the change as the panel opens."));
+
         private static readonly FlagSetting wristPanel = Add(new FlagSetting("wristPanel", "Wrist panel", "Controls", true,
             tooltip: "On foot and on the jetpack, Y on the left controller opens the quick-actions panel on your left wrist (inventory, terminal, G menu, lights, helmet, dampeners, broadcast, symmetry, colour picker); Y again closes it. Off: Y does nothing there."));
+
+        private static readonly FlagSetting datapad = Add(new FlagSetting("datapad", "Datapad", "Controls", true,
+            tooltip: "A datapad stowed on your left forearm (right forearm when left-handed): grip the forearm with the other hand to pull it off, and hold it to read. It has chat (the channel, recent messages, quick phrases, and the on-screen keyboard to type), your GPS list with a button to share one to chat, and your terminal. Touch it with the other hand's fingertip, or point the laser. Let go near the forearm to put it back; let go elsewhere and it stays there a few seconds before it returns. Grip it with the free hand to swap hands. A new chat line while it is stowed lights the forearm and ticks the controller. Off: chat through the actions wheel only."));
+        private static readonly NumberSetting datapadWidth = Add(new NumberSetting("datapadWidth", "Datapad size", "Controls",
+            0.34f, 0.22f, 0.5f, 0.01f, unit: "m", decimals: 2,
+            tooltip: "How wide the datapad is. Larger is easier to touch and read, smaller is lighter to hold up."));
 
         private static readonly FlagSetting fingerPress = Add(new FlagSetting("fingerPress", "Press with fingertip", "Controls", true,
             tooltip: "On foot, touching a push-button with the tip of a controller's index finger presses it, as the Use key does: the buttons of a button panel, and the next, previous and pause buttons of a jukebox. Doors, seats, terminals and cargo are not touched. Not while that hand holds a tool, a menu is up or you are on a ladder or seated. Off: only the Use key and the hand's ray."));
@@ -213,7 +238,11 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting grabItems = Add(new FlagSetting("grabItems", "Grab items", "Controls", true,
             tooltip: "On foot, close a hand's grip on a floating item (ore, ice, components, a dropped tool) to take it out of the air and hold it; open the hand and it flies on at the hand's speed. Let go of it at your chest and it goes into your inventory. Heavy stacks come along slowly. Off: a grip near an item means what it does in empty air."));
         private static readonly FlagSetting grabHulls = Add(new FlagSetting("grabHulls", "Grab hulls", "Controls", true,
-            tooltip: "With no gravity, press a grip with your hand on a ship's or station's hull to take hold of it, and pull or push to move along it, as in Lone Echo. Let go and you keep going at the speed your hand moved you (up to 6 m/s); the jetpack's dampeners stop you only if they are on. Off: a grip on a hull is Use or the toolbar wheel, as in empty air."));
+            tooltip: "With no gravity, press a grip with your hand on a ship's or station's hull, or on an asteroid, to take hold of it, and pull or push to move along it, as in Lone Echo; with both hands you climb hand over hand. Let go while your hand is moving and you fly on at its speed, up to the push-off speed below; the jetpack's dampeners stop you only if they are on. Off: a grip on a hull is Use or the toolbar wheel, as in empty air."));
+
+        private static readonly NumberSetting pushOffMaxSpeed = Add(new NumberSetting("pushOffMaxSpeed", "Push-off top speed", "Controls",
+            6f, 1f, Hands.HullGrabMath.HoldMaxSpeed, 0.5f, unit: "m/s", decimals: 1,
+            tooltip: "The fastest you fly off when you let go of a hull or asteroid with your hand moving: a hard throw-off leaves at this speed, a gentle one at your hand's. Lower is easier to control, higher crosses a big ship quicker."));
 
         private static readonly FlagSetting grabLadders = Add(new FlagSetting("grabLadders", "Grab ladders", "Controls", true,
             tooltip: "Press a grip with your hand on a ladder to get on it, then pull your hand down to climb a step up, or push it up to climb down. Off: ladders by the Use key and the move stick only."));
@@ -226,8 +255,14 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting twoHandGripStays = Add(new FlagSetting("twoHandGripStays", "Two-hand grip stays on", "Controls", true,
             tooltip: "Once your other hand has taken the tool's front grip, the astronaut's hand stays on it for as long as you hold that grip button, however far your real hand moves. Up to 15 cm off the grip your other hand still aims the tool; further off, its pull eases away and the tool points where your tool hand points. Let go of the button to go back to one hand. Off: pulling the hand 15 cm off the grip lets go as well."));
 
+        private static readonly FlagSetting physicalReload = Add(new FlagSetting("physicalReload", "Reload by hand", "Controls", true,
+            tooltip: "Reloading a hand weapon is done with your hands. Click the right stick (or close your other hand at the magazine) and the magazine drops out. Once it is out, reach to your other hand's hip and close the grip to take a fresh one: a tick says you have it, two light ticks that there are none for this weapon. Push it up into the well under the gun and it clicks home; the weapon is loaded then. Let go of it anywhere else and it falls, or back at the hip and it goes back; neither costs a magazine. The rounds left in a dropped magazine are lost, as with the game's own reload. An empty weapon drops its magazine by itself. R on the keyboard still reloads the game's way. Off: the click reloads on the game's timer."));
+
         private static readonly ChoiceSetting kickback = Add(new ChoiceSetting("kickback", "Tool and weapon kickback", "Controls", new[] { "Off", "Light", "Full" }, 2,
-            tooltip: "A gun or tool made for two hands (the rifles, rocket launchers, grinders and hand drills) kicks hard when you use it in one hand: a gun climbs, snaps and shoves back with every shot while the trigger stays down. A grinder or drill fights you whenever it runs, cutting or not: it yanks as it spins up, climbs and pulls to the side more the longer you hold it, and jerks hard; the drill twists your wrist against its spin. A pistol in one hand flips up with each shot and comes back on its own: time your shots to it, or it walks up. Let go of the trigger and it settles back into your hand. Hold it in both hands and it stays steady. Only the tool and where it points move, never your view (the game's own recoil, which turns the head, is left out). Light: half as hard. Off: no kick."));
+            tooltip: "A gun or tool made for two hands (the rifles, rocket launchers, grinders and hand drills) kicks hard when you use it in one hand: a gun climbs, snaps and shoves back with every shot while the trigger stays down. A grinder or drill fights you whenever it runs, cutting or not: it yanks as it spins up, climbs and pulls to the side more the longer you hold it, and jerks hard; the drill twists your wrist against its spin. A pistol in one hand flips up with each shot and comes back on its own: time your shots to it, or it walks up. Let go of the trigger and it settles back into your hand. Hold it in both hands and it stays steady. Only the tool and where it points move; the game's own recoil, which turns your view, is left out of a shot only when this kick is at least as strong (see Game recoil in VR). Light: half as hard. Off: no kick."));
+
+        private static readonly ChoiceSetting gameRecoil = Add(new ChoiceSetting("gameRecoil", "Game recoil in VR", "Controls", new[] { "Auto", "Off (comfort)" }, 0,
+            tooltip: "The game's own gun recoil turns your view with each shot. Auto: it is left out of a shot only when the tool and weapon kickback kicks that shot at least as hard, and applies otherwise (kickback Off or weaker, your hand not tracked). Off keeps the view still when firing (single player only; in multiplayer it works as Auto, so no one gains an edge)."));
 
         private static readonly FlagSetting vrButtonNames = Add(new FlagSetting("vrButtonNames", "VR button names", "Controls", true,
             tooltip: "The game's prompts name the controller buttons instead of the keys: \"Press [Right grip] to open\", \"[A] to jump\", \"[Y > Inventory]\" for what the wrist panel opens. A control the controllers have no way to press keeps its key. Off: the keyboard's names."));
@@ -237,6 +272,27 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting vrActionsWheel = Add(new FlagSetting("vrActionsWheel", "VR actions wheel", "Controls", true,
             tooltip: "Clicking the left stick on the tools wheel opens the game's actions (inventory, dampeners, lights, helmet, HUD, broadcasting, and the Menu, View and Blueprint pages) as a wheel at your left hand: point at an entry with the hand or the stick, let go of the grip or pull the trigger to use it, B to close. Off: the game's own gamepad radial screen."));
+
+        private static readonly FlagSetting pingHoldX = Add(new FlagSetting("pingHoldX", "Hold X to ping", "Controls", true,
+            tooltip: "Hold X and point (in a seat, look) at anything: ore, a block, a ship, a player, a spot on a planet. The laser shows what it is on, named on the HUD. Let go of X to ping it: a GPS marker for a while, and a line in the chat with the GPS in it, which every player's game adds to their GPS list. Pull the trigger while holding X to keep it as your own GPS instead. A tap of X is still the dampeners, given as you let go. Off: X is the dampeners as you press it, and the actions wheel's Ping and Mark GPS still work."));
+
+        private static readonly NumberSetting pingSeconds = Add(new NumberSetting("pingSeconds", "Ping lasts", "Controls",
+            60f, 10f, 180f, 10f, unit: "s", decimals: 0,
+            tooltip: "How long your own marker for a ping stays on the HUD. Other players get the GPS from the chat line, in their GPS list, for as long as their game keeps it (three minutes, unless they keep it)."));
+
+        private static readonly ChoiceSetting pingChat = Add(new ChoiceSetting("pingChat", "Ping chat", "Controls",
+            new[] { "Faction, else global", "Faction only", "Off" }, 0,
+            tooltip: "Where a ping's chat line goes: your faction's channel, or the global one when you have no faction; your faction's only; or nowhere (the marker is then only yours)."));
+        private static readonly FlagSetting shipModel = Add(new FlagSetting("shipModel", "Ship model in your hand", "Interface", true,
+            tooltip: "The actions wheel's Ship model entry holds a small hologram of your ship above your off hand: seated, the ship you are in; on foot, the one your hand points at or the nearest. Grip it with either hand to turn it over, with both to make it bigger or smaller; let go and it stays there. Damaged blocks show red, blocks lost while it is out show dark, and pointing at a block on it outlines the real block with its name and integrity. The same entry puts it away. Off: no entry on the wheel."));
+        private static readonly FlagSetting shipModelThrusters = Add(new FlagSetting("shipModelThrusters", "Ship model: thrusters", "Interface", true,
+            tooltip: "The ship model shows the thrusters in orange. Also switched on the actions wheel's Model overlays page."));
+        private static readonly FlagSetting shipModelPower = Add(new FlagSetting("shipModelPower", "Ship model: power", "Interface", true,
+            tooltip: "The ship model shows what makes power (reactors, batteries, solar panels, wind turbines, engines) in yellow, inside the hull too. Also switched on the actions wheel's Model overlays page."));
+        private static readonly FlagSetting shipModelDoors = Add(new FlagSetting("shipModelDoors", "Ship model: doors", "Interface", true,
+            tooltip: "The ship model shows doors, airlocks and hangar doors in green. Also switched on the actions wheel's Model overlays page."));
+        private static readonly FlagSetting shipModelWeapons = Add(new FlagSetting("shipModelWeapons", "Ship model: weapons", "Interface", true,
+            tooltip: "The ship model outlines guns and turrets in red. Also switched on the actions wheel's Model overlays page."));
 
         private static readonly FlagSetting headsetAudio = Add(new FlagSetting("headsetAudio", "Sound through the headset", "Sound", true, restart: true,
             tooltip: "The game's sound plays through the headset's own audio device, the one the headset's runtime names for VR (with a Quest on Link, Headphones (Oculus Virtual Audio Device)), whatever the Windows default output is. Without a headset, or with a runtime that names no device, it plays through the Windows default. Off: always the Windows default. Takes effect the next time the game starts."));
@@ -285,8 +341,36 @@ namespace SpaceEngineersVR
         /// <summary>How wide the GUI and HUD panel looks, degrees (-hudWidth 55); its height follows the GUI's aspect.</summary>
         public static float HudWidthDegrees => hudWidth.Value;
 
+        /// <summary>The "Refresh rate" setting's value by name ("Runtime default", "72 Hz"), which says when it has changed.</summary>
+        public static string RefreshRateName => refreshRate.Name;
+
+        /// <summary>The refresh rate asked of the headset, Hz; 0 leaves it as the runtime has it.</summary>
+        public static float RefreshRateHz =>
+            float.TryParse(refreshRate.Name.Split(' ')[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float hz) ? hz : 0f;
+
+        /// <summary>Sets the refresh rates the options screen offers, in Hz, once the runtime has listed them.</summary>
+        public static void OfferRefreshRates(IEnumerable<float> rates)
+        {
+            var names = new List<string>();
+            foreach (float rate in rates)
+                names.Add(rate.ToString("0.##", CultureInfo.InvariantCulture) + " Hz");
+            refreshRate.Offer(names);
+        }
+
+        /// <summary>How large the HUD's parts on the visor are, 1 as the HUD width gives (<see cref="Rendering.HudVisor"/>).</summary>
+        public static float HudTextSize => hudTextSize.Value;
+
+        /// <summary>How solid the dark plate behind HUD text on the visor is, 0 (none) to 0.9.</summary>
+        public static float HudTextBacking => hudTextBacking.Value;
+
+        /// <summary>How wide the quick-actions panel is on the left wrist, metres (<see cref="Rendering.WorldMenu"/>).</summary>
+        public static float WristPanelWidth => wristPanelSize.Value;
+
         /// <summary>How strongly the comfort vignette darkens the edges of the view while the sticks move or turn you, 0 (off) to 1 (<see cref="Rendering.Vignette"/>).</summary>
         public static float ComfortVignette => comfortVignette.Value;
+
+        /// <summary>A cut of the view is faded from black (<see cref="Rendering.CameraCut"/>).</summary>
+        public static bool ComfortFade => comfortFade.Value;
 
         /// <summary>
         /// The camera shake setting: 0 Off, 1 Low, 2 Full. RenderDebug CameraShake=0/1/2 takes its place (<see cref="CameraShakeOverride"/>).
@@ -525,6 +609,9 @@ namespace SpaceEngineersVR
         /// <summary>How hard the controllers buzz, 0 (off) to 1 (the strengths in <see cref="Hands.Haptics"/> as they are).</summary>
         public static float HapticStrength => hapticStrength.Value;
 
+        /// <summary>The slow pulse at low health or oxygen (<see cref="Hands.Haptics"/>).</summary>
+        public static bool HapticHeartbeat => hapticHeartbeat.Value;
+
         /// <summary>How far a thumbstick has to be pushed before it counts, 0 to 1.</summary>
         public static float StickDeadzone => stickDeadzone.Value;
 
@@ -558,6 +645,12 @@ namespace SpaceEngineersVR
         /// <summary>Y opens the quick-actions panel on the wrist (<see cref="Input.WristButton"/>).</summary>
         public static bool WristPanel => wristPanel.Value;
 
+        /// <summary>The datapad on the off hand's forearm, pulled off and held to chat and read (<see cref="Hands.Datapad"/>).</summary>
+        public static bool Datapad => datapad.Value;
+
+        /// <summary>The datapad's width, metres.</summary>
+        public static float DatapadWidth => datapadWidth.Value;
+
         /// <summary>The suit and body status is on a screen on the gauntlet, and not on the HUD (<see cref="Rendering.WristStatus"/>).</summary>
         public static bool WristStatus => wristStatus.Value;
 
@@ -579,6 +672,9 @@ namespace SpaceEngineersVR
         /// <summary>With no gravity, a grip on a hull takes hold of it and the body follows the hand (<see cref="Hands.HullGrab"/>).</summary>
         public static bool GrabHulls => grabHulls.Value;
 
+        /// <summary>The fastest a let-go of a hull or asteroid leaves it, m/s (<see cref="Hands.HullGrab"/>).</summary>
+        public static float PushOffMaxSpeed => pushOffMaxSpeed.Value;
+
         /// <summary>The hands stop on window and canopy glass as on hulls (<see cref="Hands.GlassPanes"/>).</summary>
         public static bool HandsStopOnGlass => handsStopOnGlass.Value;
 
@@ -591,8 +687,14 @@ namespace SpaceEngineersVR
         /// <summary>The other hand stays on the tool's grip while its grip button is held, however far the hand moves (<see cref="Hands.TwoHand.Stays"/>).</summary>
         public static bool TwoHandGripStays => twoHandGripStays.Value;
 
+        /// <summary>A hand weapon's reload press drops its magazine, and a fresh one is taken from the hip and pushed into the well by hand (<see cref="Hands.Reload"/>).</summary>
+        public static bool PhysicalReload => physicalReload.Value;
+
         /// <summary>The kickback setting: 0 Off, 1 Light, 2 Full (<see cref="Hands.Kickback"/>).</summary>
         public static int KickbackLevel => kickback.Value;
+
+        /// <summary>The game recoil setting is Off (comfort): the game's view recoil is left out in single player (<see cref="Hands.Kickback"/>).</summary>
+        public static bool GameRecoilOff => gameRecoil.Value == 1;
 
         /// <summary>The share of the one-handed kick: none (Off), a half (Light), all (Full).</summary>
         public static double KickbackShare => KickbackLevel <= 0 ? 0.0 : KickbackLevel == 1 ? 0.5 : 1.0;
@@ -608,6 +710,47 @@ namespace SpaceEngineersVR
 
         /// <summary>The left stick click on the tools wheel opens the actions wheel at the hand, not the game's radial screen (<see cref="Gui.ActionsWheel"/>).</summary>
         public static bool VRActionsWheel => vrActionsWheel.Value;
+
+        /// <summary>Holding X aims a ping, a tap is the dampeners (<see cref="Hands.Ping"/>).</summary>
+        public static bool PingHoldX => pingHoldX.Value;
+
+        /// <summary>How long one's own marker for a ping lasts, seconds (<see cref="Hands.Ping"/>).</summary>
+        public static float PingSeconds => pingSeconds.Value;
+
+        /// <summary>Where a ping's chat line goes: <see cref="PingChatFactionOrGlobal"/>, <see cref="PingChatFactionOnly"/> or <see cref="PingChatOff"/>.</summary>
+        public static int PingChat => pingChat.Value;
+
+        public const int PingChatFactionOrGlobal = 0, PingChatFactionOnly = 1, PingChatOff = 2;
+        /// <summary>The actions wheel offers the ship model (<see cref="Hands.ShipModel"/>).</summary>
+        public static bool ShipModel => shipModel.Value;
+
+        /// <summary>The ship model's thruster overlay. The actions wheel switches it, and the options screen.</summary>
+        public static bool ShipModelThrusters
+        {
+            get => shipModelThrusters.Value;
+            set => shipModelThrusters.Set(value);
+        }
+
+        /// <summary>The ship model's power overlay.</summary>
+        public static bool ShipModelPower
+        {
+            get => shipModelPower.Value;
+            set => shipModelPower.Set(value);
+        }
+
+        /// <summary>The ship model's door overlay.</summary>
+        public static bool ShipModelDoors
+        {
+            get => shipModelDoors.Value;
+            set => shipModelDoors.Set(value);
+        }
+
+        /// <summary>The ship model's weapon outlines.</summary>
+        public static bool ShipModelWeapons
+        {
+            get => shipModelWeapons.Value;
+            set => shipModelWeapons.Set(value);
+        }
 
         // ---- The list, for the options screen. ----
 

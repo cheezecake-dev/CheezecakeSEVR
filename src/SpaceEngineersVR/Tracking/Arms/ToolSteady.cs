@@ -16,8 +16,8 @@ namespace SpaceEngineersVR.Tracking
     /// Debug (<see cref="Rendering.RenderDebug"/> ToolSteady=1): once a second while the local character holds a tool on foot
     /// in first person, how far each link that places the tool moved in the view over that second, read as each camera goes to
     /// the renderer (<see cref="CameraHeadLink"/>). Spans are max - min, cm, along the view's right / up / back:
-    /// the tool's hand spot (item RightHand, where the palm goes); the controller's grip it is placed from; the tool off that
-    /// grip (the placement); the right palm off the tool's hand spot (the arm); the head matrix the camera should be built from,
+    /// the tool's hand spot (item RightHand, mirrored left-handed: where the palm goes); the controller's grip it is placed
+    /// from; the tool off that grip (the placement); the tool hand's palm off the tool's hand spot (the arm); the head matrix the camera should be built from,
     /// in the camera (the game's camera shake); and how far the body was drawn ahead (<see cref="BodyShift"/>).
     /// "Came back" counts the tool's hand spot turning between coming toward the eye and going away from it by 3 mm or
     /// more, so a wobble shows its rate. Still hands in a still view should show spans near zero: the one that is not names the
@@ -28,6 +28,7 @@ namespace SpaceEngineersVR.Tracking
         public static bool On;
 
         private static readonly AccessTools.FieldRef<MyCharacter, int> RightPalm = AccessTools.FieldRefAccess<MyCharacter, int>("m_rightHandIKEndBone");
+        private static readonly AccessTools.FieldRef<MyCharacter, int> LeftPalm = AccessTools.FieldRefAccess<MyCharacter, int>("m_leftHandIKEndBone");
 
         /// <summary>The tool has to come back this far (metres) along the view's back axis to count as turning.</summary>
         private const double Turn = 0.003;
@@ -111,7 +112,7 @@ namespace SpaceEngineersVR.Tracking
             }
 
             MatrixD toolWorld = weapon.WorldMatrix;
-            Vector3D spot = Vector3D.Transform((Vector3D)item.RightHand.Translation, toolWorld);
+            Vector3D spot = Vector3D.Transform((Vector3D)Hands.ItemSpots.Tool(item).Translation, toolWorld);
             Vector3D spotInView = Vector3D.Transform(spot, view);
             tool.Add(spotInView);
             Vector3D forward = Vector3D.Normalize(Vector3D.TransformNormal(toolWorld.Forward, view));
@@ -131,13 +132,13 @@ namespace SpaceEngineersVR.Tracking
                 HandState main = VRInput.Get(VRSettings.DominantHand);
                 if (main.Tracked)
                 {
-                    Vector3D left = Vector3D.Transform((Vector3D)item.LeftHand.Translation, toolWorld);
-                    otherGrip = Vector3D.Transform(left, MatrixD.Invert(grip) * (MatrixD)main.Grip);
+                    Vector3D other = Vector3D.Transform((Vector3D)Hands.ItemSpots.Other(item).Translation, toolWorld);
+                    otherGrip = Vector3D.Transform(other, MatrixD.Invert(grip) * (MatrixD)main.Grip);
                     hasOtherGrip = true;
                 }
             }
 
-            int palmBone = RightPalm(character);
+            int palmBone = Hands.ItemSpots.Mirrored ? LeftPalm(character) : RightPalm(character);
             MyCharacterBone[] bones = character.AnimationController?.CharacterBones;
             if (bones != null && palmBone >= 0 && palmBone < bones.Length)
             {

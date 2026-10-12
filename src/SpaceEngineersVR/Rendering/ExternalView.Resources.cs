@@ -1,6 +1,8 @@
 // ExternalView, render thread: the picture texture and the pass's own screen-sized renderer resources.
 
 using System;
+using SpaceEngineersVR.OpenXR;
+using VRageMath;
 
 namespace SpaceEngineersVR.Rendering
 {
@@ -17,6 +19,47 @@ namespace SpaceEngineersVR.Rendering
                 SharpDX.Direct3D11.ResourceOptionFlags.None, SharpDX.Direct3D11.ResourceUsage.Default, 1, SharpDX.Direct3D11.CpuAccessFlags.None,
             });
             EyeRenderer.Clear(texture);
+        }
+
+        /// <summary>
+        /// The picture's size for this pass. A block's camera on the forced view's screen is the player's whole view, so it is
+        /// drawn at about the headset's own pixels across the angle the screen covers (<see cref="ForcedView"/> puts it
+        /// <see cref="VRSettings.MenuWidthDegrees"/> wide), at the density the eye images have at their middle, up to
+        /// <see cref="LargestWidth"/>; anything else is <see cref="SmallWidth"/> wide. A new size remakes the picture and the
+        /// pass's screen set.
+        /// </summary>
+        private static void FitSize(Kind kind)
+        {
+            int width = kind == Kind.Forced && ForcedView.ForBlock ? BlockWidth() : SmallWidth;
+            if (width == TextureWidth)
+                return;
+            if (texture != null)
+            {
+                object[] args = { texture };
+                disposeRtv.Invoke(rwTextures.GetValue(null), args);
+                texture = null;
+            }
+            ScreenResourcesChanged();
+            haveImage = false;
+            Log.Info($"External view: picture {TextureWidth}x{TextureHeight} -> {width}x{width * SmallHeight / SmallWidth}" +
+                     (width > SmallWidth ? $" for a block's camera ({VRSettings.MenuWidthDegrees:0} deg wide on the headset)" : ""));
+            TextureWidth = width;
+            TextureHeight = width * SmallHeight / SmallWidth;
+        }
+
+        /// <summary>A block camera's picture width (see <see cref="FitSize"/>), a multiple of 32 so its height is whole; the current width outside a headset frame.</summary>
+        private static int BlockWidth()
+        {
+            if (!XrSession.InFrame)
+                return XrSession.Exists ? TextureWidth : SmallWidth;
+            XrFovf fov = XrSession.View(0).Fov;
+            double across = Math.Tan(fov.AngleRight) - Math.Tan(fov.AngleLeft);
+            if (!(across > 0.1))
+                return TextureWidth;
+            double half = Math.Tan(MathHelper.ToRadians(VRSettings.MenuWidthDegrees) / 2.0);
+            double wanted = EyeRenderer.EyeResolution.X / across * 2.0 * half;
+            int width = (int)Math.Round(wanted / 32.0) * 32;
+            return MathHelper.Clamp(width, SmallWidth, LargestWidth);
         }
 
         /// <summary>

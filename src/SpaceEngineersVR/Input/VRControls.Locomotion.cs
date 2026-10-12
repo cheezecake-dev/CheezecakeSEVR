@@ -59,11 +59,14 @@ namespace SpaceEngineersVR.Input
             // take, production and dump at a container are on the stick clicks, not A and B (Hands.QuickInventory); sprint, the
             // zero-g roll and reload (Hands.Reload) leave a click while a press of it is taken there.
             bool build = Hands.BuildMode.Active;
-            // A hand weapon's left trigger is only its iron sight, which in VR is the gun brought up to the eye (Hands.IronSight).
+            // The triggers follow the hand holding the gun or tool: left-handed, the left one is primary (Hands.ItemSpots).
+            bool swap = Hands.ItemSpots.TriggersSwapped;
+            Hand fire = swap ? Hand.Left : Hand.Right, second = swap ? Hand.Right : Hand.Left;
+            // A hand weapon's secondary trigger is only its iron sight, which in VR is the gun brought up to the eye (Hands.IronSight).
             if (Hands.IronSight.Frame())
-                SwallowTrigger(Hand.Left, "a hand weapon's left trigger (its iron sight)");
+                SwallowTrigger(second, "a hand weapon's secondary trigger (its iron sight)");
             bool paint = Hands.PaintMode.Active;
-            bool place = TriggerHeld(Hand.Right), remove = TriggerHeld(Hand.Left);
+            bool place = TriggerHeld(fire), remove = TriggerHeld(second);
             jumpButton = !paint && !Hands.BuildMode.TakesA && VRInput.IsPressed(Hand.Right, VRButtons.A);
             // With the colour tool the triggers paint and take a colour, as the game's gamepad has them, not primary and secondary.
             Set(Intent.Primary, place && !paint);
@@ -81,11 +84,14 @@ namespace SpaceEngineersVR.Input
             Set(Intent.Use, VRInput.IsPressed(Hand.Right, VRButtons.Grip) && Hands.GripClaim.Owner(Hand.Right) == null && !Hands.QuickInventory.HoldsBack);
             Set(Intent.Jump, jumpButton || stickUp);
             Set(Intent.Crouch, stickDown);
-            Set(Intent.Thrusts, !paint && !Hands.BuildMode.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B));
-            Set(Intent.Damping, !build && VRInput.IsPressed(Hand.Left, VRButtons.X));
+            Set(Intent.Thrusts, !paint && !Hands.BuildMode.TakesB && !Hands.Ping.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B));
+            Set(Intent.Damping, !build && DampingFromX());
             // The left stick click held with a block in hand is building's (Hands.BuildMode.Modifier), not sprint; pressed at a
             // container it is the quick withdraw (Hands.QuickInventory.TakesLeftClick) until it is let go.
-            Set(Intent.Sprint, VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier && !Hands.QuickInventory.TakesLeftClick);
+            // Left-handed with a hand weapon that reloads, the left click is reload and sprint is the right click (Hands.Reload.SprintHand).
+            Hand sprintHand = Hands.Reload.SprintHand;
+            bool sprintTaken = sprintHand == Hand.Left ? Hands.BuildMode.Modifier || Hands.QuickInventory.TakesLeftClick : Hands.QuickInventory.TakesClick;
+            Set(Intent.Sprint, VRInput.IsPressed(sprintHand, VRButtons.StickClick) && !sprintTaken);
             Set(Intent.MoveCloser, Hands.BuildMode.Closer);
             Set(Intent.MoveFurther, Hands.BuildMode.Further);
             Set(Intent.UseSymmetry, Hands.BuildMode.SymmetryTap);
@@ -95,6 +101,13 @@ namespace SpaceEngineersVR.Input
             Set(Intent.PrevStage, Hands.BuildMode.PrevStage);
             Set(Intent.Reload, Hands.Reload.Wanted());
         }
+
+        /// <summary>
+        /// The dampeners from X: while X is the ping's (<see cref="Hands.Ping.TakesX"/>) a tap, given once as it is let go, so a
+        /// hold can aim instead; otherwise X held, as the game reads a key.
+        /// </summary>
+        private static bool DampingFromX() =>
+            Hands.Ping.TakesX ? Hands.Ping.DampingTap : VRInput.IsPressed(Hand.Left, VRButtons.X);
 
         /// <summary>
         /// Smooth turn: how far the body turns this frame, radians, + right. The stick has had its deadzone taken out, so
@@ -293,14 +306,14 @@ namespace SpaceEngineersVR.Input
             {
                 Set(Intent.Primary, fire);
                 // A turret, a searchlight, or a turret control block through its camera: A zooms in and B out while
-                // held, as a pad's zoom buttons; the zoomed picture is the inset (Rendering.ZoomInset). Not with a menu open,
-                // where B is Back (UpdateBack).
+                // held, as a pad's zoom buttons; the zoomed view is on the forced view's screen (Rendering.ForcedView).
+                // Not with a menu open, where B is Back (UpdateBack).
                 Zoom(!zoomInMenu && VRInput.IsPressed(Hand.Right, VRButtons.A), !zoomInMenu && VRInput.IsPressed(Hand.Right, VRButtons.B), "Turret: A / B");
                 return;
             }
 
             bool secondary = TriggerHeld(Hand.Left);
-            bool up = VRInput.IsPressed(Hand.Right, VRButtons.A), down = VRInput.IsPressed(Hand.Right, VRButtons.B);
+            bool up = VRInput.IsPressed(Hand.Right, VRButtons.A), down = !Hands.Ping.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B);
             if (seatSticks)
             {
                 seatMove = ShipStick.Move(leftStick, up, down, feel);
@@ -323,7 +336,7 @@ namespace SpaceEngineersVR.Input
             Set(Intent.Secondary, secondary);
             Set(Intent.Jump, up);
             Set(Intent.Crouch, down);
-            Set(Intent.Damping, VRInput.IsPressed(Hand.Left, VRButtons.X));
+            Set(Intent.Damping, DampingFromX());
             Set(Intent.Lights, VRInput.IsPressed(Hand.Left, VRButtons.StickClick));
             Set(Intent.LandingGear, VRInput.IsPressed(Hand.Right, VRButtons.StickClick));
         }

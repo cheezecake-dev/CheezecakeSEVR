@@ -104,8 +104,6 @@ namespace SpaceEngineersVR.Rendering
         private static readonly FieldInfo BindingsField = AccessTools.Field(typeof(MyStatControls), "m_bindings");
         private static readonly MethodInfo InitConditions = AccessTools.Method(typeof(MyStatControls), "InitConditions", new[] { typeof(ConditionBase) });
         private static FieldInfo styleField;
-        private static MyGuiScreenHudSpace cachedHud;
-        private static object cachedToolbar;
 
         /// <summary>A condition that is never true: it names no stat, so the game never finds one for it (MyStatControls.InitConditions) and its Eval says no.</summary>
         private static readonly StatCondition Never = new StatCondition { StatId = MyStringHash.GetOrCompute("VRHudToolbarNever") };
@@ -209,7 +207,7 @@ namespace SpaceEngineersVR.Rendering
             bool characterToolbar = toolbar != null && toolbar.ToolbarType == MyToolbarType.Character;
             if (onFoot && characterToolbar)
                 menu = MenuHasFocus();
-            return Decide(ForceShown, VRSettings.ShowToolbarOnFoot, VRInput.Active, onFoot, characterToolbar, cameraView, menu, out why);
+            return Decide(ForceShown, VRSettings.ShowToolbarOnFoot, VRInput.Layout, onFoot, characterToolbar, cameraView, menu, out why);
         }
 
         private static bool MenuHasFocus()
@@ -273,15 +271,14 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
+        /// <summary>
+        /// Read each time: RecreateControls builds a new control on the same screen, which it does whenever the screen size
+        /// changes (the picture switching between VR's and the game's while the headset is away, a resolution change).
+        /// </summary>
         private static object HudControl()
         {
             MyGuiScreenHudSpace hud = MyGuiScreenHudSpace.Static;
-            if (!ReferenceEquals(hud, cachedHud))
-            {
-                cachedToolbar = hud == null ? null : ToolbarField.GetValue(hud);
-                cachedHud = hud;
-            }
-            return cachedToolbar;
+            return hud == null ? null : ToolbarField.GetValue(hud);
         }
 
         /// <summary>Each MyStatControls the HUD draws: the plate's are found the first time and follow the state from then on.</summary>

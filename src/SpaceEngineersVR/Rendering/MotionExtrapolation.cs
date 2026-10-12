@@ -284,7 +284,7 @@ namespace SpaceEngineersVR.Rendering
         /// The game places its jetpack flames the same way. The root itself rather than the model under it: the model's
         /// matrix is worked out from its parent's when it is read, and the billboards are read on the renderer's workers.
         /// </summary>
-        private static bool TryRide(out uint id, out MatrixD worldToLocal)
+        internal static bool TryRide(out uint id, out MatrixD worldToLocal)
         {
             id = uint.MaxValue;
             worldToLocal = MatrixD.Identity;

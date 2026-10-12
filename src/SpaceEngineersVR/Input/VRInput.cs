@@ -154,6 +154,15 @@ namespace SpaceEngineersVR.Input
         /// <summary>A source was active for this frame's snapshot.</summary>
         public static bool Active { get; private set; }
 
+        /// <summary>
+        /// The screen is laid out for the hands this frame: the desktop emulator is active, or the headset's controllers are
+        /// set up and the picture is VR's. Unlike <see cref="Active"/> it holds while the session is only Visible or
+        /// Synchronized (the runtime's own menu, the state changes after the headset wakes), when OpenXR reports no input
+        /// but the picture stays VR's; it follows the picture switch, which waits for the headset to be away for 2 s. What
+        /// the HUD and the prompts show reads this, so they do not flicker with the session state.
+        /// </summary>
+        public static bool Layout { get; private set; }
+
         /// <summary>Counts <see cref="Update"/>s: which snapshot a reader got, for the trace (<see cref="Hands.HeldTrace"/>).</summary>
         public static int Sequence { get; private set; }
 
@@ -165,14 +174,20 @@ namespace SpaceEngineersVR.Input
             rightBefore = right.Buttons;
             IVRInputSource source = InUse();
             Active = source != null;
+            Layout = Active || sources[0] != null && Rendering.StereoPatches.VRPicture;
             if (Active)
                 source.Read(out left, out right);
             else
                 left = right = default;
         }
 
-        /// <summary>The source that gives the hands now: the desktop emulator while it is active, else the headset, else none.</summary>
-        private static IVRInputSource InUse() => sources[1]?.Active == true ? sources[1] : sources[0]?.Active == true ? sources[0] : null;
+        /// <summary>
+        /// The source that gives the hands now: the desktop emulator while it is active, else the headset while the picture is
+        /// VR's (<see cref="Rendering.StereoPatches.VRPicture"/>), else none. Everything that stands down without VR reads
+        /// <see cref="Active"/>, so it follows the picture to the game's while the headset is away and back with it.
+        /// </summary>
+        private static IVRInputSource InUse() =>
+            sources[1]?.Active == true ? sources[1] : sources[0]?.Active == true && Rendering.StereoPatches.VRPicture ? sources[0] : null;
 
         public static HandState Get(Hand hand) => hand == Hand.Left ? left : right;
 

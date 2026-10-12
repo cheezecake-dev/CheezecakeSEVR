@@ -67,7 +67,9 @@ namespace SpaceEngineersVR.Tracking
     /// anchor (<see cref="GameHead"/> turns the body), the height correction, a seat that carries the player, a ship
     /// turning under them are all already in the camera. When the camera was not built from the head (third person:
     /// the renderer puts the eyes at the head's tracking pose around the camera instead) the head's own pose is
-    /// the way to the camera, as <see cref="Rendering.HudCamera"/> has it for the HUD.
+    /// the way to the camera, as <see cref="Rendering.HudCamera"/> has it for the HUD. A block's camera (a camera block, a
+    /// turret, a searchlight) is never turned by the head: the game gives it no look-around, so it is shown on a screen
+    /// (<see cref="Rendering.ForcedView"/>), or else the eyes are its camera with the head taken out.
     /// Game thread. During the draw phase of a frame (after the camera was built) it is exact; earlier in the frame
     /// it uses the previous frame's camera, a frame behind the hands.
     /// <para>
@@ -399,10 +401,11 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>
         /// Tracking space to world, as a row-vector product: into the head's own space (inverse of the head's tracking
-        /// pose), then into the camera's frame - unchanged when the camera was built from the head, else by the head's
-        /// tracking pose, which is how the renderer places the eyes around such a camera - then out through the
-        /// camera's world matrix. <paramref name="headFromCamera"/> is <see cref="CameraHeadLink.HeadFromSentCamera"/>:
-        /// the identity in the first case, the inverse of the head's tracking pose in the second.
+        /// pose), then into the camera's frame - unchanged when the camera was built from the head or is a block's fixed
+        /// one, else by the head's tracking pose, which is how the renderer places the eyes around such a camera - then
+        /// out through the camera's world matrix. <paramref name="headFromCamera"/> is
+        /// <see cref="CameraHeadLink.HeadFromSentCamera"/>: the identity in the first case, the inverse of the head's
+        /// tracking pose in the second.
         /// </summary>
         internal static MatrixD Compose(in Matrix headTracking, in Matrix headFromCamera, in MatrixD cameraWorld) =>
             InvertPose(headTracking) * InvertPose(headFromCamera) * cameraWorld;

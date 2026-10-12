@@ -18,7 +18,7 @@ namespace SpaceEngineersVR.Hands
     /// <summary>
     /// The tool or gun the character holds, in the tracked dominant hand, pointing where the hand points. The weapon's
     /// world matrix is put so the spot the hand closes on (the middle of the hand held as the item definition's RightHand
-    /// has the palm, <see cref="GraspInItem"/>) is the controller's grip and the weapon's forward is the hand's aim; the arm IK follows, as it takes its hand target from the weapon's
+    /// has the palm, mirrored for the left hand: <see cref="ItemSpots.ToolGrasp"/>) is the controller's grip and the weapon's forward is the hand's aim; the arm IK follows, as it takes its hand target from the weapon's
     /// matrix. The weapon position component's logical position and orientation (what the tool sensors read) are the
     /// hand's, and the sensors are refreshed, so a welder, grinder or drill works on what the hand points at.
     /// </summary>
@@ -31,7 +31,7 @@ namespace SpaceEngineersVR.Hands
     /// The hand is placed with <see cref="Tracking.HandWorld"/>, which in the update phase of a frame uses the previous
     /// frame's camera: while the character itself moves fast the item trails the hand by one frame of that movement.
     /// </remarks>
-    internal static class HeldItem
+    internal static partial class HeldItem
     {
         private static readonly Action<MyCharacterWeaponPositionComponent, Vector3D> SetLogicalPosition = Setter(nameof(MyCharacterWeaponPositionComponent.LogicalPositionWorld));
         private static readonly Action<MyCharacterWeaponPositionComponent, Vector3D> SetLogicalOrientation = Setter(nameof(MyCharacterWeaponPositionComponent.LogicalOrientationWorld));
@@ -116,7 +116,7 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// The weapon's world matrix for a hand: forward and up from the hand's aim, and placed so the point where the
-        /// hand holds the item (<paramref name="gripInItem"/>, <see cref="GraspInItem"/> for its RightHand, in the item's
+        /// hand holds the item (<paramref name="gripInItem"/>, <see cref="ItemSpots.ToolGrasp"/>, in the item's
         /// own space) is at the controller's grip.
         /// </summary>
         internal static MatrixD WeaponWorld(in MatrixD grip, in MatrixD aim, Vector3 gripInItem)
@@ -189,7 +189,7 @@ namespace SpaceEngineersVR.Hands
                 SetLogicalPosition(__instance, origin);
                 SetLogicalOrientation(__instance, forward);
                 SetCrosshairPoint(__instance, origin + forward * CrosshairDistance);
-                MatrixD world = WeaponWorld(grip, aim, GraspInItem(item.RightHand, false));
+                MatrixD world = WeaponWorld(grip, aim, ItemSpots.ToolGrasp(item));
                 if (weapon is IMyHandheldGunObject<MyGunBase> gun && gun.GunBase != null)
                     world.Translation += MuzzleShift(character, gun.GunBase, world);
                 NotePlacement(item, world, grip);
@@ -218,17 +218,19 @@ namespace SpaceEngineersVR.Hands
         }
 
         private static MyHandItemDefinition noted;
-        private static bool notedWrist;
+        private static bool notedWrist, notedMirrored;
 
         /// <summary>Once per item taken in hand: where it sits on the controller's grip, for the log.</summary>
         private static void NotePlacement(MyHandItemDefinition item, in MatrixD world, in MatrixD grip)
         {
-            if (ReferenceEquals(item, noted) && notedWrist == WristGrasp)
+            if (ReferenceEquals(item, noted) && notedWrist == WristGrasp && notedMirrored == ItemSpots.Mirrored)
                 return;
             noted = item;
             notedWrist = WristGrasp;
-            Vector3D wrist = Vector3D.Transform((Vector3D)item.RightHand.Translation, world);
-            Log.Info($"Hand tools: the {item.Id.SubtypeName} is held {(WristGrasp ? "by the game's wrist spot (ToolGrasp=0)" : "by the middle of the hand")}; " +
+            notedMirrored = ItemSpots.Mirrored;
+            Vector3D wrist = Vector3D.Transform((Vector3D)ItemSpots.Tool(item).Translation, world);
+            Log.Info($"Hand tools: the {item.Id.SubtypeName} is held in the {ItemSpots.ToolHand.ToString().ToLowerInvariant()} hand " +
+                     $"{(WristGrasp ? "by the game's wrist spot (ToolGrasp=0)" : "by the middle of the hand")}{(ItemSpots.Mirrored ? ", the game's spots mirrored" : "")}; " +
                      $"the astronaut's wrist is {Vector3D.Distance(wrist, grip.Translation) * 100:0.0} cm from the controller's grip");
         }
 

@@ -805,6 +805,7 @@ namespace SpaceEngineersVR.Rendering
                 sb.Append("; ").Append(VideoMemory.Describe());
                 sb.Append(Hands.SurfaceStop.PerfText());
                 sb.Append(WristStatus.PerfText());
+                sb.Append(Hands.ShipModel.PerfText());
                 Append(sb, $"; meter {meterTicks * TicksToMs / frames:0.000} ms/frame");
                 Log.Info(sb.ToString());
                 if (hitches > 0)

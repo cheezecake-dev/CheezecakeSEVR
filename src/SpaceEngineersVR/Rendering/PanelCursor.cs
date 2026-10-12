@@ -21,6 +21,7 @@ namespace SpaceEngineersVR.Rendering
     /// <remarks>
     /// Everything the game sees of the mouse is in GUI pixels: the mouse area it is told (GetMouseAreaSize) is the GUI's
     /// size, so it scales nothing, and the position is mapped into it here. Only the platform's own mouse is in window pixels.
+    /// Until the picture is VR's (<see cref="StereoPatches.VRPicture"/>) the mouse is the game's own.
     /// </remarks>
     internal static partial class PanelCursor
     {
@@ -44,7 +45,7 @@ namespace SpaceEngineersVR.Rendering
             harmony.Patch(AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.GetMousePosition)),
                 postfix: new HarmonyMethod(typeof(PanelCursor), nameof(Position)));
             harmony.Patch(AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.SetMousePosition)),
-                prefix: new HarmonyMethod(typeof(PanelCursor), nameof(SetPosition)));
+                prefix: new HarmonyMethod(typeof(PanelCursor), nameof(SetPositionOnPanel)));
 #if LINUX
             // linux-compat's CursorRenderRatePatch moves the cursor sprite to the SDL mouse as the render thread draws it
             // (SdlGameWindow.TryGetFreshInWindowMousePosition), over the laser's position. While the laser holds the cursor
@@ -158,13 +159,23 @@ namespace SpaceEngineersVR.Rendering
         }
 
         // The game scales the cursor by (GUI size / mouse area) in MyGuiManager.GetNormalizedMousePosition; this makes it 1.
-        private static void AreaSize(ref Vector2 __result) => __result = gui;
+        private static void AreaSize(ref Vector2 __result)
+        {
+            if (StereoPatches.VRPicture)
+                __result = gui;
+        }
 
-        private static void RawPosition(ref Vector2 __result) => __result = Laser.TryCursor(out Vector2 pointed) ? pointed : ToGui(__result);
+        private static void RawPosition(ref Vector2 __result)
+        {
+            if (StereoPatches.VRPicture)
+                __result = Laser.TryCursor(out Vector2 pointed) ? pointed : ToGui(__result);
+        }
 
         // As the game works it out (MyVRageInput.GetMousePosition), from the cursor on the GUI.
         private static void Position(MyVRageInput __instance, ref Vector2 __result)
         {
+            if (!StereoPatches.VRPicture)
+                return;
             float scale = PositionScale(__instance);
             __result = (__instance.GetRawMousePosition() - __instance.GetMouseAreaSize() / 2f * (1f - scale)) / scale;
         }
@@ -185,5 +196,8 @@ namespace SpaceEngineersVR.Rendering
             y = (int)window.Y;
             return true;
         }
+
+        // Until the picture is VR's the game places the cursor as it does without the plugin.
+        private static bool SetPositionOnPanel(ref int x, ref int y) => !StereoPatches.VRPicture || SetPosition(ref x, ref y);
     }
 }

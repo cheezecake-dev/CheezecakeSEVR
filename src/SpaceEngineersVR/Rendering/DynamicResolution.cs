@@ -126,6 +126,15 @@ namespace SpaceEngineersVR.Rendering
             return On && XrSession.Exists ? wanted : 1f;
         }
 
+        /// <summary>Why the next <see cref="Apply"/> remakes the screen resources whatever the scale; null when it need not.</summary>
+        private static string remake;
+
+        /// <summary>
+        /// Render thread: the next <see cref="Apply"/> remakes the screen resources even at the same scale, because the eye
+        /// size changed (a session started or ended). A session is started in that remake (<see cref="EyeRenderer"/>).
+        /// </summary>
+        public static void Remake(string why) => remake = why;
+
         /// <summary>
         /// Render thread, before a frame's eyes are drawn: remakes the screen resources at the wanted scale when it
         /// changed. Each change is logged with the time the remake took.
@@ -135,7 +144,9 @@ namespace SpaceEngineersVR.Rendering
             if (failed)
                 return;
             float want = Wanted();
-            if (Math.Abs(want - scale) < 0.001f)
+            string forced = remake;
+            remake = null;
+            if (forced == null && Math.Abs(want - scale) < 0.001f)
                 return;
             float from = scale;
             Vector2I fromSize = EyeRenderer.RenderResolution;
@@ -172,7 +183,7 @@ namespace SpaceEngineersVR.Rendering
 
             // Every change is logged: there is at most one a SettleSeconds + DownSeconds.
             Vector2I size = EyeRenderer.RenderResolution;
-            string why = FixedScale.HasValue ? "RenderScale" : !On || !XrSession.Exists ? "dynamic resolution off" : reason;
+            string why = forced ?? (FixedScale.HasValue ? "RenderScale" : !On || !XrSession.Exists ? "dynamic resolution off" : reason);
             Log.Info(string.Format(CultureInfo.InvariantCulture,
                 "Dynamic resolution: {0:0}% -> {1:0}% of the eye size, {2}x{3} -> {4}x{5} ({6}); screen resources remade in {7:0.0} ms",
                 from * 100f, scale * 100f, fromSize.X, fromSize.Y, size.X, size.Y, why, ms));
@@ -184,9 +195,9 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         public static void Sample(double gpuMs, double cpuMs, double periodMs, bool headsetFrame)
         {
-            // The death view's frames draw no eyes, only the small external view pass: their cheapness says nothing about
+            // The forced view's frames draw no eyes, only the small external view pass: their cheapness says nothing about
             // what the eyes can afford when the player is back.
-            if (!headsetFrame || !XrSession.Exists || FixedScale.HasValue || !On || failed || periodMs <= 0 || DeathView.Drawing)
+            if (!headsetFrame || !XrSession.Exists || FixedScale.HasValue || !On || failed || periodMs <= 0 || ForcedView.Drawing)
             {
                 ResetWindows();
                 return;

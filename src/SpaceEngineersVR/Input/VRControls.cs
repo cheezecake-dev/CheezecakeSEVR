@@ -229,6 +229,7 @@ namespace SpaceEngineersVR.Input
                 Hands.BuildMode.Frame(VRContext.None, true, seconds);
                 Hands.PaintMode.Frame(VRContext.None, true);
                 Hands.QuickInventory.Frame(VRContext.None, true);
+                Hands.Ping.Frame(VRContext.None, true, seconds);
                 context = VRContext.None;
                 seatDriven = false;
                 cameraView = seatSticks = false;
@@ -277,6 +278,8 @@ namespace SpaceEngineersVR.Input
             // Pointing at a container, or the right hand on one: the stick clicks are the game's quick take, production and dump
             // there, and the right grip's Use waits for the grip to be let go.
             Hands.QuickInventory.Frame(context, ToolbarWheel.Owns || menu != null);
+            // Held, X aims a ping and the pointing hand's trigger marks it; tapped, it is the dampeners on its release.
+            Hands.Ping.Frame(context, ToolbarWheel.Owns || menu != null || cameraView, seconds);
             if (Hands.BuildMode.StickBusy || Hands.PaintMode.TakesStick(rightStick))
                 rightStick = Vector2.Zero;
             zoomAsked = false;
@@ -314,6 +317,7 @@ namespace SpaceEngineersVR.Input
                 walking: menuNow == null && !ToolbarWheel.Owns && (context == VRContext.OnFoot || context == VRContext.Jetpack),
                 inventory: menuNow is MyGuiScreenTerminal && MyGuiScreenTerminal.GetCurrentScreen() == VRage.Game.ModAPI.MyTerminalPageEnum.Inventory,
                 container: Hands.QuickInventory.Ready);
+            ControlHints.Cutscene(menuNow == null && Rendering.ForcedView.CutsceneSkippable());
             LogBack();
             InputLog.Frame(seconds, WhereNow);
         }

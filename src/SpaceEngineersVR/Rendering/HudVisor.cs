@@ -160,6 +160,9 @@ namespace SpaceEngineersVR.Rendering
             /// <summary>Where its drawing reaches in the GUI's pixels, as it is drawn there.</summary>
             public float Left, Top, Right, Bottom;
 
+            /// <summary>Where its texts draw in the GUI's pixels as drawn there (kept only while <see cref="VRSettings.HudTextBacking"/> is on): the plates go behind them.</summary>
+            public readonly List<RectangleF> Texts = new List<RectangleF>();
+
             /// <summary>Scissor rectangles pushed in it and not popped, to pop after it is drawn.</summary>
             public int Scissors;
 
@@ -174,6 +177,7 @@ namespace SpaceEngineersVR.Rendering
                 Left = Top = float.MaxValue;
                 Right = Bottom = float.MinValue;
                 Scissors = 0;
+                Texts.Clear();
                 Rect = InImage = default;
             }
         }
@@ -198,9 +202,12 @@ namespace SpaceEngineersVR.Rendering
         private static bool split, onHeadset, cylinder;
 
         private static Vector2I gui, imageSize;
+
+        /// <summary>Image pixels to a GUI pixel in the parts on the visor this frame (<see cref="Pack"/>): the text size, or less where the image is full.</summary>
+        private static float drawScale = 1f;
         private static float uiScale = 1f;
         private static object image;
-        private static (float Distance, float Width, bool Cylinder) loggedFor;
+        private static (float Distance, float Width, bool Cylinder, float Size) loggedFor;
 
         // The game's renderer, reached through methods made at start (its types are internal).
         private delegate void DrawSpritesCall(object renderer, object target, MyViewport bound, MyViewport full, Vector2 size);
@@ -326,7 +333,7 @@ namespace SpaceEngineersVR.Rendering
             {
                 bool on = Wanted;
                 Report(on);
-                tagging = on && hooked && XrSession.Running && InPlay();
+                tagging = on && hooked && HeadsetShown && InPlay();
                 if (!tagging)
                     return;
                 for (int i = 0; i < controls.Length; i++)
@@ -356,6 +363,9 @@ namespace SpaceEngineersVR.Rendering
                 inAsync--;
         }
 
+        /// <summary>The headset shows the picture: it is VR's (not the game's while the headset is away) and the session runs.</summary>
+        private static bool HeadsetShown => StereoPatches.VRPicture && XrSession.Running;
+
         /// <summary>
         /// The panel is a visor: no menu has the focus (as <see cref="WorldMenu"/> decides it, so the panel the parts are
         /// taken from is the head-locked one; with a menu, a wheel or the wrist panel open it is world-locked and the HUD
@@ -373,7 +383,7 @@ namespace SpaceEngineersVR.Rendering
             bool curved = XrRuntime.HasCylinder && !NoCylinder;
             int key = on ? (curved ? 1 : 2) : failed ? 3 : Off ? 4 : 5;
             // On, it is told once the headset's runtime is there to say how many layers it takes; a failure has its own log.
-            if (key == stateKey || on && !XrSession.Running)
+            if (key == stateKey || on && !HeadsetShown)
                 return;
             stateKey = key;
             if (on)
@@ -513,7 +523,9 @@ namespace SpaceEngineersVR.Rendering
             if (inAsync == 0 || !tagging)
                 return;
             MyObjectBuilder_StatControls definition = statDefinition(__instance);
-            __state = definition != null && Open(ZoneOf(definition.OriginAlign));
+            // Left-handed, the left plate is drawn mirrored on the right; it moves out with that corner.
+            __state = definition != null
+                && Open(WristStatus.SpeedPlateOnRight(__instance) ? (int)Zone.BottomRight : ZoneOf(definition.OriginAlign));
         }
 
         private static void OpenGravity(MyHudControlGravityIndicator __instance, out bool __state) =>
@@ -550,7 +562,7 @@ namespace SpaceEngineersVR.Rendering
                 XrSession.VisorRefused = null;
                 Fail("the headset's runtime refused a frame with the HUD's parts in it (" + refused + "); it was sent again without them");
             }
-            bool wanted = hooked && Wanted && XrSession.Running;
+            bool wanted = hooked && Wanted && HeadsetShown;
             Tally(wanted);
             if (!hooked || failed)
                 return;
@@ -764,6 +776,10 @@ namespace SpaceEngineersVR.Rendering
                     float slack = TextSlack(size), x = text.ScreenCoord.X, y = text.ScreenCoord.Y;
                     Add(piece, x + Math.Min(0f, text.TextureWidthInPx - size.X) - slack, y - slack,
                         x + Math.Max(size.X, text.TextureWidthInPx) + slack, y + size.Y + slack, text.IgnoreBounds);
+                    float shown = ShownWidth(size.X, text.ScreenMaxWidth);
+                    float start = text.Alignment == MyRenderTextAlignmentEnum.Align_Right ? text.TextureWidthInPx - shown
+                        : text.Alignment == MyRenderTextAlignmentEnum.Align_Center ? (text.TextureWidthInPx - shown) / 2f : 0f;
+                    Plate(piece, text, x + start, y, x + start + shown, y + size.Y);
                     break;
                 }
                 case MyRenderMessageDrawString text:
@@ -773,6 +789,7 @@ namespace SpaceEngineersVR.Rendering
                     Vector2 size = measure(text.FontIndex, text.Text, text.ScreenScale);
                     float slack = TextSlack(size), x = text.ScreenCoord.X, y = text.ScreenCoord.Y;
                     Add(piece, x - slack, y - slack, x + size.X + slack, y + size.Y + slack, text.IgnoreBounds);
+                    Plate(piece, text, x, y, x + ShownWidth(size.X, text.ScreenMaxWidth), y + size.Y);
                     break;
                 }
                 case MyRenderMessageDrawVideo video:
@@ -787,24 +804,40 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Room round a measured text for glyphs reaching past the font's box: a fifth of its height, at most 16 px.</summary>
         private static float TextSlack(Vector2 size) => Math.Min(0.2f * size.Y, 16f);
 
+        /// <summary>A text's width as drawn: the font cuts a line that reaches its maximum width short with an ellipsis.</summary>
+        private static float ShownWidth(float width, float maxWidth) => maxWidth > 0f && maxWidth < width ? maxWidth : width;
+
+        /// <summary>Keeps where a text draws, for the plate behind it (<see cref="DrawPlates"/>).</summary>
+        private static void Plate(Piece piece, MyRenderMessageDrawString text, float left, float top, float right, float bottom)
+        {
+            if (VRSettings.HudTextBacking <= 0f || text.ColorMask.A == 0 || right <= left)
+                return;
+            Scale(ref left, ref top, ref right, ref bottom, text.IgnoreBounds);
+            piece.Texts.Add(new RectangleF(left, top, right - left, bottom - top));
+        }
+
         private static void Around(Piece piece, Vector2 centre, float radius, bool ignoreBounds) =>
             Add(piece, centre.X - radius, centre.Y - radius, centre.X + radius, centre.Y + radius, ignoreBounds);
 
         /// <summary>A sprite's rectangle, in its message's numbers, into the GUI's pixels: one keeping to bounds is scaled into the main viewport.</summary>
         private static void Add(Piece piece, float left, float top, float right, float bottom, bool ignoreBounds)
         {
-            if (!ignoreBounds && uiScale != 1f)
-            {
-                float offsetX = gui.X * (1f - uiScale) / 2f, offsetY = gui.Y * (1f - uiScale) / 2f;
-                left = offsetX + left * uiScale;
-                right = offsetX + right * uiScale;
-                top = offsetY + top * uiScale;
-                bottom = offsetY + bottom * uiScale;
-            }
+            Scale(ref left, ref top, ref right, ref bottom, ignoreBounds);
             piece.Left = Math.Min(piece.Left, left);
             piece.Top = Math.Min(piece.Top, top);
             piece.Right = Math.Max(piece.Right, right);
             piece.Bottom = Math.Max(piece.Bottom, bottom);
+        }
+
+        private static void Scale(ref float left, ref float top, ref float right, ref float bottom, bool ignoreBounds)
+        {
+            if (ignoreBounds || uiScale == 1f)
+                return;
+            float offsetX = gui.X * (1f - uiScale) / 2f, offsetY = gui.Y * (1f - uiScale) / 2f;
+            left = offsetX + left * uiScale;
+            right = offsetX + right * uiScale;
+            top = offsetY + top * uiScale;
+            bottom = offsetY + bottom * uiScale;
         }
 
         /// <summary>
@@ -841,6 +874,23 @@ namespace SpaceEngineersVR.Rendering
                 return false;
             }
 
+            // Drawn at the text size, so a larger part is sharp, not sampled up; where that does not fit, as large as does.
+            for (float scale = Math.Max(1f, VRSettings.HudTextSize); ; scale = Math.Max(1f, scale * 0.92f))
+            {
+                if (Shelve(count, scale, out fault))
+                {
+                    drawScale = scale;
+                    return true;
+                }
+                if (scale <= 1f)
+                    return false;
+            }
+        }
+
+        /// <summary>Tries each part, <paramref name="scale"/> times its GUI size, on shelves in the visor image.</summary>
+        private static bool Shelve(int count, float scale, out string fault)
+        {
+            fault = null;
             int maxWidth = XrRuntime.MaxImageWidth > 0 ? XrRuntime.MaxImageWidth : ImageSide;
             int maxHeight = XrRuntime.MaxImageHeight > 0 ? XrRuntime.MaxImageHeight : ImageSide;
             imageSize = new Vector2I(Math.Min(ImageSide, maxWidth), Math.Min(ImageSide, maxHeight));
@@ -848,7 +898,7 @@ namespace SpaceEngineersVR.Rendering
             for (int i = 0; i < count; i++)
             {
                 Piece piece = pieces[order[i]];
-                int width = piece.Rect.Width, height = piece.Rect.Height;
+                int width = (int)Math.Ceiling(piece.Rect.Width * scale), height = (int)Math.Ceiling(piece.Rect.Height * scale);
                 if (x + width + Gap > imageSize.X)
                 {
                     x = Gap;
@@ -857,7 +907,7 @@ namespace SpaceEngineersVR.Rendering
                 }
                 if (x + width + Gap > imageSize.X || y + height + Gap > imageSize.Y)
                 {
-                    fault = $"the {Names[order[i]]} part ({width}x{height} px) has no room in the visor image";
+                    fault = $"the {Names[order[i]]} part ({width}x{height} px at {scale:0.00}x) has no room in the visor image";
                     for (int j = 0; j < ZoneCount; j++)
                         pieces[j].InImage = default;
                     return false;
@@ -886,6 +936,7 @@ namespace SpaceEngineersVR.Rendering
             }
             try
             {
+                DrawPlates();
                 image = EyeRenderer.Borrow("VR HUD visor", imageSize);
                 EyeRenderer.Clear(image);
                 foreach (Piece piece in pieces)
@@ -913,6 +964,64 @@ namespace SpaceEngineersVR.Rendering
                 DrawBack(panel);
                 return false;
             }
+        }
+
+        /// <summary>Room, pixels, a plate keeps round the text it backs; plates this close are one.</summary>
+        private const float PlatePad = 4f;
+
+        private const string PlateTexture = "Textures\\GUI\\Blank.dds";
+
+        /// <summary>
+        /// Puts a dark plate behind each block of text, first in its part so everything else draws over it. Texts whose plates
+        /// touch share one, so overlapping lines do not darken each other twice. The plates are part of the part's messages
+        /// and go when it does (<see cref="Discard"/>); the desktop window's copy of the panel has them too.
+        /// </summary>
+        private static void DrawPlates()
+        {
+            float opacity = VRSettings.HudTextBacking;
+            if (opacity <= 0f)
+                return;
+            var color = new Color(0, 0, 0, (int)Math.Round(opacity * 255f));
+            foreach (Piece piece in pieces)
+            {
+                if (piece.Messages.Count == 0 || piece.Texts.Count == 0)
+                    continue;
+                var plates = new List<RectangleF>(piece.Texts.Count);
+                foreach (RectangleF text in piece.Texts)
+                {
+                    var plate = new RectangleF(text.X - PlatePad, text.Y - PlatePad, text.Width + 2f * PlatePad, text.Height + 2f * PlatePad);
+                    for (int i = 0; i < plates.Count; i++)
+                    {
+                        if (plate.X >= plates[i].Right || plates[i].X >= plate.Right || plate.Y >= plates[i].Bottom || plates[i].Y >= plate.Bottom)
+                            continue;
+                        plate = Union(plate, plates[i]);
+                        plates.RemoveAt(i);
+                        i = -1; // the larger plate may now reach others
+                    }
+                    plates.Add(plate);
+                }
+                for (int i = plates.Count - 1; i >= 0; i--)
+                {
+                    MyRenderMessageDrawSprite sprite = MyRenderProxy.MessagePool.Get<MyRenderMessageDrawSprite>(MyRenderMessageEnum.DrawSprite);
+                    sprite.Texture = PlateTexture;
+                    sprite.DestinationRectangle = plates[i];
+                    sprite.SourceRectangle = null;
+                    sprite.Color = color;
+                    sprite.WaitTillLoaded = true;
+                    sprite.TargetTexture = null;
+                    sprite.MaskTexture = null;
+                    sprite.RotationSpeed = 0f;
+                    sprite.Rotation = 0f;
+                    sprite.IgnoreBounds = true;
+                    piece.Messages.Insert(0, sprite);
+                }
+            }
+        }
+
+        private static RectangleF Union(RectangleF a, RectangleF b)
+        {
+            float left = Math.Min(a.X, b.X), top = Math.Min(a.Y, b.Y);
+            return new RectangleF(left, top, Math.Max(a.X + a.Width, b.X + b.Width) - left, Math.Max(a.Y + a.Height, b.Y + b.Height) - top);
         }
 
         /// <summary>The parts on the visor this frame, into the headset's panel layer.</summary>
@@ -983,9 +1092,11 @@ namespace SpaceEngineersVR.Rendering
                     process(renderer, message);
                 for (int i = piece.Scissors + (clip ? 1 : 0); i > 0; i--)
                     scissorPop(renderer);
-                float shiftX = inImage ? piece.InImage.X - piece.Rect.X : 0f, shiftY = inImage ? piece.InImage.Y - piece.Rect.Y : 0f;
-                var full = new MyViewport(shiftX, shiftY, gui.X, gui.Y);
-                var bound = new MyViewport(shiftX + gui.X * (1f - uiScale) / 2f, shiftY + gui.Y * (1f - uiScale) / 2f, gui.X * uiScale, gui.Y * uiScale);
+                // The renderer is given the GUI's size to write into its shaders and a viewport drawScale times larger.
+                float k = inImage ? drawScale : 1f;
+                float shiftX = inImage ? piece.InImage.X - piece.Rect.X * k : 0f, shiftY = inImage ? piece.InImage.Y - piece.Rect.Y * k : 0f;
+                var full = new MyViewport(shiftX, shiftY, gui.X * k, gui.Y * k);
+                var bound = new MyViewport(shiftX + gui.X * k * (1f - uiScale) / 2f, shiftY + gui.Y * k * (1f - uiScale) / 2f, gui.X * k * uiScale, gui.Y * k * uiScale);
                 drawSprites(renderer, target, bound, full, new Vector2(gui.X, gui.Y));
             }
             finally
@@ -1007,9 +1118,9 @@ namespace SpaceEngineersVR.Rendering
             // Tangent of the angle a pixel spans in the middle of the flat panel, seen from the head.
             float perPixel = 2f * (float)Math.Tan(MathHelper.ToRadians(widthDegrees) / 2f) / gui.X;
             cylinder = XrRuntime.HasCylinder && !NoCylinder;
-            if (loggedFor != (distance, widthDegrees, cylinder))
+            if (loggedFor != (distance, widthDegrees, cylinder, VRSettings.HudTextSize))
             {
-                loggedFor = (distance, widthDegrees, cylinder);
+                loggedFor = (distance, widthDegrees, cylinder, VRSettings.HudTextSize);
                 foreach (Piece piece in pieces)
                     piece.Logged = false;
             }
@@ -1026,13 +1137,20 @@ namespace SpaceEngineersVR.Rendering
                 float flatAcross = Across(centreX, perPixel), flatUp = Up(centreX, piece.Rect.Y + piece.Rect.Height / 2f, perPixel);
                 float across = flatAcross + Out(anchorAcross, SideMost) - anchorAcross;
                 float up = flatUp + Out(anchorUp, anchorUp >= 0f ? UpMost : DownMost) - anchorUp;
+                // The text size: the part grows away from the point of it nearest its anchor, which stays where it was.
+                float size = VRSettings.HudTextSize;
+                float pivotX = Math.Max(piece.Rect.Left, Math.Min(piece.Rect.Right, Anchors[z].X * gui.X));
+                float pivotY = Math.Max(piece.Rect.Top, Math.Min(piece.Rect.Bottom, Anchors[z].Y * gui.Y));
+                float pivotAcross = Across(pivotX, perPixel) + across - flatAcross, pivotUp = Up(pivotX, pivotY, perPixel) + up - flatUp;
+                across = pivotAcross + (across - pivotAcross) * size;
+                up = pivotUp + (up - pivotUp) * size;
                 // The flat panel is seen at a slant toward its sides, narrower than it is high there; facing the eyes, the
                 // part keeps square pixels, at the smaller of the two, so it is nowhere larger than it was.
                 float wide = Across(piece.Rect.Right, perPixel) - Across(piece.Rect.Left, perPixel);
                 float high = Up(centreX, piece.Rect.Top, perPixel) - Up(centreX, piece.Rect.Bottom, perPixel);
                 float perPixelHere = Math.Min(wide / piece.Rect.Width, high / piece.Rect.Height);
-                wide = piece.Rect.Width * perPixelHere;
-                high = piece.Rect.Height * perPixelHere;
+                wide = piece.Rect.Width * perPixelHere * size;
+                high = piece.Rect.Height * perPixelHere * size;
 
                 Matrix turn = Matrix.CreateRotationX(up) * Matrix.CreateRotationY(-across);
                 Quaternion rotation = Quaternion.CreateFromRotationMatrix(turn);

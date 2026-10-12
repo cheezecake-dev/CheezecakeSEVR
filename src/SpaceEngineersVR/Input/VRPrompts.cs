@@ -35,7 +35,7 @@ namespace SpaceEngineersVR.Input
     /// "Press [Hold Y] to leave ..." (<see cref="LeaveFormat"/>; holding is not pressing, and the line is the only reminder
     /// of how to get out).
     /// Off with the VR button names setting (<see cref="VRSettings.VRButtonNames"/>) or RenderDebug VRPrompts=0; with no
-    /// hands (<see cref="VRInput.Active"/> false, a desktop game) nothing changes either.
+    /// hands (<see cref="VRInput.Layout"/> false, a desktop game) nothing changes either.
     /// </remarks>
     internal static class VRPrompts
     {
@@ -46,7 +46,7 @@ namespace SpaceEngineersVR.Input
         internal static bool? ActiveOverride { get; set; }
 
         /// <summary>The prompts name the headset's controls now.</summary>
-        public static bool Active => ActiveOverride ?? (!Off && VRSettings.VRButtonNames && VRInput.Active);
+        public static bool Active => ActiveOverride ?? (!Off && VRSettings.VRButtonNames && VRInput.Layout);
 
         private static bool loggedFailure;
 
@@ -122,10 +122,12 @@ namespace SpaceEngineersVR.Input
             bool ship = where == VRContext.Ship;
             bool seated = VRControls.IsSeated(where);
 
+            // Left-handed with a gun or tool on foot or the jetpack, the triggers follow the hand holding it (Hands.ItemSpots).
+            bool swapped = walking && Hands.ItemSpots.TriggersSwapped;
             if (control == MyControlsSpace.PRIMARY_TOOL_ACTION)
-                return "Right trigger";
+                return swapped ? "Left trigger" : "Right trigger";
             if (control == MyControlsSpace.SECONDARY_TOOL_ACTION)
-                return where == VRContext.Turret ? null : "Left trigger";
+                return where == VRContext.Turret ? null : swapped ? "Right trigger" : "Left trigger";
             if (control == MyControlsSpace.USE)
                 return seated ? "Hold Y" : "Right grip";
             if (control == MyControlsSpace.JUMP)
@@ -138,11 +140,11 @@ namespace SpaceEngineersVR.Input
                 return where == VRContext.Turret ? null : "X";
             // With a block in hand the left stick click is building's (Hands.BuildMode.Modifier), not sprint or zero g's roll.
             if (control == MyControlsSpace.SPRINT)
-                return where == VRContext.OnFoot && !Hands.BuildMode.Active ? "Left stick click" : null;
+                return where == VRContext.OnFoot && !Hands.BuildMode.Active ? $"{Hands.Reload.SprintHandIn(where)} stick click" : null;
             if (control == MyControlsSpace.MAIN_MENU)
                 return "Menu";
             if (control == MyControlsSpace.RELOAD)
-                return walking ? "Right stick click" : null;
+                return walking ? $"{Hands.Reload.ButtonHandIn(where)} stick click" : null;
             if (control == MyControlsSpace.LANDING_GEAR)
                 return ship ? "Right stick click" : null;
             // On the jetpack the roll is zero g's only (VRControls.UpdateZeroG).

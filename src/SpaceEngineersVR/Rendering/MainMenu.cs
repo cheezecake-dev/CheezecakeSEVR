@@ -142,7 +142,7 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// Render thread, in a world with no eye to show it (the death view, <see cref="DeathView"/>): both eyes black with the
+        /// Render thread, in a world with no eye to show it (the forced view, <see cref="ForcedView"/>): both eyes black with the
         /// laser's beam, into the headset's images and the window, and <see cref="EyeRenderer.Eyes"/> set for the panel, as
         /// for the main menu. Throws on a failure.
         /// </summary>

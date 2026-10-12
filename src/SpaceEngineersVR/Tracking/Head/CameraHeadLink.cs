@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
 using VRageMath;
 using VRageRender;
@@ -21,6 +22,7 @@ namespace SpaceEngineersVR.Tracking
         private const int Capacity = 16;
         private static readonly MatrixD[] views = new MatrixD[Capacity];
         private static readonly Matrix?[] heads = new Matrix?[Capacity];
+        private static readonly bool[] fixedViews = new bool[Capacity];
         private static readonly HandResidual.Frame[] hands = new HandResidual.Frame[Capacity];
         private static readonly long[] handTimes = new long[Capacity];
         private static readonly Rendering.MotionExtrapolation.Sample[] motion = NewSamples();
@@ -40,6 +42,12 @@ namespace SpaceEngineersVR.Tracking
         public static Matrix? HeadInCamera { get; private set; }
 
         /// <summary>
+        /// Render thread: the current camera is a block's that the game gives no look-around (<see cref="Rendering.ForcedView.FixedCamera"/>),
+        /// so the head is not to turn or move it.
+        /// </summary>
+        public static bool FixedInCamera { get; private set; }
+
+        /// <summary>
         /// Render thread: the OpenXR frame time (<see cref="HandState.FrameTime"/>) of the hands the current camera's
         /// frame was built from, 0 when unknown. XrInput measures from it how long after that the frame is shown.
         /// </summary>
@@ -49,8 +57,8 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>
         /// From the camera last sent to the head as tracked when it was sent (for the HUD, <see cref="Rendering.HudCamera"/>):
-        /// nothing when the camera was built from the head, the head's pose when the head turns the view about the
-        /// camera (as the eyes are placed). Any thread.
+        /// nothing when the camera was built from the head or is a block's fixed one (<see cref="FixedInCamera"/>), the head's
+        /// pose when the head turns the view about the camera (as the eyes are placed). Any thread.
         /// </summary>
         public static Matrix HeadFromSentCamera
         {
@@ -73,7 +81,9 @@ namespace SpaceEngineersVR.Tracking
         private static void Record(MatrixD viewMatrix)
         {
             Matrix? head = GameHead.TakeCameraHead();
-            Matrix fromCamera = head.HasValue || !GameHead.Take() ? Matrix.Identity : Matrix.Invert(GameHead.TrackingPose);
+            bool fixedView = Rendering.ForcedView.FixedCamera(MySession.Static?.CameraController) != null;
+            bool tracked = head.HasValue || GameHead.Take();
+            Matrix fromCamera = head.HasValue || fixedView || !tracked ? Matrix.Identity : Matrix.Invert(GameHead.TrackingPose);
             HandWorld.CameraSent(viewMatrix);
             HandResidual.Frame solved = HandResidual.Take();
             long handsTime = System.Math.Max(VRInput.Get(Hand.Left).FrameTime, VRInput.Get(Hand.Right).FrameTime);
@@ -84,6 +94,7 @@ namespace SpaceEngineersVR.Tracking
                 headFromSent = fromCamera;
                 views[next] = viewMatrix;
                 heads[next] = head;
+                fixedViews[next] = fixedView;
                 hands[next] = solved;
                 handTimes[next] = handsTime;
                 next = (next + 1) % Capacity;
@@ -104,12 +115,15 @@ namespace SpaceEngineersVR.Tracking
                     if (views[index] == message.ViewMatrix)
                     {
                         HeadInCamera = heads[index];
+                        FixedInCamera = fixedViews[index];
                         HandResidual.Drawing = hands[index];
                         HandsFrameTime = handTimes[index];
                         Rendering.MotionExtrapolation.Take(motion[index]);
                         return;
                     }
                 }
+                // Not found: a block's camera is still taken as the newest camera sent has it.
+                FixedInCamera = fixedViews[(next - 1 + Capacity) % Capacity];
             }
             HeadInCamera = null;
             HandResidual.Drawing = null;

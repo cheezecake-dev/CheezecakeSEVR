@@ -108,9 +108,9 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// The hand's aim pose as a ray that acts on the world (the use ray, the building ray, the held tool's sensors): it
+        /// The hand's aim pose as a ray that acts on or reads the world (the use ray, the building ray, the held tool's sensors, the ping): it
         /// starts within the arm's reach (<see cref="Reach.Limit"/>), so a hand pushed through a wall or held out past an
-        /// arm's length does not cast from there.
+        /// arm's length does not cast from there, nor find what lies behind the wall.
         /// </summary>
         internal static bool ReachRay(MyCharacter character, in MatrixD aim, out Vector3D origin, out Vector3D direction)
         {

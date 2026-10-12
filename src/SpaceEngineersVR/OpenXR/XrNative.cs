@@ -14,6 +14,7 @@ namespace SpaceEngineersVR.OpenXR
     internal static class XrResult
     {
         public const int Success = 0;
+        public const int ErrorRuntimeFailure = -2;
         public const int TimeoutExpired = 1;
         public const int SessionLossPending = 3;
         public const int EventUnavailable = 4;
@@ -80,6 +81,7 @@ namespace SpaceEngineersVR.OpenXR
         GraphicsRequirementsD3D11KHR = 1000027002,
         VisibilityMaskKHR = 1000031000,
         EventDataVisibilityMaskChangedKHR = 1000031001,
+        EventDataDisplayRefreshRateChangedFB = 1000101000,
         VulkanGraphicsDeviceGetInfoKHR = 1000090003,
     }
 
@@ -137,6 +139,9 @@ namespace SpaceEngineersVR.OpenXR
 
         /// <summary>Meta's runtime names the Windows audio endpoints of the headset (xrGetAudioOutputDeviceGuidOculus).</summary>
         public const string AudioDeviceGuidExtension = "XR_OCULUS_audio_device_guid";
+
+        /// <summary>The headset's display refresh rate can be listed and requested (xrRequestDisplayRefreshRateFB).</summary>
+        public const string DisplayRefreshRateExtension = "XR_FB_display_refresh_rate";
 
         /// <summary>XR_MAX_AUDIO_DEVICE_STR_SIZE_OCULUS: the wchar_t buffer xrGetAudioOutputDeviceGuidOculus fills.</summary>
         public const int MaxAudioDeviceStrSizeOculus = 128;
@@ -515,6 +520,16 @@ namespace SpaceEngineersVR.OpenXR
         public ulong Session;
     }
 
+    /// <summary>The headset's display refresh rate changed (XR_FB_display_refresh_rate), Hz.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct XrEventDataDisplayRefreshRateChangedFB
+    {
+        public XrStructureType Type;
+        public IntPtr Next;
+        public float FromDisplayRefreshRate;
+        public float ToDisplayRefreshRate;
+    }
+
     /// <summary>A view's visibility mask changed (XR_KHR_visibility_mask): it has to be read again.</summary>
     [StructLayout(LayoutKind.Sequential)]
     internal struct XrEventDataVisibilityMaskChangedKHR
@@ -780,6 +795,16 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>xrGetAudioOutputDeviceGuidOculus(XrInstance, wchar_t buffer[XR_MAX_AUDIO_DEVICE_STR_SIZE_OCULUS]).</summary>
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         public delegate int GetAudioOutputDeviceGuidOculus(ulong instance, IntPtr buffer);
+
+        /// <summary>xrEnumerateDisplayRefreshRatesFB(session, capacity, out count, float* rates).</summary>
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int EnumerateDisplayRefreshRatesFB(ulong session, uint capacity, out uint count, float* rates);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int GetDisplayRefreshRateFB(ulong session, out float rate);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int RequestDisplayRefreshRateFB(ulong session, float rate);
 
         public static T GetFunction<T>(ulong instance, string name) where T : Delegate
         {

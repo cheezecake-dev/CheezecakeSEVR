@@ -19,11 +19,26 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         public const float CloseShare = 0.5f;
 
-        /// <summary>The fastest the body is moved relative to the hull while held, m/s: a gap the body cannot close (it is blocked) does not fling it.</summary>
+        /// <summary>
+        /// The fastest the body is moved relative to the hull while held, m/s: a gap the body cannot close (it is blocked)
+        /// does not fling it. A push-off is measured from this motion, so it is also the most the push-off speed setting
+        /// allows. Never above <see cref="GameMaxSpeed"/>.
+        /// </summary>
         public const float HoldMaxSpeed = 8f;
 
-        /// <summary>The fastest a push-off leaves the hull, m/s.</summary>
-        public const float PushOffMaxSpeed = 6f;
+        /// <summary>
+        /// The impulse of the game's own push-off from a surface without the jetpack, newton-seconds: a jump with the
+        /// magnetic boots on (MyCharacter.Jump:8532, along the surface's normal) or off a ladder (:8559). The game writes it
+        /// as a literal in both places.
+        /// </summary>
+        public const float GameJumpImpulse = 1000f;
+
+        /// <summary>
+        /// The fastest the game itself sends a character off a surface without the jetpack, m/s: <see cref="GameJumpImpulse"/>
+        /// on a body of <paramref name="mass"/> kg (the character's definition's Mass, which its physics body is made with:
+        /// MyCharacter.InitCharacterPhysics, :6263; 10 m/s for the engineer's 100 kg). Zero for a mass that is not positive.
+        /// </summary>
+        public static float GameMaxSpeed(float mass) => mass > 0f ? GameJumpImpulse / mass : 0f;
 
         /// <summary>Slower than this, m/s, a let-go is a stop: a hand opening on the hull jitters a little, and that should not drift.</summary>
         public const float StillSpeed = 0.05f;
@@ -37,26 +52,33 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// The body's velocity relative to the hull this step, from the gap (the anchor minus the hand, world metres;
-        /// several hands: their average): <see cref="CloseShare"/> of it in one step, no faster than <see cref="HoldMaxSpeed"/>.
+        /// several hands: their average): <see cref="CloseShare"/> of it in one step, no faster than <see cref="HoldMaxSpeed"/>
+        /// or the game's own push-off for a character of <paramref name="mass"/> kg (<see cref="GameMaxSpeed"/>).
         /// </summary>
-        public static Vector3D ServoVelocity(Vector3D gap)
+        public static Vector3D ServoVelocity(Vector3D gap, float mass)
         {
             Vector3D velocity = gap * (CloseShare / StepSeconds);
-            double speed = velocity.Length();
-            if (speed > HoldMaxSpeed)
-                velocity *= HoldMaxSpeed / speed;
-            return velocity;
+            return Capped(velocity, Math.Min(HoldMaxSpeed, GameMaxSpeed(mass)));
         }
 
-        /// <summary>A let-go's velocity relative to the hull: capped at <see cref="PushOffMaxSpeed"/>, and nothing below <see cref="StillSpeed"/>.</summary>
-        public static Vector3D PushOff(Vector3D relative)
+        /// <summary>
+        /// A let-go's velocity relative to the hull: no faster than <paramref name="maxSpeed"/> (m/s, the push-off speed
+        /// setting) or the game's own push-off for a character of <paramref name="mass"/> kg (<see cref="GameMaxSpeed"/>),
+        /// whichever is lower, and nothing below <see cref="StillSpeed"/>.
+        /// </summary>
+        public static Vector3D PushOff(Vector3D relative, float maxSpeed, float mass)
         {
-            double speed = relative.Length();
-            if (speed < StillSpeed)
+            if (relative.Length() < StillSpeed)
                 return Vector3D.Zero;
-            if (speed > PushOffMaxSpeed)
-                return relative * (PushOffMaxSpeed / speed);
-            return relative;
+            return Capped(relative, Math.Min(maxSpeed, GameMaxSpeed(mass)));
+        }
+
+        private static Vector3D Capped(Vector3D velocity, double max)
+        {
+            double speed = velocity.Length();
+            if (speed <= max)
+                return velocity;
+            return max > 0.0 ? velocity * (max / speed) : Vector3D.Zero;
         }
 
         /// <summary>

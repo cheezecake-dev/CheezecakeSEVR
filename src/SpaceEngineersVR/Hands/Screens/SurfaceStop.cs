@@ -176,7 +176,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Hands this source does not stop: a held tool, the other hand on it, a held floating item, the view screen.</summary>
         private static bool LeftAlone(MyCharacter character, Hand hand)
         {
-            if (hand == Hand.Right && character.CurrentWeapon != null && !character.IsSitting)
+            if (hand == VRSettings.DominantHand && character.CurrentWeapon != null && !character.IsSitting)
                 return true;
             Matrix any = Matrix.Identity;
             if (TwoHand.Settle(hand, ref any, out _) > 0f)

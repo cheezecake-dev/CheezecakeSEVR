@@ -2,6 +2,7 @@
 
 using System;
 using System.Diagnostics;
+using Sandbox.Engine.Utils;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.GameSystems;
@@ -15,8 +16,8 @@ namespace SpaceEngineersVR.Rendering
     {
         /// <summary>
         /// Game thread, as the camera goes to the renderer: what the picture is for this frame (<see cref="Kind"/>) and, for
-        /// the dash screen, the chase camera, in the game camera's own space; for the zoom inset and the death view, the
-        /// game camera's field of view (and the zoom). Keyed by the view matrix so that the renderer, which may be a message
+        /// the dash screen, the chase camera, in the game camera's own space; for the forced view, the game camera's field
+        /// of view. Keyed by the view matrix so that the renderer, which may be a message
         /// behind, pairs it with the ship as that frame drew it (the same way <see cref="Tracking.CameraHeadLink"/> pairs
         /// the head). A frame that wants no picture is kept too, so the renderer never takes an older frame's for it.
         /// </summary>
@@ -28,15 +29,10 @@ namespace SpaceEngineersVR.Rendering
             {
                 Kind kind = Kind.None;
                 MatrixD pose = MatrixD.Identity;
-                float field = 0f, zoom = 1f;
-                if (DeathView.Wanted())
+                float field = 0f;
+                if (ForcedView.Wanted())
                 {
-                    kind = Kind.Death;
-                    field = GameField();
-                }
-                else if (ZoomInset.Wanted(out zoom))
-                {
-                    kind = Kind.Zoom;
+                    kind = Kind.Forced;
                     field = GameField();
                 }
                 else if (On && TryViewpoint(out MatrixD camera, out field))
@@ -49,7 +45,6 @@ namespace SpaceEngineersVR.Rendering
                     views[next] = viewMatrix;
                     poses[next] = pose;
                     fields[next] = field;
-                    zooms[next] = zoom;
                     kinds[next] = kind;
                     stamps[next] = Stopwatch.GetTimestamp();
                     next = (next + 1) % Capacity;
@@ -93,7 +88,9 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// The chase camera's world matrix: behind and above what the player controls, looking at it, horizon level
-        /// (up is against natural gravity; in space, up is the ship's own).
+        /// (up is against natural gravity; in space, up is the ship's own), at most the game's third-person distance out
+        /// (MyThirdPersonSpectator.MAX_VIEWER_DISTANCE). False when there is none, or when it could not be kept out of walls
+        /// (<see cref="KeepClear"/>).
         /// </summary>
         private static bool TryChaseCamera(out MatrixD camera)
         {
@@ -129,18 +126,26 @@ namespace SpaceEngineersVR.Rendering
 
             // The wrist panel's External view page: nearer or farther (a multiple, so it suits a character and the biggest
             // station alike), and round and over or under what is followed, on the sphere through where the camera starts.
+            // Never farther out than the game's own third-person camera can go.
             double scale = VRSettings.ExternalViewDistance;
             distance *= scale;
             height *= scale;
-            ChaseRadius = Math.Sqrt(distance * distance + height * height);
+            double radius = Math.Sqrt(distance * distance + height * height);
+            if (radius > MyThirdPersonSpectator.MAX_VIEWER_DISTANCE)
+            {
+                double within = MyThirdPersonSpectator.MAX_VIEWER_DISTANCE / radius;
+                distance *= within;
+                height *= within;
+                radius = MyThirdPersonSpectator.MAX_VIEWER_DISTANCE;
+            }
+            ChaseRadius = radius;
             ChasingCharacter = onFoot;
 
             Vector3 gravity = MyGravityProviderSystem.CalculateNaturalGravityInPoint(center);
             if (!Compose(frame, center, gravity, distance, height,
                     MathHelper.ToRadians(VRSettings.ExternalViewOrbit), MathHelper.ToRadians(VRSettings.ExternalViewElevation), out camera))
                 return false;
-            KeepClear(entity, center, ref camera);
-            return true;
+            return KeepClear(entity, center, ref camera);
         }
 
         /// <summary>The third-person camera's distance from what it follows, metres, the last time it was placed (for the wrist panel's words). Zero before then.</summary>

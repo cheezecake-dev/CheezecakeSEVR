@@ -1,5 +1,6 @@
 using System;
 using Sandbox.Game.Entities.Character;
+using SpaceEngineersVR.Input;
 using Sandbox.Game.Weapons;
 using Sandbox.Game.World;
 using VRage.Game.Entity;
@@ -7,11 +8,11 @@ using VRage.Game.Entity;
 namespace SpaceEngineersVR.Hands
 {
     /// <summary>
-    /// No iron sight in VR: the sight is aimed by bringing the gun up to the eye. A hand weapon's secondary action (the left
-    /// trigger, SECONDARY_TOOL_ACTION) is only its iron sight: MyAutomaticRifleGun.Shoot(SecondaryAction) calls
+    /// No iron sight in VR: the sight is aimed by bringing the gun up to the eye. A hand weapon's secondary action (the trigger
+    /// of the hand that does not hold it, <see cref="SightHand"/>; SECONDARY_TOOL_ACTION) is only its iron sight: MyAutomaticRifleGun.Shoot(SecondaryAction) calls
     /// MyCharacter.Zoom (MyAutomaticRifleGun.cs:577), which puts the character in ZoomMode IronSight, zooms the camera in, hides
     /// the crosshair, slows walking and stops sprinting (MyCharacter.EnableIronsight, MyCharacter.cs:7871). So while the
-    /// player's character holds one (rifles, pistols and the rocket launcher are all MyAutomaticRifleGun), the left trigger is
+    /// player's character holds one (rifles, pistols and the rocket launcher are all MyAutomaticRifleGun), that trigger is
     /// held back from the game until it is let go (<see cref="Input.VRControls"/>).
     /// </summary>
     /// <remarks>
@@ -25,9 +26,15 @@ namespace SpaceEngineersVR.Hands
         private static bool loggedHolding, leaving;
         private static int errors;
 
+        /// <summary>The trigger that fires a hand weapon: the hand that holds it (the dominant one).</summary>
+        public static Hand FireHand => VRSettings.DominantHand;
+
+        /// <summary>The trigger that would be a hand weapon's iron sight: the other hand's.</summary>
+        public static Hand SightHand => FireHand == Hand.Left ? Hand.Right : Hand.Left;
+
         /// <summary>
         /// Game thread, once a frame on foot and on the jetpack, before the triggers are read: true while the player's character
-        /// holds a hand weapon, whose left trigger is then held back from the game. Takes the character out of an iron sight it is in.
+        /// holds a hand weapon, whose <see cref="SightHand"/> trigger is then held back from the game. Takes the character out of an iron sight it is in.
         /// </summary>
         public static bool Frame()
         {
@@ -39,7 +46,7 @@ namespace SpaceEngineersVR.Hands
                 {
                     loggedHolding = holding;
                     if (holding)
-                        Log.Info($"Iron sight: {Describe(character)} in hand; the left trigger (its iron sight) is held back from the game");
+                        Log.Info($"Iron sight: {Describe(character)} in hand; the {FireHand.ToString().ToLowerInvariant()} trigger fires, the {SightHand.ToString().ToLowerInvariant()} one (its iron sight) is held back from the game");
                 }
                 // Once per stay in the sight: the game's way out goes through its event, which may land a frame later.
                 bool inSight = HandTools.IsLocalOnFoot(character) && character.ZoomMode == MyZoomModeEnum.IronSight;

@@ -1,11 +1,8 @@
 using System;
 using System.Diagnostics;
-using System.Reflection;
-using HarmonyLib;
 using SpaceEngineersVR.Input;
 using VRageMath;
 using VRageRender;
-using VRageRender.Messages;
 
 namespace SpaceEngineersVR.Rendering
 {
@@ -158,10 +155,7 @@ namespace SpaceEngineersVR.Rendering
 
         private static State state;
         private static bool failed;
-        private static object texture, manager;
-        private static FieldInfo managerField;
-        private static MethodInfo create, discard;
-        private static PropertyInfo srv;
+        private static readonly GeneratedTexture texture = new GeneratedTexture("VR comfort vignette", TextureSize, Pixels);
 
         /// <summary>
         /// Render thread, once per eye, after the scene and the full-view overlay: darkens the edges of
@@ -181,52 +175,19 @@ namespace SpaceEngineersVR.Rendering
                     float level = Advance(ref state, Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency, motion.Move, motion.Turn, motion.Snaps);
                     Strength = Off ? 0f : Test ? 1f : level * VRSettings.ComfortVignette;
                 }
-                if (Strength <= Visible || !Ready())
+                if (Strength <= Visible)
+                    return;
+                object pixels = texture.Get();
+                if (pixels == null)
                     return;
                 var (x, y, width, height) = Layout(Strength, eye.X, eye.Y, projection.M31, projection.M32);
-                EyeRenderer.Blend(eyeTarget, texture, new MyViewport(x, y, width, height));
+                EyeRenderer.Blend(eyeTarget, pixels, new MyViewport(x, y, width, height));
             }
             catch (Exception e)
             {
                 failed = true;
                 Log.Error(e, "Comfort vignette failed; it stays off for the rest of the run");
             }
-        }
-
-        /// <summary>
-        /// The texture exists and is alive. It is made the first time it is needed, by the game's own generated texture
-        /// manager (the one behind MyRenderProxy.CreateGeneratedTexture), and made again if a device reset disposed it.
-        /// </summary>
-        private static bool Ready()
-        {
-            if (managerField == null)
-            {
-                Type managers = typeof(MyDX11Render).Assembly.GetType("VRage.Render11.Common.MyManagers", throwOnError: true);
-                managerField = AccessTools.Field(managers, "GeneratedTextures");
-            }
-            object current = managerField.GetValue(null);
-            if (current == null)
-                return false; // the render managers are not up yet
-            if (!ReferenceEquals(current, manager))
-            {
-                manager = current;
-                texture = null;
-                create = AccessTools.Method(manager.GetType(), "NewUserTexture",
-                    new[] { typeof(string), typeof(int), typeof(int), typeof(MyGeneratedTextureType), typeof(bool), typeof(bool), typeof(byte[]) });
-                discard = AccessTools.Method(manager.GetType(), "DisposeTex");
-            }
-            if (texture != null && srv.GetValue(texture) == null)
-            {
-                discard.Invoke(manager, new[] { texture });
-                texture = null;
-            }
-            if (texture == null)
-            {
-                texture = create.Invoke(manager, new object[] { "VR comfort vignette", TextureSize, TextureSize, MyGeneratedTextureType.RGBA_Linear, false, true, Pixels(TextureSize) });
-                srv = AccessTools.Property(texture.GetType(), "Srv");
-                Log.Info($"Comfort vignette texture made ({TextureSize}x{TextureSize})");
-            }
-            return true;
         }
     }
 }

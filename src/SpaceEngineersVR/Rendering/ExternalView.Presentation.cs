@@ -15,10 +15,10 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         public static void ShowInWindow(object window, Vector2I windowSize)
         {
-            if (frameKind == Kind.Zoom || frameKind == Kind.Death)
+            if (frameKind == Kind.Forced)
             {
                 if (haveImage && drawnKind == frameKind)
-                    ShowStandingInWindow(window, windowSize, StandingPose(), StandingWidth());
+                    ShowStandingInWindow(window, windowSize, ForcedView.Pose, ForcedView.Width);
                 return;
             }
             if (!Showing)
@@ -40,14 +40,8 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
-        /// <summary>The zoom inset's or the death view's screen in the tracking space, facing +z.</summary>
-        private static Matrix StandingPose() => frameKind == Kind.Zoom ? ZoomInset.Pose : DeathView.Pose;
-
-        /// <summary>The zoom inset's or the death view's screen's width, metres.</summary>
-        private static float StandingWidth() => frameKind == Kind.Zoom ? ZoomInset.Width : DeathView.Width;
-
         /// <summary>
-        /// The desktop: a screen standing in the tracking space (the zoom inset, the death view's) over each eye's part of the
+        /// The desktop: a screen standing in the tracking space (the forced view's) over each eye's part of the
         /// window where it stands in that eye, as the rectangle round its corners (<see cref="HudPanel.InWindow"/>: the window
         /// is a mirror, not drawn in perspective). One that would reach over into the other eye's half is left out of that eye.
         /// </summary>
@@ -80,9 +74,9 @@ namespace SpaceEngineersVR.Rendering
         public static void ShowInHeadset(in Matrix head)
         {
             pending = null;
-            if (frameKind == Kind.Zoom || frameKind == Kind.Death)
+            if (frameKind == Kind.Forced)
             {
-                // The zoom inset or the death view stands in the screen's place; the dash screen keeps its own for after.
+                // The forced view stands in the screen's place; the dash screen keeps its own for after.
                 // Neither can be taken hold of (Hands.ViewScreenGrab lets go of a screen that is not shown).
                 lock (screenGate)
                     shown = false;
@@ -90,12 +84,12 @@ namespace SpaceEngineersVR.Rendering
                     return;
                 try
                 {
-                    Submit(StandingPose(), StandingWidth());
+                    Submit(ForcedView.Pose, ForcedView.Width);
                 }
                 catch (Exception e)
                 {
                     available = false;
-                    Log.Error(e, "External view: showing the zoom inset or the death view in the headset failed; the screen is off for the rest of the run");
+                    Log.Error(e, "External view: showing the forced view in the headset failed; the screen is off for the rest of the run");
                 }
                 return;
             }

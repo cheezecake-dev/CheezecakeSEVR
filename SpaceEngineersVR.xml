@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
-<!-- Pulsar plugin data file (GitHubPlugin), used as the data file of a Pulsar development folder on this repository.
-     See docs/PULSAR.md. The plugin's name is Cheezecake's SE VR. Id is only this development folder's key; the hub copy gets a GUID. -->
+<!-- Pulsar plugin data file (GitHubPlugin), used as the data file of a Pulsar development folder on this repository. The plugin's name is Cheezecake's SE VR. Id is only this development folder's key; the hub copy gets a GUID. -->
 <PluginData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="GitHubPlugin">
   <Id>SpaceEngineersVR</Id>
   <FriendlyName>Cheezecake's SE VR</FriendlyName>
@@ -16,8 +15,8 @@
   </SourceDirectories>
 
   <!-- Placement="Bin" copies the loader next to the compiled plugin, which is where the plugin loads it from, before the
-       game starts. Path is relative to the repository root: the file is committed with its licence. Pinned as in fetch-deps.ps1
-       (OpenXR loader 1.1.63 x64). -->
+       game starts. Path is relative to the repository root: the file is committed with its licence. Pinned:
+       OpenXR loader 1.1.63 x64. -->
   <Asset Name="openxr_loader" Path="lib/openxr/openxr_loader.dll" Placement="Bin" Platforms="Windows"
          Sha256="66946ea6e9cc2649e299ec412521c5eafe56c635d05055097fe4db81e11932df" />
 </PluginData>

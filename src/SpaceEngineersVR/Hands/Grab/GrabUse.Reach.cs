@@ -95,11 +95,12 @@ namespace SpaceEngineersVR.Hands
             inReach.Sort(nearestFirst);
 
             Vector3D origin = ReachOrigin(hand, character, palm, trackingToModel, modelToWorld, out string from);
+            MySlimBlock closedSeat = Reach.ClosedSeat(character);
             StringBuilder said = trace ? new StringBuilder() : null;
             bool found = false;
             foreach (Candidate c in inReach)
             {
-                bool clear = LineOfReach(origin, palm, c.Use, seat, said != null, out string verdict);
+                bool clear = LineOfReach(origin, palm, c.Use, closedSeat, said != null, out string verdict);
                 said?.Append(said.Length == 0 ? string.Empty : "; ").Append($"'{c.Tag}' on {Describe(c.Use.Owner)} {verdict}");
                 if (clear)
                 {
@@ -132,13 +133,14 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// Whether nothing solid lies on the line from <paramref name="origin"/> (the shoulder, or the eyes) to the palm other
-        /// than the target's own block and the seat (<see cref="Reach.Sweep"/>). A line that could not be checked (physics
-        /// busy, or a failed cast) counts as clear, so this never takes away a grab it could not check.
+        /// than the target's own block, and, in a closed cockpit, the line stays in its cells (<see cref="Reach.Sweep"/>). The
+        /// seat's own block blocks like any other: only the collision shape the line starts in is passed. A line that could
+        /// not be checked (physics busy, or a failed cast) counts as clear, so this never takes away a grab it could not check.
         /// </summary>
-        private static bool LineOfReach(Vector3D origin, Vector3D palm, IMyUseObject use, MyEntity seat, bool note, out string verdict)
+        private static bool LineOfReach(Vector3D origin, Vector3D palm, IMyUseObject use, MySlimBlock closedSeat, bool note, out string verdict)
         {
             StringBuilder passed = note ? new StringBuilder() : null;
-            if (!Reach.Sweep(origin, palm, Reach.BlockOf(use?.Owner as MyEntity), Reach.BlockOf(seat), passed, out float first, out object blocker))
+            if (!Reach.Sweep(origin, palm, Reach.BlockOf(use?.Owner as MyEntity), closedSeat, passed, out float first, out object blocker))
             {
                 verdict = "not checked (physics busy or failed)";
                 return true;

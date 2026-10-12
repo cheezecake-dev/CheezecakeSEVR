@@ -104,9 +104,9 @@ namespace SpaceEngineersVR.Hands
                      $"{peakTwist:0.0} deg of twist, {peakBack * 100:0.0} cm back, squeezed at the limits {limitedFrames} frames; {shots} shots, {jerks} jerks, {spinUps} spin-ups, " +
                      $"biting {biteFrames} of {useFrames} frames in use; the aim point moved over {Span(hits) * 100:0.0} cm on what it pointed at " +
                      $"({hits.Count} hits, {misses} misses; the hand's own aim {Span(ownHits) * 100:0.0} cm, {ownHits.Count} hits); " +
-                     (episodeGun ? $"the game's own recoil kept off the character {recoilKept} times, its head angles put back by up to {headUndone:0.00} deg; " : string.Empty) +
+                     (episodeGun ? $"the game's own recoil left out {recoilKept} times and applied {recoilLet} times, the head angles put back by up to {headUndone:0.00} deg; " : string.Empty) +
                      $"the head tracked {trackedFrames} of {framesOne + framesTwo} frames; the view turned at most {viewTurn:0.000} deg and moved {viewMove * 1000:0.0} mm in a frame");
-            recoilKept = 0;
+            recoilKept = recoilLet = 0;
             headUndone = 0.0;
         }
 

@@ -92,11 +92,9 @@ namespace SpaceEngineersVR.Gui
                    MySandboxGame.Config.UIBkOpacity, MySandboxGame.Config.UIOpacity)
         {
             EnabledBackgroundFade = true;
-            foreach (Setting setting in VRSettings.All)
-            {
-                if (!setting.Hidden)
-                    opened[setting] = setting.Snapshot();
-            }
+            GripFitSettings.Load();
+            foreach (Setting setting in Shown())
+                opened[setting] = setting.Snapshot();
             savesWhenOpened = VRSettings.SaveCount;
             RecreateControls(constructor: true);
         }
@@ -106,7 +104,40 @@ namespace SpaceEngineersVR.Gui
         // ---- What goes on the screen, and where. ----
 
         /// <summary>The shown settings in their tabs and groups (<see cref="VROptionsTabs"/>).</summary>
-        private static List<VROptionsTabs.Tab> Describe() => VROptionsTabs.Arrange(VRSettings.All);
+        private static List<VROptionsTabs.Tab> Describe()
+        {
+            List<VROptionsTabs.Tab> tabs = VROptionsTabs.Arrange(Everything());
+            foreach (VROptionsTabs.Tab tab in tabs)
+            {
+                foreach (VROptionsTabs.Group group in tab.Groups)
+                {
+                    if (group.Name == GripFitSettings.GroupName)
+                    {
+                        group.Caption = GripFitSettings.Caption;
+                        group.Button = GripFitSettings.ResetButton;
+                    }
+                }
+            }
+            return tabs;
+        }
+
+        /// <summary>The settings in the file, and the fit sliders.</summary>
+        private static List<Setting> Everything()
+        {
+            var all = new List<Setting>(VRSettings.All);
+            all.AddRange(GripFitSettings.All);
+            return all;
+        }
+
+        /// <summary>The settings the screen shows.</summary>
+        private static IEnumerable<Setting> Shown()
+        {
+            foreach (Setting setting in Everything())
+            {
+                if (!setting.Hidden)
+                    yield return setting;
+            }
+        }
 
         /// <summary>
         /// Splits each tab's groups into two columns (in order) as evenly as they go, and sizes its list to hold them at the
@@ -164,7 +195,7 @@ namespace SpaceEngineersVR.Gui
         {
             int lines = 0;
             foreach (VROptionsTabs.Group group in groups)
-                lines += 1 + group.Rows.Count;
+                lines += 1 + group.Rows.Count + (group.Button == null ? 0 : 1);
             return lines * Pitch + Math.Max(0, groups.Count - 1) * SectionGap;
         }
 
@@ -277,12 +308,23 @@ namespace SpaceEngineersVR.Gui
                     float y = PanelPadY - centre.Y;
                     foreach (VROptionsTabs.Group group in page.Columns[c])
                     {
-                        AddText(group.Name, x, y + Pitch / 2f, "White", 0.85f, ColumnWidth);
+                        AddText(group.Caption, x, y + Pitch / 2f, "White", 0.85f, ColumnWidth);
                         inside.AddHorizontal(new Vector2(x, y + Pitch - 0.006f), ColumnWidth);
                         y += Pitch;
                         foreach (Setting setting in group.Rows)
                         {
                             AddSetting(setting, x, y + Pitch / 2f);
+                            y += Pitch;
+                        }
+                        if (group.Button != null)
+                        {
+                            VROptionsTabs.GroupButton button = group.Button;
+                            AddButton(button.Text, button.Tooltip, new Vector2(x + LabelWidth + LabelGap, y + Pitch / 2f),
+                                MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER, () =>
+                                {
+                                    button.Click();
+                                    ShowAll();
+                                });
                             y += Pitch;
                         }
                         y += SectionGap;
@@ -477,17 +519,18 @@ namespace SpaceEngineersVR.Gui
         {
             foreach (KeyValuePair<Setting, object> value in opened)
                 value.Key.Restore(value.Value);
-            foreach (Binding binding in bindings)
-                Show(binding);
+            ShowAll();
         }
 
         private void OnDefaults()
         {
-            foreach (Setting setting in VRSettings.All)
-            {
-                if (!setting.Hidden)
-                    setting.ResetToDefault();
-            }
+            foreach (Setting setting in Shown())
+                setting.ResetToDefault();
+            ShowAll();
+        }
+
+        private void ShowAll()
+        {
             foreach (Binding binding in bindings)
                 Show(binding);
         }

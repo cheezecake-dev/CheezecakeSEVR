@@ -24,6 +24,7 @@ namespace SpaceEngineersVR.Rendering
         private static HkShape chaseBall;
         private static float chaseBallRadius;
         private static int chaseErrors;
+        private static bool chaseUnsweptNoted;
 
         /// <summary>How far out the camera is, as a share of the way from what it follows to where it would stand.</summary>
         private static double chaseOut = 1.0;
@@ -35,21 +36,24 @@ namespace SpaceEngineersVR.Rendering
         /// camera with <c>MyPhysics.CastShapeReturnContactBodyDatas</c> and the game's filter (layer 0 in the controlled
         /// entity's collision system), passing back faces and what the game's camera passes (<see cref="PassesThrough"/>).
         /// The ball is the game's: 0.125 m for a character, 0.5 m for a seat, the grid size for a grid; for a ship the sweep
-        /// starts one ball out of the centre. It goes in at once and back out smoothly.
+        /// starts one ball out of the centre. It goes in at once and back out smoothly. False when the sweep cannot run or
+        /// fails: what is in the way is not known, so there is no picture this frame.
         /// </summary>
-        private static void KeepClear(MyEntity controlled, Vector3D center, ref MatrixD camera)
+        private static bool KeepClear(MyEntity controlled, Vector3D center, ref MatrixD camera)
         {
             Vector3D eye = camera.Translation;
             Vector3D way = eye - center;
             double length = way.Length();
             if (length < 1e-3)
-                return;
+                return true;
             way /= length;
 
             float radius = controlled is MyCharacter ? 0.125f : controlled is MyCubeGrid grid ? grid.GridSize : 0.5f;
             Vector3D start = controlled is MyCharacter ? center : center + way * radius;
             double reach = (eye - start).Dot(way);
-            double clear = reach > radius ? Clear(controlled, start, eye, way, radius) : 1.0;
+            double clear = 1.0;
+            if (reach > radius && !TryClear(controlled, start, eye, way, radius, out clear))
+                return false;
 
             long now = Stopwatch.GetTimestamp();
             double seconds = chaseOutAt == 0 ? 0.0 : Math.Min(Seconds(now - chaseOutAt), 0.25);
@@ -57,13 +61,25 @@ namespace SpaceEngineersVR.Rendering
             chaseOut = clear < chaseOut ? clear : Math.Min(clear, chaseOut + seconds * EaseOutPerSecond);
             if (chaseOut < 1.0)
                 camera.Translation = Vector3D.Lerp(start, eye, Math.Max(chaseOut, 0.0));
+            return true;
         }
 
-        /// <summary>The share of the way from <paramref name="start"/> to <paramref name="eye"/> the ball travels before it touches anything; 1 when nothing is in the way or physics cannot be asked now.</summary>
-        private static double Clear(MyEntity controlled, Vector3D start, Vector3D eye, Vector3D way, float radius)
+        /// <summary>
+        /// The share of the way from <paramref name="start"/> to <paramref name="eye"/> the ball travels before it touches
+        /// anything, 1 when nothing is in the way. False when physics cannot be asked now, or the sweep fails.
+        /// </summary>
+        private static bool TryClear(MyEntity controlled, Vector3D start, Vector3D eye, Vector3D way, float radius, out double clear)
         {
-            if (chaseErrors >= 3 || !MyPhysics.CheckThread() || MyPhysics.InsideSimulation)
-                return 1.0;
+            clear = 0.0;
+            if (chaseErrors >= 3)
+                return false;
+            if (!MyPhysics.CheckThread() || MyPhysics.InsideSimulation)
+            {
+                if (!chaseUnsweptNoted)
+                    Log.Info("External view: the chase camera could not be swept for walls in a frame (physics busy); there is no picture in such a frame");
+                chaseUnsweptNoted = true;
+                return false;
+            }
             try
             {
                 if (chaseBallRadius != radius)
@@ -90,13 +106,14 @@ namespace SpaceEngineersVR.Rendering
                     first = Math.Min(first, Math.Max(info.HitFraction, 1e-4f));
                 }
                 chaseHits.Clear();
-                return first;
+                clear = first;
+                return true;
             }
             catch (Exception e)
             {
                 chaseHits.Clear();
-                Log.Error(e, ++chaseErrors < 3 ? "External view: the chase camera's sweep failed" : "External view: the chase camera's sweep failed again; it is not kept out of walls until the game restarts");
-                return 1.0;
+                Log.Error(e, ++chaseErrors < 3 ? "External view: the chase camera's sweep failed; no picture this frame" : "External view: the chase camera's sweep failed again; there is no chase picture until the game restarts");
+                return false;
             }
         }
 

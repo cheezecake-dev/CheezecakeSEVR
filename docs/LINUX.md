@@ -103,7 +103,23 @@ GPU time and the scale never left 100%. On Linux the thread's CPU time (`CLOCK_T
 is used instead: it excludes the blocking, about 4 ms against 18 ms of GPU. Checked both ways: with wall time the scale
 stays at 100%; with CPU time it steps to 70% after load, and from a steady world once a held 100% is released.
 
-### 9. Where the plugin coordinates with linux-compat
+### 9. The headset may connect after the game starts
+WiVRn's `xrCreateInstance` blocks until a headset connects. The instance and the headset are looked for on a thread of
+their own (`HeadsetWatcher.cs`) for the whole run; startup waits 15 s for its first answer, so the game picks the
+headset's GPU when it can, then goes on with the game's own picture. When the headset turns up later the window becomes
+the VR mirror, the GUI is laid out again at 1920x1080, and the render thread starts the session and remakes the screen
+resources at the headset's eye size. When the runtime loses the session or the instance (the WiVRn server stopped), the game goes back to the window and VR returns with the
+headset; the same code runs on Windows. Going back to the game's own picture while the headset is away (asleep or taken off) is in the code but off for now:
+on Windows the picture's return to VR reset the GPU's driver. If the game picked another GPU than the headset needs, VR stays off until the
+game is restarted with the headset connected.
+
+Measured: started without the headset, the session reached Focused 4 s after the headset app was started. Stopping the
+headset app leaves WiVRn's session alive (Focused -> Visible -> Synchronized; 120 frames/s in the window), and it comes
+back to Focused about 2 s after the app reconnects. Stopping the WiVRn server is a loss (`XR_ERROR_INSTANCE_LOST`):
+the game went on at 120 frames/s in the window and VR came back after the server restart and reconnect, four times in
+one run, with VRAM (2.55 GB), file descriptors (518-522) and threads (124-125) flat.
+
+### 10. Where the plugin coordinates with linux-compat
 Two workarounds in this plugin exist because of linux-compat patches. They are suggestions for Viktor only where a hook
 in linux-compat would be cleaner than ours.
 
@@ -126,10 +142,11 @@ The Windows path is unchanged by every Linux commit. The mechanism:
 
 ## Setup
 
-`tools/linux/setup.sh --install-deps --launcher` (see the Linux section of `README.md`, which lists the options). It finds
+`tools/linux/setup.sh --no-plugin --install-deps --launcher` with the plugin installed from the hub, or without `--no-plugin`
+to register the clone as a development folder (see the Linux section of `README.md`). It finds
 Pulsar and the game, installs the distribution's OpenXR loader, builds DXVK Native with the patch and copies it into
 linux-compat (keeping the originals; run it again after a linux-compat update), registers the plugin in Pulsar as a
-development folder, checks for WiVRn and `adb`, and can add a launcher entry. `--check` only reports.
+development folder unless `--no-plugin`, checks for WiVRn and `adb`, and can add a launcher entry. `--check` only reports.
 
 WiVRn headset settings used: Extended configuration on, foveated encoding 30% or lower, render resolution 120%, refresh
 rate 90, bitrate 200 Mbit/s; for a cable, `adb reverse tcp:9757 tcp:9757`, the USB option in the WiVRn dashboard and the
@@ -147,7 +164,9 @@ RTX 3060, Ubuntu 26.04, WiVRn 26.9, Quest 3 over USB, the game and WiVRn's encod
 ## Open items
 
 - The Windows headset run of the beam-over-panels layer (e96fedc) is outstanding.
-- Restoring the audio route when the headset disconnects is untested.
+- Restoring the audio route when the headset disconnects: with the WiVRn server stopped the sink goes and the sound
+  returns to the default output, and moves back when the headset reconnects; with only the headset app stopped the sink
+  stays and the sound goes on into it.
 - Stock (unpatched) DXVK should fail with a clear message instead of crashing: `XrRuntime.VulkanInstanceProblem` probes
   for `vkGetPhysicalDeviceProperties2KHR` and names `setup.sh`. This is being added and is not yet committed.
 - Only WiVRn has been run in the headset. Monado and SteamVR for Linux are untested.

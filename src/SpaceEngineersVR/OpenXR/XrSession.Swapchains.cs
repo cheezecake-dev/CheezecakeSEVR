@@ -202,20 +202,46 @@ namespace SpaceEngineersVR.OpenXR
         /// </summary>
         private static uint Acquire(ulong swapchain)
         {
+            if (lostInFrame != null)
+                return 0;
             var acquire = new XrBaseInfo(XrStructureType.SwapchainImageAcquireInfo);
             uint index;
+            int result;
             dxvk?.LockQueue();
             try
             {
-                Xr.Check(Xr.xrAcquireSwapchainImage(swapchain, ref acquire, out index), "xrAcquireSwapchainImage", XrRuntime.Instance);
+                result = Xr.xrAcquireSwapchainImage(swapchain, ref acquire, out index);
             }
             finally
             {
                 dxvk?.ReleaseQueue();
             }
+            if (LostInFrame(result, "xrAcquireSwapchainImage"))
+                return 0;
             var wait = new XrSwapchainImageWaitInfo { Type = XrStructureType.SwapchainImageWaitInfo, Timeout = XrConst.InfiniteDuration };
-            Xr.Check(Xr.xrWaitSwapchainImage(swapchain, ref wait), "xrWaitSwapchainImage", XrRuntime.Instance);
+            if (LostInFrame(Xr.xrWaitSwapchainImage(swapchain, ref wait), "xrWaitSwapchainImage"))
+                return 0;
             return index;
+        }
+
+        /// <summary>
+        /// The runtime was lost (or failed) during this frame's image calls: later ones do nothing, and <see cref="EndFrame"/>
+        /// throws this, so the loss reaches the code that handles it (<see cref="Rendering.EyeRenderer"/>) and not whatever
+        /// was copying into an image. Copies into an image the runtime no longer has are harmless: the textures are ours.
+        /// </summary>
+        private static XrException lostInFrame;
+
+        /// <summary>Throws on a failure other than a loss; true when the runtime is lost.</summary>
+        private static bool LostInFrame(int result, string call)
+        {
+            if (result != XrResult.ErrorSessionLost && result != XrResult.ErrorInstanceLost && result != XrResult.ErrorRuntimeFailure)
+            {
+                Xr.Check(result, call, XrRuntime.Instance);
+                return false;
+            }
+            if (lostInFrame == null)
+                lostInFrame = new XrException(result, call, Xr.ResultName(XrRuntime.Instance, result));
+            return true;
         }
 
         private static void Release(ulong swapchain)
@@ -227,14 +253,16 @@ namespace SpaceEngineersVR.OpenXR
                 dxvk.FlushRenderingCommands();
                 dxvk.LockQueue();
             }
+            int result;
             try
             {
-                Xr.Check(Xr.xrReleaseSwapchainImage(swapchain, ref release), "xrReleaseSwapchainImage", XrRuntime.Instance);
+                result = lostInFrame == null ? Xr.xrReleaseSwapchainImage(swapchain, ref release) : XrResult.Success;
             }
             finally
             {
                 dxvk?.ReleaseQueue();
             }
+            LostInFrame(result, "xrReleaseSwapchainImage");
         }
     }
 }

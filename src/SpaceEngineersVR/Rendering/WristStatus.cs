@@ -93,7 +93,7 @@ namespace SpaceEngineersVR.Rendering
         public static bool ShowAll { get; set; }
 
         /// <summary>The screen is wanted: the setting, VR, and not switched off by the debug file.</summary>
-        public static bool Active => !Off && VRSettings.WristStatus && VRInput.Active;
+        public static bool Active => !Off && VRSettings.WristStatus && VRInput.Layout;
 
         /// <summary>The bone the gauntlet's screen is skinned to, all four corners at weight 1, in both astronaut models.</summary>
         public const string PlateBone = "SE_RigLForearm2";

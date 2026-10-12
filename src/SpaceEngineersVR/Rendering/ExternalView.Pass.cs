@@ -13,46 +13,35 @@ namespace SpaceEngineersVR.Rendering
     {
         /// <summary>
         /// Render thread, before the eyes are drawn: finds the camera the renderer holds among those the game sent, and with
-        /// it what the picture is for this frame (<see cref="Kind"/>), for <see cref="Render"/> and the screen. The zoom inset
-        /// needs a headset: without one the eyes are drawn with the game camera's own field of view, so they zoom as a
-        /// monitor does already. Never throws.
+        /// it what the picture is for this frame (<see cref="Kind"/>), for <see cref="Render"/> and the screen. Never throws.
         /// </summary>
         /// <param name="env">The renderer's environment matrices, as the head camera.</param>
-        /// <param name="headset">This frame goes to the headset.</param>
-        public static Kind Find(object env, bool headset)
+        public static Kind Find(object env)
         {
             frameKind = Kind.None;
             if (!available)
                 return Kind.None;
             try
             {
-                if (!TryGetPose(env, out Matrix pose, out float field, out float zoom, out Kind kind))
+                if (!TryGetPose(env, out Matrix pose, out float field, out Kind kind))
                     return Kind.None;
-                if (kind == Kind.Zoom && !headset)
-                {
-                    if (!noHeadsetNoted)
-                        Log.Info("Zoom inset: no headset, so the eyes are drawn with the game's zoomed field of view, as on a monitor; no inset");
-                    noHeadsetNoted = true;
-                    kind = Kind.None;
-                }
                 framePose = pose;
                 frameField = field;
-                frameZoom = zoom;
                 frameKind = kind;
             }
             catch (Exception e)
             {
                 available = false;
                 haveImage = false;
-                Log.Error(e, "External view: finding this frame's camera failed; the screen, the zoom inset and the death view are off for the rest of the run");
+                Log.Error(e, "External view: finding this frame's camera failed; the screen and the forced view are off for the rest of the run");
             }
             return frameKind;
         }
 
         /// <summary>
         /// Draws this frame's picture (<see cref="Find"/> says which) after the eyes, and puts the head camera back: the dash
-        /// screen's view (every other frame with <see cref="VRSettings.ExternalViewHalfRate"/>), the zoom inset's (every other
-        /// frame with <see cref="ZoomInset.HalfRate"/>) or the death view's. Never throws; on a failure the screen turns itself off.
+        /// screen's view (every other frame with <see cref="VRSettings.ExternalViewHalfRate"/>) or the forced view's. Never throws;
+        /// on a failure the screen turns itself off.
         /// </summary>
         /// <param name="env">The renderer's environment matrices, as the head camera.</param>
         /// <param name="head">The head camera, to put back.</param>
@@ -90,7 +79,7 @@ namespace SpaceEngineersVR.Rendering
                 }
                 return;
             }
-            bool halfRate = kind == Kind.Zoom ? ZoomInset.HalfRate : kind == Kind.Screen && VRSettings.ExternalViewHalfRate;
+            bool halfRate = kind == Kind.Screen && VRSettings.ExternalViewHalfRate;
             if (haveImage && !changed && halfRate && (frame & 1) != 0)
                 return;
 
@@ -99,12 +88,9 @@ namespace SpaceEngineersVR.Rendering
             Matrix tracking = EyeRenderer.Head;
             switch (kind)
             {
-                case Kind.Zoom:
-                    eyeFromHead = ZoomInset.Eye(tracking, frameZoom, out fov) * trackingToCamera;
-                    break;
-                case Kind.Death:
+                case Kind.Forced:
                     // The game's own camera, without the head it may hold: where the death camera or the respawn screen put it.
-                    DeathView.Place(tracking);
+                    ForcedView.Place(tracking);
                     eyeFromHead = trackingToCamera;
                     fov = Tangents(frameField);
                     break;
@@ -132,6 +118,7 @@ namespace SpaceEngineersVR.Rendering
 
             try
             {
+                FitSize(kind);
                 EnsureTexture();
                 EnsureScreenSet();
 
@@ -238,21 +225,17 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// The picture changes what it is for: the zoom inset is placed where the head looks, the death view's screen is
-        /// placed afresh, and the pass is timed again as a first one for the log.
+        /// The picture changes what it is for: the forced view's screen is placed afresh, and the pass is timed again as a
+        /// first one for the log.
         /// </summary>
         private static void Switched(Kind from, Kind to)
         {
-            if (from == Kind.Death)
-                DeathView.Ended();
+            if (from == Kind.Forced)
+                ForcedView.Ended();
             switch (to)
             {
-                case Kind.Zoom:
-                    ZoomInset.Place(EyeRenderer.Head);
-                    Retime("the zoom inset came on");
-                    break;
-                case Kind.Death:
-                    Retime("the death view came on");
+                case Kind.Forced:
+                    Retime("the forced view came on");
                     break;
                 case Kind.Screen:
                     if (from != Kind.None)
@@ -263,13 +246,12 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// The camera sent with the game camera this pass is relative to, as the eye-from-head matrix <see cref="EnvMatrices.MakeEye"/>
-        /// takes, its vertical field of view in radians, the zoom, and what the picture was for in that frame.
+        /// takes, its vertical field of view in radians, and what the picture was for in that frame.
         /// </summary>
-        private static bool TryGetPose(object env, out Matrix eyeFromHead, out float field, out float zoom, out Kind kind)
+        private static bool TryGetPose(object env, out Matrix eyeFromHead, out float field, out Kind kind)
         {
             eyeFromHead = Matrix.Identity;
             field = MathHelper.ToRadians(FieldOfViewDegrees);
-            zoom = 1f;
             kind = Kind.None;
             MatrixD view = EnvMatrices.ViewD(env);
             long now = Stopwatch.GetTimestamp();
@@ -287,7 +269,6 @@ namespace SpaceEngineersVR.Rendering
                     {
                         eyeFromHead = (Matrix)poses[index];
                         field = fields[index];
-                        zoom = zooms[index];
                         kind = kinds[index];
                         return true;
                     }
@@ -297,7 +278,6 @@ namespace SpaceEngineersVR.Rendering
                 // The camera the renderer holds is not among the recent ones: the newest chase camera is a frame off at worst.
                 eyeFromHead = (Matrix)poses[newest];
                 field = fields[newest];
-                zoom = zooms[newest];
                 kind = kinds[newest];
             }
             // Every frame is kept now, wanted or not: a miss is worth a line only when there is a picture to draw.

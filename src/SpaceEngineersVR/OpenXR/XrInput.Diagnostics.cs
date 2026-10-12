@@ -26,7 +26,9 @@ namespace SpaceEngineersVR.OpenXR
                     if (state.InteractionProfile == loggedProfile[h])
                         continue;
                     loggedProfile[h] = state.InteractionProfile;
-                    Log.Info($"OpenXR {HandNames[h]} hand interaction profile: {PathName(state.InteractionProfile)}");
+                    string profile = PathName(state.InteractionProfile);
+                    Log.Info($"OpenXR {HandNames[h]} hand interaction profile: {profile}");
+                    HintHandTracking(profile);
                     SetWand(h, state.InteractionProfile == viveProfile);
                     // The grip fit (the palm's turn and shift on the grip) is kept per profile.
                     GripFit.SetProfile((Hand)h, state.InteractionProfile == 0 ? null : PathName(state.InteractionProfile));
@@ -36,6 +38,21 @@ namespace SpaceEngineersVR.OpenXR
             {
                 Log.Warn($"Could not read the interaction profiles: {e.Message}");
             }
+        }
+
+        private bool handTrackingHinted;
+
+        /// <summary>
+        /// A Quest gives the simple controller only for tracked hands: its controllers are asleep or hand tracking took over.
+        /// Logged once a run, as it explains hands with no buttons and arms that drop while the hands are out of view.
+        /// </summary>
+        private void HintHandTracking(string profile)
+        {
+            if (handTrackingHinted || profile != "/interaction_profiles/khr/simple_controller"
+                || (XrRuntime.SystemName ?? string.Empty).IndexOf("Quest", StringComparison.OrdinalIgnoreCase) < 0)
+                return;
+            handTrackingHinted = true;
+            Log.Info("OpenXR hands: the Quest is tracking hands, not controllers (controllers asleep or hand tracking on): pick up the controllers");
         }
 
         /// <summary>

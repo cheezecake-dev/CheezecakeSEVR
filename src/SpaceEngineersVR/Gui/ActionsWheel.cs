@@ -36,6 +36,9 @@ namespace SpaceEngineersVR.Gui
     /// <item>Then what the game has a key for and its radial leaves out: on the build ring Default mount point, and the voxel
     /// hand's Voxel material page (<see cref="BuildEntries"/>); Remote access on the Menu page and an Emotes page
     /// (<see cref="GameControlEntries"/>).</item>
+    /// <item>Then Ping and Mark GPS, which aim at what the hand points at (<see cref="PingEntries"/>).</item>
+    /// <item>Last, "Ship model", which shows and puts away the model of the ship in your hand, and while it is out its
+    /// "Model overlays" page (<see cref="ShipModelEntries"/>).</item>
     /// </list>
     /// Left out, as the hands have no use for them: the keyboard help screen, the free spectator camera (nothing moves it
     /// in VR: <see cref="VRControls"/>), and the camera switch while third person is off (<see cref="VRSettings.ThirdPerson"/>).
@@ -210,6 +213,8 @@ namespace SpaceEngineersVR.Gui
                 ExternalViewEntries.AddTo(top);
                 QuickActionsScreen.AddTo(top);
                 GameControlEntries.AddTo(top);
+                PingEntries.AddTo(top);
+                ShipModelEntries.AddTo(top);
                 Vector3 at = Anchor(hand, out float fromHead);
                 MyGuiSandbox.AddScreen(new ActionsWheelScreen(top, hand, gripHeld));
                 Log.Info($"Actions wheel: opened at the {hand.ToString().ToLowerInvariant()} hand, fixed at ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}), {fromHead:0.00} m from the head; {subtype}, {top.Count} entries ({Names(top)}); left out: {left}");

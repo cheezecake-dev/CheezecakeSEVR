@@ -72,6 +72,16 @@ namespace SpaceEngineersVR.OpenXR
         private readonly ulong[] gripSpaces = new ulong[2];
         private readonly ulong[] aimSpaces = new ulong[2];
         private readonly ulong[] palmSpaces = new ulong[2];
+
+        // The head, to refuse a hand placed inside the headset (InsideHeadset); 0 if the runtime would not make it.
+        private ulong viewSpace;
+
+        // Render thread only: per hand, whether its last poses were refused as inside the headset (logged when it changes).
+        private readonly bool[] insideHeadset = new bool[2];
+
+        // Render thread only: per hand, the time (XrTime) it was first seen beyond HeadsetRelease while inside; 0 when not.
+        private readonly long[] outsideSince = new long[2];
+
         private ulong actionSet;
         private ulong gripAction, aimAction, palmAction, triggerAction, squeezeAction, stickAction, stickClickAction;
         private ulong aAction, bAction, xAction, yAction, menuAction, hapticAction;
@@ -238,6 +248,14 @@ namespace SpaceEngineersVR.OpenXR
                 if (palmAction != 0)
                     palmSpaces[h] = CreateActionSpace(palmAction, handPaths[h]);
             }
+            var view = new XrReferenceSpaceCreateInfo
+            {
+                Type = XrStructureType.ReferenceSpaceCreateInfo,
+                ReferenceSpaceType = XrReferenceSpaceType.View,
+                PoseInReferenceSpace = XrPosef.Identity,
+            };
+            if (Xr.xrCreateReferenceSpace(session, ref view, out viewSpace) < 0)
+                viewSpace = 0;
             Log.Info($"OpenXR input ready: action set 'gameplay' attached, bindings suggested for {taken.Count} interaction profile(s) " +
                      $"({string.Join(", ", taken)}), palm pose {(palmAction != 0 ? "asked for (" + XrConst.PalmPoseExtension + ")" : "not offered")}");
         }
@@ -292,6 +310,9 @@ namespace SpaceEngineersVR.OpenXR
                     Xr.xrDestroySpace(palmSpaces[h]);
                 gripSpaces[h] = aimSpaces[h] = palmSpaces[h] = 0;
             }
+            if (viewSpace != 0)
+                Xr.xrDestroySpace(viewSpace);
+            viewSpace = 0;
             if (actionSet != 0)
                 Xr.xrDestroyActionSet(actionSet); // takes its actions with it
             actionSet = 0;
@@ -519,15 +540,79 @@ namespace SpaceEngineersVR.OpenXR
             }
         }
 
-        /// <summary>Grip, aim and palm at <paramref name="time"/>; a pose that is not valid keeps what it was.</summary>
+        /// <summary>
+        /// Grip, aim and palm at <paramref name="time"/>; a pose that is not valid keeps what it was, and so do all three
+        /// while the hand is inside the headset (<see cref="InsideHeadset"/>).
+        /// </summary>
         private void LocatePoses(int h, long time, ref HandState s)
         {
-            bool gripped = Locate(gripSpaces[h], time, ref s.Grip, out s.GripFlags);
-            bool aimed = Locate(aimSpaces[h], time, ref s.Aim, out s.AimFlags);
+            Matrix grip = s.Grip, aim = s.Aim;
+            bool gripped = Locate(gripSpaces[h], time, ref grip, out s.GripFlags);
+            bool aimed = Locate(aimSpaces[h], time, ref aim, out s.AimFlags);
+            bool near = gripped && aimed && InsideHeadset(time, grip.Translation, aim.Translation, insideHeadset[h] ? HeadsetRelease : HeadsetShell);
+            bool inside = insideHeadset[h];
+            if (near)
+            {
+                inside = true;
+                outsideSince[h] = 0;
+            }
+            else if (inside)
+            {
+                if (outsideSince[h] == 0)
+                    outsideSince[h] = time;
+                if (time - outsideSince[h] >= HeadsetReleaseHold)
+                    inside = false;
+            }
+            if (inside != insideHeadset[h])
+            {
+                insideHeadset[h] = inside;
+                Log.Info(inside
+                    ? $"OpenXR {HandNames[h]} hand reported inside the headset (hand tracking, the hand out of view): not tracked until it leaves"
+                    : $"OpenXR {HandNames[h]} hand no longer reported inside the headset");
+            }
+            if (inside)
+            {
+                s.Tracked = s.PalmTracked = false;
+                return;
+            }
+            if (gripped)
+                s.Grip = grip;
+            if (aimed)
+                s.Aim = aim;
             s.Tracked = gripped && aimed;
             // Without the palm action bound the space is unlocatable, which reads as not valid.
             s.PalmFlags = 0;
             s.PalmTracked = palmSpaces[h] != 0 && Locate(palmSpaces[h], time, ref s.Palm, out s.PalmFlags, optional: true);
+        }
+
+        /// <summary>A grip or aim pose this close to the eyes (metres) is inside the headset's shell: no hand or controller is there.</summary>
+        private const float HeadsetShell = 0.10f;
+
+        /// <summary>
+        /// A hand already refused leaves only once its poses have stayed beyond this (metres) for <see cref="HeadsetReleaseHold"/>:
+        /// the stand-in pose hovers around the shell edge, and entering and leaving at one radius made it flap, logging each
+        /// change and jumping the arm between pose and animation.
+        /// </summary>
+        private const float HeadsetRelease = 0.15f;
+
+        /// <summary>How long (XrTime, nanoseconds) the poses must stay beyond <see cref="HeadsetRelease"/> to leave.</summary>
+        private const long HeadsetReleaseHold = 300_000_000;
+
+        /// <summary>
+        /// The hand's grip or aim is inside the headset. A Quest tracking hands (the controllers put down) reports a hand it
+        /// cannot see at a fixed place a few centimetres in front of the eyes, both aims on one point, flagged valid and
+        /// tracked; an arm drawn there is cut by the near plane into shards across the view.
+        /// </summary>
+        private bool InsideHeadset(long time, Vector3 grip, Vector3 aim, float radius)
+        {
+            if (viewSpace == 0)
+                return false;
+            var head = new XrSpaceLocation { Type = XrStructureType.SpaceLocation };
+            if (Xr.xrLocateSpace(viewSpace, baseSpace, time, ref head) < 0 || (head.LocationFlags & XrConst.SpaceLocationPositionValid) == 0)
+                return false;
+            var eyes = new Vector3(head.Pose.Position.X, head.Pose.Position.Y, head.Pose.Position.Z);
+            float shell = radius * radius;
+            return Vector3.DistanceSquared(grip, eyes) < shell || Vector3.DistanceSquared(aim, eyes) < shell;
         }
 
         /// <summary>A touch sensor; one the runtime fails to read counts as absent, never as a reason to take the controllers down.</summary>
@@ -620,7 +705,7 @@ namespace SpaceEngineersVR.OpenXR
                 catch (XrException e)
                 {
                     // Not worth taking the controllers down for.
-                    Log.Warn($"Haptics are off for the rest of the run: {e.Message}");
+                    Log.Warn($"Haptics are off for this headset session: {e.Message}");
                     hapticsFailed = true;
                 }
             }

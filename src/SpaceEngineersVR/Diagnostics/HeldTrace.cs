@@ -122,7 +122,7 @@ namespace SpaceEngineersVR.Hands
             call.World = world;
             call.Back = weapon.WorldMatrix;
             call.ModelInv = character.PositionComp.WorldMatrixNormalizedInv;
-            call.Target = ((MatrixD)item.RightHand * world * call.ModelInv).Translation;
+            call.Target = ((MatrixD)ItemSpots.Tool(item) * world * call.ModelInv).Translation;
         }
 
         private static Call Begin(MyCharacter character, bool forArms)
@@ -240,7 +240,7 @@ namespace SpaceEngineersVR.Hands
                 hasLast = true;
                 if (state.Tracked)
                 {
-                    Vector3D raw = ((MatrixD)HandIK.PalmTarget(Hand.Right, state) * trackingToModel).Translation;
+                    Vector3D raw = ((MatrixD)HandIK.PalmTarget(VRSettings.DominantHand, state) * trackingToModel).Translation;
                     line.Append(" raw palm ").Append(Pos(raw)).Append(" target-raw ").Append(Cm(at - raw));
                 }
                 // The tracking-to-body move's last column, which a turn and a move keep at (0, 0, 0, 1): what is off it

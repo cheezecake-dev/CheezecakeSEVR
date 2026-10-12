@@ -152,6 +152,21 @@ namespace SpaceEngineersVR.Hands
         public static void Patch(Harmony harmony)
         {
             Log.Info("Build mode: the left stick click held, the right hand turns the block in hand or the paste, the right stick left/right a 90 deg turn and up/down distance, A/B block stage (the click is not sprint or zero-g pitch and roll then); the right grip is as on foot (use, grab); A/B otherwise jump and the jetpack, right stick click block size, X symmetry, haptics on place, remove and refuse");
+            PatchRegistry.Hook(harmony, typeof(BuildMode), "Build mode", "the rotation hints stay in the corner of each eye",
+                "rotation hints", AccessTools.Method(typeof(MyBlockBuilderRotationHints), nameof(MyBlockBuilderRotationHints.CalculateRotationHints)),
+                prefix: nameof(NoRotationHints));
+        }
+
+        /// <summary>
+        /// Prefix of MyBlockBuilderRotationHints.CalculateRotationHints: while the picture is VR's, the hints are worked out but
+        /// not drawn. They are a flat widget in a corner of the screen (a viewport of their own) labelled with the rotate keys;
+        /// in the headset that is the edge of the lens, and the hand turns the block. The game's own switches do not fit: its
+        /// RotationHints setting is the player's saved option, and MyFakes.ENABLE_ROTATION_HINTS misses the paste's hints.
+        /// </summary>
+        private static void NoRotationHints(ref bool draw)
+        {
+            if (Rendering.StereoPatches.VRPicture)
+                draw = false;
         }
 
         /// <summary>From <see cref="HandPlacement.HookNow"/>, on the first frame of a session: the cube builder's own methods can be patched by then.</summary>

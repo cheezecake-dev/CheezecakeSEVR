@@ -30,6 +30,7 @@ namespace SpaceEngineersVR.Gui
             (Display,   "External view",  "externalViewSize"),
             (Display,   "External view",  "externalViewHalfRate"),
             (Display,   "External view",  "moveViewByHand"),
+            (Display,   "Headset",        "refreshRate"),
             (Display,   "Headset",        "dynamicResolution"),
             (Display,   "Headset",        "lensMask"),
             (Display,   "Headset",        "headsetAudio"),
@@ -60,18 +61,31 @@ namespace SpaceEngineersVR.Gui
             (Controls,  "Hand flying",    "stickMaxAngle"),
             (Controls,  "Hand flying",    "throttleTravel"),
             (Controls,  "Hand flying",    "handFlyingSensitivity"),
+            (Controls,  "Ping",           "pingHoldX"),
+            (Controls,  "Ping",           "pingSeconds"),
+            (Controls,  "Ping",           "pingChat"),
 
             (Hands,     "Grab",           "grabToUse"),
             (Hands,     "Grab",           "grabItems"),
             (Hands,     "Grab",           "grabHulls"),
+            (Hands,     "Grab",           "pushOffMaxSpeed"),
             (Hands,     "Grab",           "grabLadders"),
             (Hands,     "Touch",          "fingerPress"),
             (Hands,     "Touch",          "helmetAndLamp"),
             (Hands,     "Touch",          "handsStopOnGlass"),
             (Hands,     "Tools",          "twoHandedTools"),
             (Hands,     "Tools",          "twoHandGripStays"),
+            (Hands,     "Tools",          "physicalReload"),
             (Hands,     "Tools",          "kickback"),
+            (Hands,     "Tools",          "gameRecoil"),
             (Hands,     "Haptics",        "hapticStrength"),
+            (Hands,     "Haptics",        "hapticHeartbeat"),
+            (Hands,     GripFitSettings.GroupName, "gripFitPitch"),
+            (Hands,     GripFitSettings.GroupName, "gripFitRoll"),
+            (Hands,     GripFitSettings.GroupName, "gripFitYaw"),
+            (Hands,     GripFitSettings.GroupName, "gripFitX"),
+            (Hands,     GripFitSettings.GroupName, "gripFitY"),
+            (Hands,     GripFitSettings.GroupName, "gripFitZ"),
 
             (Interface, "Interface parts", "wristStatus"),
             (Interface, "Interface parts", "showToolbarOnFoot"),
@@ -80,15 +94,25 @@ namespace SpaceEngineersVR.Gui
             (Interface, "HUD",            "hudDistance"),
             (Interface, "HUD",            "hudWidth"),
             (Interface, "HUD",            "hudVisor"),
+            (Interface, "HUD",            "hudTextSize"),
+            (Interface, "HUD",            "hudTextBacking"),
             (Interface, "Menus",          "menuDistance"),
             (Interface, "Menus",          "menuWidth"),
             (Interface, "Menus",          "mainMenuWidth"),
             (Interface, "Menus",          "vrKeyboard"),
             (Interface, "Wrist panel",    "wristPanel"),
+            (Interface, "Wrist panel",    "wristPanelSize"),
+            (Interface, "Datapad",        "datapad"),
+            (Interface, "Datapad",        "datapadWidth"),
             (Interface, "Prompts",        "vrButtonNames"),
             (Interface, "Wheels",         "vrRadialMenu"),
             (Interface, "Wheels",         "vrActionsWheel"),
             (Interface, "Cockpit",        "touchToolbar"),
+            (Interface, "Ship model",     "shipModel"),
+            (Interface, "Ship model",     "shipModelThrusters"),
+            (Interface, "Ship model",     "shipModelPower"),
+            (Interface, "Ship model",     "shipModelDoors"),
+            (Interface, "Ship model",     "shipModelWeapons"),
         };
 
         /// <summary>The tab for a setting with no line in <see cref="Places"/>, by its section.</summary>
@@ -110,11 +134,38 @@ namespace SpaceEngineersVR.Gui
         /// <summary>A caption in a tab, and the settings under it.</summary>
         internal sealed class Group
         {
-            public Group(string name) => Name = name;
+            public Group(string name)
+            {
+                Name = name;
+                Caption = name;
+            }
 
             public string Name { get; }
 
+            /// <summary>What the screen writes over the group's rows: its name, unless the group says more.</summary>
+            public string Caption { get; set; }
+
+            /// <summary>A button under the group's rows, or null.</summary>
+            public GroupButton Button { get; set; }
+
             public List<Setting> Rows { get; } = new List<Setting>();
+        }
+
+        /// <summary>A button in a group: its text, its tooltip and what it does.</summary>
+        internal sealed class GroupButton
+        {
+            public GroupButton(string text, string tooltip, Action click)
+            {
+                Text = text;
+                Tooltip = tooltip;
+                Click = click;
+            }
+
+            public string Text { get; }
+
+            public string Tooltip { get; }
+
+            public Action Click { get; }
         }
 
         /// <summary>A tab, and its groups.</summary>

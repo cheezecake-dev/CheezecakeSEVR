@@ -26,6 +26,9 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Debug: the HUD projects with the game camera (<see cref="RenderDebug"/> HudCamera=0).</summary>
         public static bool Off { get; set; }
 
+        /// <summary>The HUD projects with the game camera: the debug switch, or the picture is not VR's yet (<see cref="StereoPatches.VRPicture"/>).</summary>
+        private static bool GameCamera => Off || !StereoPatches.VRPicture;
+
         /// <summary>The HUD's classes; every method in them (and in the classes nested in them) that reads the camera.</summary>
         private static readonly Type[] HudTypes = { typeof(MyHudMarkerRender), typeof(MyHudCrosshair), typeof(MyGuiScreenHudBase), typeof(MyGuiScreenHudSpace) };
 
@@ -58,16 +61,16 @@ namespace SpaceEngineersVR.Rendering
         }
 
         public static MatrixD View(MyCamera camera) =>
-            Off ? camera.ViewMatrix : camera.ViewMatrix * CameraHeadLink.HeadFromSentCamera;
+            GameCamera ? camera.ViewMatrix : camera.ViewMatrix * CameraHeadLink.HeadFromSentCamera;
 
         public static MatrixD World(MyCamera camera) =>
-            Off ? camera.WorldMatrix : MatrixD.Invert(View(camera));
+            GameCamera ? camera.WorldMatrix : MatrixD.Invert(View(camera));
 
         public static MatrixD Projection(MyCamera camera)
         {
             MatrixD projection = camera.ProjectionMatrix;
             Rectangle screen = MyGuiManager.GetFullscreenRectangle();
-            if (Off || screen.Width <= 0 || screen.Height <= 0)
+            if (GameCamera || screen.Width <= 0 || screen.Height <= 0)
                 return projection;
             // Through the panel's edges; depth as it was.
             double tanHalfWidth = Math.Tan(MathHelper.ToRadians(VRSettings.HudWidthDegrees) / 2.0);
@@ -78,13 +81,13 @@ namespace SpaceEngineersVR.Rendering
         }
 
         public static MatrixD ViewProjection(MyCamera camera) =>
-            Off ? camera.ViewProjectionMatrix : View(camera) * Projection(camera);
+            GameCamera ? camera.ViewProjectionMatrix : View(camera) * Projection(camera);
 
         public static Vector3D WorldToScreen(MyCamera camera, ref Vector3D worldPos) =>
             Vector3D.Transform(worldPos, ViewProjection(camera));
 
         public static Vector3 Forward(MyCamera camera) =>
-            Off ? camera.ForwardVector : (Vector3)World(camera).Forward;
+            GameCamera ? camera.ForwardVector : (Vector3)World(camera).Forward;
 
         private static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {

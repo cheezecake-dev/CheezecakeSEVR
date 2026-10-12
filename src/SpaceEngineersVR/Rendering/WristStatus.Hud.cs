@@ -5,7 +5,11 @@ using System.Collections;
 using System.Collections.Generic;
 using Sandbox;
 using Sandbox.Game.GUI;
+using Sandbox.Game.Gui;
+using Sandbox.Game.World;
+using Sandbox.Graphics;
 using Sandbox.Graphics.GUI;
+using SpaceEngineersVR.Hands;
 using SpaceEngineersVR.Input;
 using VRage.Game.ObjectBuilders.Definitions;
 using VRage.Utils;
@@ -45,6 +49,9 @@ namespace SpaceEngineersVR.Rendering
             public Vector2 Placed;
             public float Shift;
 
+            /// <summary>The control is at the mirror of its place, on the right (<see cref="SpeedOnRight"/>).</summary>
+            public bool Right;
+
             public void Apply(bool hide)
             {
                 foreach (MyObjectBuilder_StatVisualStyle style in Styles)
@@ -61,7 +68,7 @@ namespace SpaceEngineersVR.Rendering
         /// RenderDebug WristStatus=0, without VR, and if the wrist screen failed or its hooks did. Read on the game thread,
         /// by <see cref="HudToolbar"/> too.
         /// </summary>
-        internal static bool HudHidden => !Off && !hudBroken && !Failed && VRSettings.WristStatus && VRInput.Active;
+        internal static bool HudHidden => !Off && !hudBroken && !Failed && VRSettings.WristStatus && VRInput.Layout;
 
         /// <summary>The wrist screen is off for this run: its hooks failed, or it failed three times.</summary>
         private static bool Failed => broken || errors >= 3;
@@ -71,7 +78,7 @@ namespace SpaceEngineersVR.Rendering
         {
             if (Off)
                 return "debug WristStatus=0";
-            if (!VRInput.Active)
+            if (!VRInput.Layout)
                 return "no VR";
             if (!VRSettings.WristStatus)
                 return "Status on the wrist is off";
@@ -154,9 +161,19 @@ namespace SpaceEngineersVR.Rendering
             string against = null;
             float shift = hide ? SpeedShift(gate, home, at, out against) : 0f;
             var want = new Vector2(home.X + shift, home.Y);
+            bool right = SpeedOnRight;
+            if (right)
+                want.X = Mirrored(gate, hide, at.X, want.X);
             if (want != at)
                 controls.Position = want;
             gate.Placed = want;
+            if (right != gate.Right)
+            {
+                gate.Right = right;
+                Log.Info(right
+                    ? $"Wrist status: left-handed on foot, the HUD's speed dial and dampeners are mirrored to the right (control x {want.X:0} of {MySandboxGame.ScreenSize.X}), clear of a gun in the left hand"
+                    : "Wrist status: the HUD's speed dial and dampeners back on the left");
+            }
             if (Math.Abs(shift - gate.Shift) >= 0.5f)
             {
                 gate.Shift = shift;
@@ -190,6 +207,46 @@ namespace SpaceEngineersVR.Rendering
             }
             against = "last center plate seen";
             return gate.Shift;
+        }
+
+        /// <summary>
+        /// Left-handed on foot or on the jetpack, the left plate's control goes to the mirror of its place across the HUD's
+        /// middle: on the left, a gun or tool in the left hand covers the speed dial. In a seat it stays where the game puts
+        /// it, beside the ship's own right plate. Read on the HUD's draw task, by <see cref="HudVisor"/> too.
+        /// </summary>
+        internal static bool SpeedOnRight =>
+            VRInput.Layout && VRSettings.DominantHand == Hand.Left && HandTools.IsLocalOnFoot(MySession.Static?.LocalCharacter);
+
+        /// <summary>This control is the left plate's and is drawn on the right now (<see cref="SpeedOnRight"/>): the visor takes it as a bottom-right part.</summary>
+        internal static bool SpeedPlateOnRight(MyStatControls controls) =>
+            !hudBroken && Gates.TryGetValue(controls, out Gate gate) && gate.Plate != null && SpeedOnRight;
+
+        /// <summary>
+        /// The control's x that puts the plate's shown part (the speed half while the wrist has the rest, else all of it),
+        /// as it is at <paramref name="placed"/>, at its mirror across the HUD's middle, but no nearer the middle than the
+        /// HUD's margin right of the gravity indicator, which the left side has no counterpart of. The plate is where the
+        /// control is at <paramref name="at"/> now.
+        /// </summary>
+        private static float Mirrored(Gate gate, bool hide, float at, float placed)
+        {
+            MyStatControlImage plate = gate.Plate;
+            float cut = hide ? PlateCut : 0f;
+            float left = placed + (plate.Position.X - at) + plate.Size.X * cut;
+            float width = plate.Size.X * (1f - cut);
+            float mirrored = MySandboxGame.ScreenSize.X - (left + width);
+            float margin = (gate.Definition?.Position.X ?? 0f) * MySandboxGame.ScreenSize.X;
+            return placed + Math.Max(mirrored, GravityRight() + margin) - left;
+        }
+
+        /// <summary>The gravity indicator's right edge, HUD pixels, placed as the game places it (MyHudControlGravityIndicator.RecalculatePosition); 0 without one.</summary>
+        private static float GravityRight()
+        {
+            MyObjectBuilder_GravityIndicatorVisualStyle style = MyHud.HudDefinition?.GravityIndicator;
+            if (style == null)
+                return 0f;
+            float scale = MyHud.HudDefinition.CustomUIScale ?? MyGuiManager.GetSafeScreenScale();
+            Vector2 at = MyUtils.AlignCoord(style.OffsetPx * scale, MySandboxGame.ScreenSize, style.OriginAlign);
+            return at.X + style.SizePx.X * scale;
         }
 
         private static Gate Prepare(MyStatControls controls)

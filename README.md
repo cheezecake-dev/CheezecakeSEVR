@@ -18,7 +18,8 @@ It is a plugin for [Pulsar](https://github.com/SpaceGT/Pulsar), installed from t
 ## Requirements
 
 - **Space Engineers 1** on Windows (Steam), started through [Pulsar](https://github.com/SpaceGT/Pulsar)'s **Legacy**
-  launcher (`Legacy.exe`). Pulsar's other launchers list the plugin as not supported. This is not for Space Engineers 2.
+  launcher (`Legacy.exe`). Pulsar's Interim launcher (.NET 10) also lists the plugin, but is untested on Windows. On
+  Linux, see [Linux](#linux-early). This is not for Space Engineers 2.
 - **A PC VR headset** with an OpenXR runtime that supports Direct3D 11.
   - **Tested:** Meta Quest 3 over Meta Link (cable), on an NVIDIA RTX 3060.
   - **Should work, untested:** Air Link, Virtual Desktop, and SteamVR headsets.
@@ -47,34 +48,36 @@ It is a plugin for [Pulsar](https://github.com/SpaceGT/Pulsar), installed from t
 
 To play flat again, disable the plugin in Pulsar's Plugins menu, or start with `-novr`.
 
-## Linux (early, one tested setup)
+## Linux (early)
 
-Native Linux, no Proton: Pulsar runs the game on .NET 10, SDL3 and DXVK Native, which turns Direct3D 11 into Vulkan.
-Tested: Meta Quest 3 through WiVRn over USB, two RTX 3060s, Ubuntu 26.04.
-How it works and what it took: [docs/LINUX.md](docs/LINUX.md).
+Native Linux, no Proton: Pulsar's **Interim** launcher runs the game on .NET 10, SDL3 and DXVK Native, which turns
+Direct3D 11 into Vulkan. The plugin installs from the PluginHub as on Windows, and Pulsar compiles it for Linux.
+How it works: [docs/LINUX.md](docs/LINUX.md).
 
-You need Space Engineers (Steam), [Pulsar for Linux](https://github.com/SpaceGT/Pulsar/releases) (the linux-x64 build,
-started once so it installs CometWorks' linux-compat), and a headset with [WiVRn](https://github.com/WiVRn/WiVRn). Then:
+You need:
+- Space Engineers (Steam) and [Pulsar for Linux](https://github.com/SpaceGT/Pulsar/releases) (the linux-x64 build), started
+  once with `Interim.bin` so it installs CometWorks' linux-compat.
+- A headset with [WiVRn](https://github.com/WiVRn/WiVRn): the server on the PC, the app on the headset.
+- Your distribution's **OpenXR loader** (`libopenxr-loader1`, `openxr-libs` or `openxr`). Nothing is shipped for Linux:
+  the plugin uses this one.
+- **DXVK Native with a patch.** WiVRn and Monado need Vulkan extensions that DXVK Native does not enable; without them the
+  plugin stops before the headset session and logs why. Until CometWorks ships the fix
+  ([patch](tools/linux/dxvk-native-xr-external-fd.patch)), the setup script builds DXVK with it (one to several minutes)
+  and copies it into linux-compat, keeping the originals. **Run the script again after a linux-compat update**, which
+  replaces the files.
+
+The script installs the loader and DXVK, checks for WiVRn and `adb`, and with `--launcher` adds a menu entry that starts
+the WiVRn server, runs `adb reverse` if a cable is attached, and starts Pulsar. Close Pulsar first.
 
 ```sh
 git clone https://github.com/cheezecake-dev/CheezecakeSEVR.git
 cd CheezecakeSEVR
-tools/linux/setup.sh --install-deps --launcher
+tools/linux/setup.sh --no-plugin --install-deps --launcher
 ```
 
-The script finds Pulsar and the game, and does what is missing:
-- **OpenXR loader** from your distribution (`libopenxr-loader1`, `openxr-libs` or `openxr`). `--install-deps` installs it.
-- **DXVK Native with a patch.** WiVRn and Monado need Vulkan extensions that DXVK Native does not enable, so the game
-  crashes when the headset session starts. Until CometWorks ships the fix
-  ([patch](tools/linux/dxvk-native-xr-external-fd.patch)), the script builds DXVK with it (one to several minutes) and copies it
-  into linux-compat, keeping the originals. **Run the script again after a linux-compat update**, which replaces the files.
-  It skips the build when linux-compat already has the fix.
-- **The plugin**, registered in Pulsar as a development folder, so it appears enabled in the plugin list.
-- **WiVRn**: checks for the server and `adb`, and prints how to install them.
-- `--launcher` adds a menu entry that starts the WiVRn server, runs `adb reverse` if a cable is attached, and starts Pulsar.
-
-`tools/linux/setup.sh --check` only reports what is installed. `--help` lists the other options (`--pulsar`, `--se-bin64`,
-`--no-dxvk`). Close Pulsar before running it.
+Then start the game with `Interim.bin`, and in the main menu click **Plugins**, then **+**, enable **Cheezecake's SE VR**
+and click **Apply**. `--check` only reports what is installed; `--help` lists the other options. Without `--no-plugin`
+the script registers the clone as a development folder instead, for working on the plugin; enable only one of the two.
 
 **Headset settings that work.** In the WiVRn app, disconnect first, turn on Extended configuration, and set Foveated
 encoding to 30% or lower, Render resolution 120%, Refresh rate 90, Bitrate 200 Mbit/s. For a cable, run
@@ -86,6 +89,9 @@ encoding to 30% or lower, Render resolution 120%, Refresh rate 90, Bitrate 200 M
 You need not set an OpenXR runtime. If none is active the plugin picks the first installed of WiVRn (Flatpak, then
 system), Monado and SteamVR, and logs which in `SpaceEngineersVR.log`. To use another, make it the active runtime or start
 the game with `XR_RUNTIME_JSON` set to its `.json` file; your choice always wins.
+
+**Limits.** WiVRn is the only Linux runtime played so far; Monado and SteamVR should work but are untested. Under
+Proton the plugin is not offered: use native Pulsar.
 
 ## First run
 
@@ -105,6 +111,7 @@ the game with `XR_RUNTIME_JSON` set to its `.json` file; your choice always wins
   - a comfort vignette;
   - camera shake (off by default);
   - zero-g pitch and roll.
+- **Walls:** lean your head into a wall, a canopy or a dashboard and the view fades to black rather than going through it.
 - **Menus:** point at them with your right hand. The trigger clicks, the grip right-clicks, the stick scrolls, and B goes
   back.
 - **The HUD is on your visor:** the toolbar, suit status, block info, notifications, chat and the rest of the HUD sit
@@ -121,7 +128,9 @@ the game with `XR_RUNTIME_JSON` set to its `.json` file; your choice always wins
 ## Controls
 
 Button names are the Quest (Touch) controller's: A and B are on the right controller, and X, Y and Menu on the left.
-This is the default right-handed setup. With **Left-handed** on, the left hand points the menu laser and holds the tools.
+This is the default right-handed setup. With **Left-handed** on, the left hand points the menu laser and holds the tools
+and guns, and the right hand takes the front grip. With a gun or tool in hand on foot the triggers swap (the left one
+fires, welds, grinds and drills; the right is the secondary) and the left stick click reloads; the datapad stows on the right forearm. Building and seats keep the buttons below.
 The keyboard, mouse and a gamepad keep working alongside the controllers. The game's own prompts name these buttons, for
 example "Press [Right grip] to open".
 
@@ -132,13 +141,13 @@ example "Press [Right grip] to open".
 | Right stick left / right | snap turn (or smooth turn) | yaw | turn | snap turn; with the left stick click held, a push turns the block 90 deg |
 | Right stick up / down | on foot: up jumps, down crouches; jetpack: up / down | pitch | pitch | as on foot / jetpack; with the left stick click held, a push moves the block farther (up) or nearer (down) |
 | Right stick click | reload, with a hand weapon. Pointing at a container, or right hand on one: put the Build Planner in production; with the right grip held: deposit all | landing gear | - | large / small block |
-| Right trigger | primary: fire, weld, grind, drill | primary | fire | place the block |
-| Left trigger | secondary (with a gun: nothing; raise the gun to your eye to use its sight) | secondary | - | remove the block (creative; in survival the grinder removes blocks) |
+| Right trigger | primary: fire, weld, grind, drill (Left-handed with a gun or tool: secondary) | primary | fire | place the block |
+| Left trigger | secondary (with a gun: nothing; raise the gun to your eye to use its sight. Left-handed with a gun or tool: primary) | secondary | - | remove the block (creative; in survival the grinder removes blocks) |
 | Right grip | use, or grab what your hand is on; on your helmet: suit lamp. At a container the use waits until you let go of the grip | hold the flight stick: tilt it to roll or pitch, twist it to yaw (see below) | - | as on foot: use, or grab what your hand is on |
 | Left grip | in empty air: tools wheel; on something: grab; on your helmet: suit lamp; at its mouth: push to talk | hold the throttle; at the mouth: push to talk | at the mouth: push to talk | as on foot / jetpack |
 | A | jump; jetpack: up | up | zoom in, held | jump; jetpack: up. With the left stick click held: the block's next stage |
 | B | jetpack on / off | down | zoom out, held | jetpack on / off. With the left stick click held: the previous stage |
-| X | dampeners on / off | dampeners on / off | - | tap: symmetry on / off; hold: next symmetry plane (creative) |
+| X | tap: dampeners on / off; hold: ping what you point at (see Ping) | tap: dampeners on / off; hold: ping where you look | - | tap: symmetry on / off; hold: next symmetry plane (creative) |
 | Y | wrist panel | tap: tools wheel; hold half a second: leave the seat | hold half a second: leave | wrist panel (the block menu is on its tile) |
 | Menu | tap: game menu; hold: recentre | as on foot | as on foot | as on foot |
 
@@ -230,7 +239,15 @@ controls table above applies to it.
     is the empty hand again, for the trigger or for letting go of the grip.
   - The right stick turns the toolbar page, and B closes the wheel without doing anything.
 - **Actions wheel**: click the left stick while the tools wheel is open. It holds the game's dampeners, lights, helmet,
-  HUD and broadcasting, plus its Menu, View and Blueprint pages.
+  HUD and broadcasting, plus its Menu, View and Blueprint pages, and Ping and Mark GPS.
+- **Ping**: hold **X** and point at anything: ore the detector found, a block, a ship, a player, a spot on a planet or in
+  space. A long laser shows what you are on, named on the HUD ("Iron ore", "Damaged: Large Reactor (Miner 2)", "Enemy
+  grid: Raider"). Let go to ping it: a GPS on your HUD for a minute and a line in your faction's chat (global with no
+  faction) with the GPS in it, which every player's game adds to their GPS list; no plugin is needed on their side. Pull
+  the pointing hand's trigger while still holding X to keep it as your own GPS instead. In a pilot seat it is where you look. A
+  quick tap of X is still the dampeners, now as you let go. The actions wheel's Ping and Mark GPS do the same with X
+  up: point, pull the trigger, or B to cancel. Options > VR > Controls > Ping sets how long a ping lasts and where its
+  chat line goes, or turns the hold on X off.
 - **Wrist panel**: on foot, press **Y**. It has big buttons for Inventory, Terminal, G menu, Lights, Helmet, Dampeners,
   Relative, Heal, Broadcast, Symmetry and Colour. Press them with the laser. You can keep walking while it is open.
 - **Status on the wrist**: the screen on your left gauntlet shows your suit and body status: health, energy, oxygen,
@@ -246,8 +263,13 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
 
 - **Tools in your hands:** the tool or gun aims where your hand points, and a block goes where your hand points.
 - **Two-handed tools:** close your other hand on the front of the tool or gun. A rifle, grinder or drill held in one hand
-  kicks hard (**Tool and weapon kickback** sets how hard).
-- **Reload:** close your other hand's grip at the gun's magazine, or click the right stick.
+  kicks hard (**Tool and weapon kickback** sets how hard). The game's own recoil turns the view only when that kick
+  is weaker; **Game recoil in VR** Off keeps the view still in single player.
+- **Reload:** click the gun hand's stick (or close your other hand's grip at the gun's magazine) and the magazine drops
+  out. Left-handed, that is the left stick, and sprint moves to the right stick click while the gun is held (on the
+  jetpack with zero-g roll on, the left click stays the roll's and reload stays on the right).
+  Then reach to your other hand's hip, close the grip to take a fresh one, and push it up into the well under the gun until
+  it clicks (**Reload by hand**; off, the click reloads on the game's timer).
 - **Suit lamp:** grip your helmet, or tap the side of your head, to switch the suit lamp. The helmet itself is on the
   wrist panel and the actions wheel.
 - **Push to talk:** hold the left grip with your hand at your helmet's mouth.
@@ -256,7 +278,8 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
   works on.
 - **Grab items:** close your hand on a floating item to hold it. Open your hand to throw it, or let go at your chest to
   stow it.
-- **Grab hulls** (zero g): pull yourself along a hull. Let go and you drift on.
+- **Grab hulls** (zero g): pull yourself along a hull or an asteroid, hand over hand. Let go with your hand moving and you
+  fly off at its speed, up to **Push-off top speed** (6 m/s by default).
 - **Grab ladders:** grip a rung and pull down to climb.
 - **Hands stop on glass:** your hands stop on windows and cockpit canopies, outside on foot and inside in a seat, as
   they do on hulls.
@@ -292,15 +315,15 @@ This is **early access**. These are the known issues and limits:
   - the view steadied on magnetic boots (on an asteroid your body and arms still rock; the view does not);
   - pitch and yaw from the held flight stick;
   - the Vive wand layout, not yet tried on real wands.
-- **In a cockpit, the controller's laser can drift while the ship falls or moves fast.** A fix is in progress.
 - **Multiplayer has not been tested.** Your arms and where you hold your tool are only shown on your own PC. Other players
   see your tool where their game animates it, but your shots still go where your hand points.
 - **Hands are for on foot.** In a seat your hands hold the stick and throttle, and cockpit buttons cannot be pressed
   with a finger (the touch toolbar screen can).
-- **Left-handed:** two-handed tools aim correctly, but the astronaut's arms keep the right-handed pose.
+- **Left-handed:** the status screen stays on the left gauntlet: the astronaut model has its screen only there.
 - **Game updates** can change the code the plugin hooks. A hook that fails is logged and skipped. If the renderer
   cannot be hooked, the game starts without VR.
-- Space Engineers 1 only, on Windows with Direct3D 11, through Pulsar's Legacy launcher.
+- Space Engineers 1 only: on Windows with Direct3D 11 through Pulsar's Legacy launcher, or on native Linux through
+  Interim (see [Linux](#linux-early)).
 
 ## Reporting bugs
 
@@ -316,8 +339,9 @@ report form asks for what we need:
 - **steps to reproduce**: what you did, what happened, and what you expected.
 
 Before you report, check these:
-- **No headset found** (the log says `No headset found`): start Link or SteamVR before the game, and check that your
-  headset's runtime is the active OpenXR runtime ([Install](#install-with-pulsar), step 2).
+- **No headset found** (the log says `No headset connected`): VR starts when the headset connects, also after the game
+  has started; check that your headset's runtime is the active OpenXR runtime ([Install](#install-with-pulsar), step 2).
+  On a PC with two graphics cards, start Link or SteamVR before the game, so it picks the headset's card.
 - **No sound in the headset:** **Sound through the headset** (Options > VR > Display) is on by default and needs a
   restart after a change. Start Link before the game.
 - **A button does nothing:** the log records each controller press (`Input: ...`), so attach it.

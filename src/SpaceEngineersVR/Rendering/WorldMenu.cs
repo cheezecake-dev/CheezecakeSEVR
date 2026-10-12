@@ -18,14 +18,14 @@ namespace SpaceEngineersVR.Rendering
     /// </summary>
     /// <remarks>
     /// The one menu that is not left in the world is the quick-actions screen (<see cref="QuickActionsScreen"/>, opened from
-    /// <see cref="WristButton"/>): while it has the focus the panel is on the left wrist instead, <see cref="WristWidth"/> wide,
+    /// <see cref="WristButton"/>): while it has the focus the panel is on the left wrist instead, <see cref="VRSettings.WristPanelWidth"/> wide,
     /// following the hand every frame (<see cref="WristPose"/>), so the other hand can point at it (<see cref="Laser"/>
     /// reads the panel's placement, wherever it is). If the hand cannot be tracked the panel falls back to the world
     /// placement, so the buttons stay reachable.
     /// </remarks>
     internal static class WorldMenu
     {
-        /// <summary>Width, metres, of the panel when it is on the wrist.</summary>
+        /// <summary>Width, metres, of the panel when it is on the wrist at the setting's default; <see cref="VRSettings.WristPanelWidth"/> is the one in use.</summary>
         public const float WristWidth = 0.30f;
 
         /// <summary>From the middle of the palm (where the grip pose is) along the forearm to the wrist, metres.</summary>
@@ -49,7 +49,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The menu that has the focus is the actions wheel (<see cref="ActionsWheel"/>), which stands where the hand opened it.</summary>
         private static volatile bool wheel;
 
-        private static bool placed, onWrist, onWheel;
+        private static bool placed, onWrist, onWheel, onPad;
 
         /// <summary>
         /// Where the head was and which way it faced (along the horizon) when the menu opened. The panel stands
@@ -98,12 +98,24 @@ namespace SpaceEngineersVR.Rendering
             width = 0f;
             if (Off || !open)
             {
-                if (placed || onWrist || onWheel)
+                if (placed || onWrist || onWheel || onPad)
                     Log.Info("Menu closed; the panel is a visor again");
-                placed = onWrist = onWheel = false;
+                placed = onWrist = onWheel = onPad = false;
                 panel = default;
                 return false;
             }
+
+            // The datapad, while it is out: whatever screen has the focus (its own, the keyboard, the terminal) is on it.
+            if (Hands.Datapad.TryGetPanel(head, out panel, out float padWidth))
+            {
+                if (!onPad)
+                    Log.Info("Menu opened on the datapad; the panel is posed to the pad");
+                onPad = true;
+                placed = onWrist = onWheel = false;
+                width = padWidth;
+                return true;
+            }
+            onPad = false;
 
             // The actions wheel: where the hand was when it opened, facing the head as it was then, fixed until it closes.
             if (wheel && ActionsWheel.TryGetPanel(out panel))
@@ -123,10 +135,10 @@ namespace SpaceEngineersVR.Rendering
             if (wrist && WristButton.Enabled && WristButton.TryGetWristGrip(out Matrix grip) && WristPose(grip, head, out panel))
             {
                 if (!onWrist)
-                    Log.Info($"Menu opened on the wrist; panel {WristWidth} m wide follows the hand");
+                    Log.Info($"Menu opened on the wrist; panel {VRSettings.WristPanelWidth} m wide follows the hand");
                 onWrist = true;
                 placed = false;
-                width = WristWidth;
+                width = VRSettings.WristPanelWidth;
                 return true;
             }
 
@@ -145,13 +157,13 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>
         /// Render thread: a menu stands ahead now (not on the wrist or at the hand), <see cref="VRSettings.MenuDistance"/>
         /// from <paramref name="from"/> along <paramref name="along"/>, level, as <see cref="Locked(in Matrix, out Matrix, out float)"/>
-        /// placed it. For a screen that goes behind it (<see cref="DeathView"/>).
+        /// placed it. For a screen that goes behind it (<see cref="ForcedView"/>).
         /// </summary>
         internal static bool TryGetAhead(out Vector3 from, out Vector3 along)
         {
             from = anchor;
             along = ahead;
-            return placed && !onWrist && !onWheel && !Off;
+            return placed && !onWrist && !onWheel && !onPad && !Off;
         }
 
         /// <summary>
@@ -182,7 +194,8 @@ namespace SpaceEngineersVR.Rendering
             if (Math.Abs(Vector3.Dot(up, toHead)) > 0.98f)
                 up = head.Forward;
 
-            float lift = Math.Min(WristLift, Math.Max(0f, distance - WristNearest));
+            // A wider panel hovers higher by as much, so it clears the wrist as the default does.
+            float lift = Math.Min(WristLift * VRSettings.WristPanelWidth / WristWidth, Math.Max(0f, distance - WristNearest));
             // CreateWorld faces the panel's +Z opposite to 'forward': the panel looks back at the eyes.
             panel = Matrix.CreateWorld(wristAt + toHead * lift, -toHead, up);
             return true;

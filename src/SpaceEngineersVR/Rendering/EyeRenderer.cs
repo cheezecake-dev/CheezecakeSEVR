@@ -44,6 +44,7 @@ namespace SpaceEngineersVR.Rendering
         private static MethodInfo copyResource;
         private static MethodInfo copySubresourceRegion;
         private static MethodInfo clearRtv;
+        private static MethodInfo createScreenResources;
         private static PropertyInfo device;
         private static PropertyInfo renderContext;
         private static PropertyInfo backbuffer;
@@ -80,6 +81,97 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Both eyes were drawn this frame (there was a scene to draw), for the headset when <see cref="headsetEyes"/>.</summary>
         private static bool eyesDrawn, headsetEyes;
 
+        /// <summary>
+        /// Render thread: this frame is drawn as VR's (<see cref="StereoPatches.VRPicture"/> as it began), or left to the game.
+        /// Taken once a frame, so a frame begun as the game's is finished as the game's when the picture turns over.
+        /// </summary>
+        private static bool vrFrame;
+
+        /// <summary>Render thread: this frame's GUI or scene has come by; <see cref="ShowPanel"/> ends the frame.</summary>
+        private static bool frameBegun;
+
+        /// <summary>Render thread, at the frame's GUI (MyRender11.RenderMainSprites, before the scene) and scene: whether it is drawn as VR's.</summary>
+        private static bool BeginFrame()
+        {
+            if (!frameBegun)
+            {
+                vrFrame = StereoPatches.VRPicture;
+                if (!vrFrame && StereoPatches.PlayingFlat)
+                    KeepHeadsetFlat();
+            }
+            frameBegun = true;
+            return vrFrame;
+        }
+
+        /// <summary>Set by the game thread when the picture goes back to the game's; the next frame puts m_resolution back to the window's.</summary>
+        private static volatile bool toWindowResolution;
+
+        /// <summary>Game thread, as the picture goes back to the game's (<see cref="StereoPatches.PlayingFlat"/>): the screen resources go back to the window's size.</summary>
+        internal static void ToWindowResolution() => toWindowResolution = true;
+
+        /// <summary>
+        /// Render thread, at the start of each frame drawn as the game's while the headset is away: the game's screen
+        /// resources at the window's size, no head on the camera, and the headset looked after so the picture can turn back
+        /// when it returns. A lost session is handed back to be looked for again and a new one started when the headset is
+        /// there; its events are read here, and while it runs its frame loop goes on without layers on a thread of its own
+        /// (<see cref="XrSession.StartIdleFrames"/>), so the runtime's throttled xrWaitFrame never holds the game's frames.
+        /// </summary>
+        private static void KeepHeadsetFlat()
+        {
+            HeadTracker.Clear();
+            if (toWindowResolution)
+            {
+                toWindowResolution = false;
+                RestoreWindowResolution();
+            }
+            if (XrSession.TakeLoss(out string reason, out bool instance))
+            {
+                HeadsetWatcher.Forget(instance);
+                Log.Warn(startRefused == null
+                    ? $"Headset lost ({reason}) while playing flat; VR comes back when it reconnects"
+                    : $"Headset lost ({reason}) while playing flat; flat for the rest of the run");
+            }
+            if (!XrSession.Exists && CanStartHeadset && windowSize.X != 0)
+                StartHeadset();
+            if (!XrSession.Exists)
+                return;
+            try
+            {
+                XrSession.PollEvents();
+            }
+            catch (Exception e)
+            {
+                HeadsetFailed(e);
+                return;
+            }
+            Exception fault = XrSession.TakeIdleFault();
+            if (fault != null)
+                HeadsetFailed(fault);
+            else if (XrSession.Exists)
+                XrSession.StartIdleFrames();
+        }
+
+        /// <summary>
+        /// m_resolution, the eye size while the picture was VR's, back to the window's as the game's ResizeSwapchain leaves it,
+        /// and the screen resources made again at it. The render thread then reports the size to the game
+        /// (MyRenderThread.UpdateSize), which lays out the GUI for it. A change of window size on the way does this itself.
+        /// </summary>
+        private static void RestoreWindowResolution()
+        {
+            if (windowSize.X == 0 || (Vector2I)resolution.GetValue(null) == windowSize)
+                return;
+            try
+            {
+                resolution.SetValue(null, windowSize);
+                createScreenResources.Invoke(null, null);
+                Sandbox.MySandboxGame.Static?.GameRenderComponent?.RenderThread?.UpdateSize();
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "Could not remake the screen resources at the window's size");
+            }
+        }
+
         public static void Patch(Harmony harmony)
         {
             drawGameScene = AccessTools.Method(Render, "DrawGameScene");
@@ -95,6 +187,7 @@ namespace SpaceEngineersVR.Rendering
             copySubresourceRegion = AccessTools.Method(RenderContext, "CopySubresourceRegion",
                 new[] { Resource, typeof(int), typeof(SharpDX.Direct3D11.ResourceRegion?), typeof(SharpDX.Direct3D11.Resource), typeof(int), typeof(int), typeof(int), typeof(int) });
             clearRtv = AccessTools.Method(RenderContext, "ClearRtv", new[] { RtvBindable, typeof(SharpDX.Mathematics.Interop.RawColor4) });
+            createScreenResources = AccessTools.Method(Render, "CreateScreenResources");
             device = AccessTools.Property(Render, "DeviceInstance");
             renderContext = AccessTools.Property(Render, "RC");
             backbuffer = AccessTools.Property(Render, "Backbuffer");
@@ -160,11 +253,10 @@ namespace SpaceEngineersVR.Rendering
                 windowSize = (Vector2I)resolution.GetValue(null);
             if (swapchain.GetValue(null) is SwapChain chain)
                 windowFormat = chain.Description.ModeDescription.Format;
-            if (!headsetTried)
-            {
-                headsetTried = true;
+            if (!StereoPatches.VRPicture)
+                return;
+            if (!XrSession.Exists && CanStartHeadset)
                 StartHeadset();
-            }
 
             Vector2I eye = RenderResolution;
             if ((Vector2I)resolution.GetValue(null) != eye)
@@ -175,70 +267,152 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
-        private static bool headsetTried;
+        /// <summary>Why no session is started again for the rest of the run; null while one may be.</summary>
+        private static string startRefused;
+
+        /// <summary>Sessions that failed to start in a row; past <see cref="MostStartFailures"/> no more are tried.</summary>
+        private static int startFailures;
+
+        private const int MostStartFailures = 3;
+
+        private static bool CanStartHeadset => startRefused == null && HeadsetWatcher.HasHeadset;
 
         // Each eye's placement this frame, worked out before either is drawn.
         private static readonly Matrix[] eyeFromHead = new Matrix[2], eyeInHead = new Matrix[2];
         private static readonly EnvMatrices.FovTangents?[] eyeFov = new EnvMatrices.FovTangents?[2];
 
-        /// <summary>Opens the headset session on the game's device, the first time the device exists.</summary>
+        /// <summary>
+        /// Opens the headset session on the game's device: when the device's screen resources are first made, and again,
+        /// through <see cref="FollowHeadset"/>, whenever the headset connects later in the run. While the picture is the
+        /// game's (<see cref="KeepHeadsetFlat"/>) the session only waits for the focus, and the window keeps the player's VSync.
+        /// </summary>
         private static void StartHeadset()
         {
-            if (!XrRuntime.HasSystem)
-                return;
             try
             {
-                var dx = (SharpDX.Direct3D11.Device)device.GetValue(null);
-
-                // DXVK's D3D11 (Linux, or its DLLs beside the game): the session runs on DXVK's Vulkan device, on the GPU
-                // HeadsetGpu chose from the runtime's Vulkan physical device, which the session checks; there is no LUID to compare.
-                DxvkInterop dxvk = DxvkInterop.FromDevice(dx.NativePointer);
-                if (dxvk != null && XrRuntime.HasVulkan)
+                CreateSession();
+                startFailures = 0;
+                if (StereoPatches.VRPicture)
                 {
-                    Log.Info($"OpenXR graphics: Vulkan through DXVK (the game's D3D11 device is DXVK's, and the runtime offers {XrRuntime.VulkanExtension})");
-                    XrSession.Create(dx, windowFormat, dxvk);
-                    return;
-                }
-                if (dxvk != null)
-                {
-                    dxvk.Dispose();
-                    Log.Warn("OpenXR graphics: Direct3D 11 on DXVK's device, as no Vulkan extension of the runtime is enabled; a runtime cannot normally use it");
+                    StereoPatches.HeadsetPacing(true);
+                    Log.Info("Headset connected; VR started");
                 }
                 else
                 {
-                    Log.Info("OpenXR graphics: Direct3D 11 (the game's device is not DXVK's)");
+                    Log.Info("Headset connected; VR comes back when its session has the focus");
                 }
-
-                using (var dxgiDevice = dx.QueryInterface<SharpDX.DXGI.Device>())
-                using (Adapter adapter = dxgiDevice.Adapter)
-                {
-                    if (adapter.Description.Luid != XrRuntime.AdapterLuid)
-                    {
-                        Log.Error($"The game is drawing on {adapter.Description.Description.Trim()} but the headset needs the GPU with LUID " +
-                                  $"{XrRuntime.AdapterLuid:X}; showing both eyes in the window instead");
-                        return;
-                    }
-                }
-                XrSession.Create(dx, windowFormat);
+            }
+            catch (InvalidOperationException e)
+            {
+                // The game's device is not one the headset can use (another GPU, a DXVK without the runtime's extensions):
+                // that holds until the device is made again, which is at the next start of the game.
+                XrSession.Destroy();
+                startRefused = e.Message;
+                Log.Error($"{e.Message}; playing flat. Restart the game with the headset connected to play in VR");
             }
             catch (Exception e)
             {
-                Log.Error(e, "Could not start the headset session; showing both eyes in the window instead");
                 XrSession.Destroy();
+                bool instance = e is XrException xr && (xr.Result == XrResult.ErrorInstanceLost || xr.Result == XrResult.ErrorRuntimeFailure);
+                if (!(e is XrException) || ++startFailures >= MostStartFailures)
+                {
+                    startRefused = e.Message;
+                    Log.Error(e, "Could not start the headset session; playing flat for the rest of the run");
+                }
+                else
+                {
+                    Log.Warn($"Could not start the headset session ({e.Message}); trying again once the headset is found again");
+                }
+                HeadsetWatcher.Forget(instance);
             }
+        }
+
+        /// <summary>Throws <see cref="InvalidOperationException"/> when the game's device cannot have a session.</summary>
+        private static void CreateSession()
+        {
+            var dx = (SharpDX.Direct3D11.Device)device.GetValue(null);
+
+            // DXVK's D3D11 (Linux, or its DLLs beside the game): the session runs on DXVK's Vulkan device, on the GPU
+            // HeadsetGpu chose from the runtime's Vulkan physical device, which the session checks; there is no LUID to compare.
+            DxvkInterop dxvk = DxvkInterop.FromDevice(dx.NativePointer);
+            if (dxvk != null && XrRuntime.HasVulkan)
+            {
+                Log.Info($"OpenXR graphics: Vulkan through DXVK (the game's D3D11 device is DXVK's, and the runtime offers {XrRuntime.VulkanExtension})");
+                XrSession.Create(dx, windowFormat, dxvk);
+                return;
+            }
+            if (dxvk != null)
+            {
+                dxvk.Dispose();
+                Log.Warn("OpenXR graphics: Direct3D 11 on DXVK's device, as no Vulkan extension of the runtime is enabled; a runtime cannot normally use it");
+            }
+            else
+            {
+                Log.Info("OpenXR graphics: Direct3D 11 (the game's device is not DXVK's)");
+            }
+
+            using (var dxgiDevice = dx.QueryInterface<SharpDX.DXGI.Device>())
+            using (Adapter adapter = dxgiDevice.Adapter)
+            {
+                if (adapter.Description.Luid != XrRuntime.AdapterLuid)
+                    throw new InvalidOperationException($"The game is drawing on {adapter.Description.Description.Trim()} but the headset needs the GPU with LUID {XrRuntime.AdapterLuid:X}");
+            }
+            XrSession.Create(dx, windowFormat);
+        }
+
+        /// <summary>
+        /// Render thread, before a frame is drawn: after a loss hands the headset back to be looked for again, and when a
+        /// session has to start or has ended, has the screen resources remade at the new eye size. A new session is
+        /// started inside that remake (<see cref="UseEyeResolution"/>). True when the screen resources are to be remade.
+        /// </summary>
+        private static bool FollowHeadset()
+        {
+            if (XrSession.TakeLoss(out string reason, out bool instance))
+            {
+                HeadsetWatcher.Forget(instance);
+                StereoPatches.HeadsetPacing(false);
+                Log.Warn(startRefused == null
+                    ? $"Headset lost ({reason}); playing in the window until it reconnects"
+                    : $"Headset lost ({reason}); playing in the window for the rest of the run");
+                DynamicResolution.Remake("headset lost");
+                return true;
+            }
+            if (XrSession.Exists || !CanStartHeadset || windowSize.X == 0)
+                return false;
+            DynamicResolution.Remake("headset connected");
+            return true;
+        }
+
+        /// <summary>
+        /// A headset frame failed. The runtime losing the session, its instance or itself is a disconnect: the game goes on
+        /// in the window and VR comes back with the headset. Anything else is a fault, and VR stays off for the run.
+        /// </summary>
+        private static void HeadsetFailed(Exception e)
+        {
+            if (e is XrException xr && (xr.Result == XrResult.ErrorSessionLost || xr.Result == XrResult.ErrorInstanceLost || xr.Result == XrResult.ErrorRuntimeFailure))
+            {
+                XrSession.Lose(xr.Message, instance: xr.Result != XrResult.ErrorSessionLost);
+                return;
+            }
+            Log.Error(e, "Headset frame failed; VR display stops");
+            startRefused = e.Message;
+            XrSession.Lose(e.Message, instance: false);
         }
 
         // A test aid (DriveEyes): the drive's shot of the eye images as submitted to the headset.
         static partial void TestAidsFrameBegin(bool headset);
         static partial void TestAidsCapture(object target, int eye, Vector2I size, long frame);
 
-        /// <summary>Replaces MyRender11.DrawScene: both eyes, then the mirror, then the game's debug drawing.</summary>
+        /// <summary>Replaces MyRender11.DrawScene: both eyes, each with the game's 3D debug shapes, then the mirror, then the rest of the game's debug drawing.</summary>
         private static bool DrawEyes()
         {
             Trace(ref drawCalls, "DrawScene");
+            if (!BeginFrame())
+                return true;
             if (XrSession.InFrame)
                 EndHeadsetFrame(false, null); // a frame the GUI step never finished
             PerfMeter.FrameBegin();
+            FollowHeadset();
             DynamicResolution.Apply();
             bool headset = BeginHeadsetFrame();
             TestAidsFrameBegin(headset);
@@ -267,10 +441,16 @@ namespace SpaceEngineersVR.Rendering
             Matrix fromCamera = headInCamera.HasValue ? Matrix.Invert(headInCamera.Value) : Matrix.Identity;
             HandResidual.Measure(fromCamera, head.InvViewD);
 
-            // Dead, or choosing where to respawn: the game's camera moves by itself, so it is not the view (DeathView).
-            if (ExternalView.Find(environmentMatrices, headset) == ExternalView.Kind.Death && DrawDead(window, head, fromCamera))
+            // Dead, choosing where to respawn, in a cutscene or a block's fixed camera: the game's camera is not the head's, so it is
+            // not the view but a screen (ForcedView).
+            if (ExternalView.Find(environmentMatrices) == ExternalView.Kind.Forced && DrawForced(window, head, fromCamera))
                 return false;
-            DeathView.Drawing = false;
+            ForcedView.Drawing = false;
+
+            // A block's camera that the forced view's screen is not showing: the eyes are at the block's camera point and look
+            // along it, the head's turn and move taken out, as the game gives that view no look-around.
+            if (CameraHeadLink.FixedInCamera)
+                fromCamera = Matrix.Invert(headset ? ToMatrix(XrSession.Head) : desktopHead);
             object fullView = null;
 
             try
@@ -306,6 +486,7 @@ namespace SpaceEngineersVR.Rendering
                 SharedShadows.Fit(environmentMatrices, head, eyeFromHead, eyeFov);
                 SceneOnce.BeginFrame();
                 ParticlesOnce.BeginFrame();
+                ExposureOnce.BeginFrame();
                 CentredFlares.BeginFrame(environmentMatrices, head, eyeFromHead, eyeFov);
                 if (headset && partial)
                     XrSession.SetEyeRect(eye.X, eye.Y);
@@ -336,9 +517,11 @@ namespace SpaceEngineersVR.Rendering
                         ScenePass.Current = ScenePass.None;
                     }
                     SharedShadows.EndEye();
+                    ExposureOnce.EndEye();
                     if (debugAmbientOcclusion != null)
                         release.Invoke(debugAmbientOcclusion, null);
                     debugAmbientOcclusion = args[1];
+                    DebugShapes.DrawEye(eyeTargets[i], EnvMatrices.ViewProjectionAt0(environmentMatrices));
                     if (fullView != null)
                     {
                         FullView.BeforeBlend(eyeTargets[i], i);
@@ -346,6 +529,8 @@ namespace SpaceEngineersVR.Rendering
                         FullView.Laid(eyeTargets[i], i);
                     }
                     Vignette.Draw(eyeTargets[i], n, eye, Eyes[i].Projection);
+                    CameraCut.Draw(eyeTargets[i], n, eye);
+                    WallFade.Draw(eyeTargets[i], eye);
 
                     if (headset)
                     {
@@ -409,6 +594,7 @@ namespace SpaceEngineersVR.Rendering
                 CentredFlares.EndFrame();
                 MotionExtrapolation.End();
                 SharedShadows.EndEye();
+                ExposureOnce.EndEye();
                 EnvMatrices.Restore(environmentMatrices, head);
                 if (fullView != null)
                     release.Invoke(fullView, null);
@@ -421,18 +607,27 @@ namespace SpaceEngineersVR.Rendering
                 // The headset frame is ended after the GUI, which goes into it as a panel (ShowPanel).
             }
 
-            // Debug drawing (and the per-frame debug message queue) stays on the head camera, in the window.
-            drawDebugScene.Invoke(null, new[] { debugAmbientOcclusion });
+            // Debug drawing (and the per-frame debug message queue) stays on the head camera, in the window; the 3D shapes
+            // are the eyes' (DebugShapes).
+            DebugShapes.BeginWindow(eyesDrawn);
+            try
+            {
+                drawDebugScene.Invoke(null, new[] { debugAmbientOcclusion });
+            }
+            finally
+            {
+                DebugShapes.EndWindow();
+            }
             return false;
         }
 
         /// <summary>
-        /// The death view's frame (<see cref="DeathView"/>) in place of the eyes: both black with the laser's beam, as the main
+        /// The forced view's frame (<see cref="ForcedView"/>) in place of the eyes: both black with the laser's beam, as the main
         /// menu's (<see cref="MainMenu.DrawBackdrop"/>), and the game's own camera - the death camera, or the respawn screen's -
         /// drawn by the external view's pass onto its screen, which stands still in the tracking space; then the game's debug
         /// drawing, as after the eyes. False, after a failure, leaves this frame to the eyes.
         /// </summary>
-        private static bool DrawDead(object window, in EnvMatrices.Snapshot head, in Matrix fromCamera)
+        private static bool DrawForced(object window, in EnvMatrices.Snapshot head, in Matrix fromCamera)
         {
             object ambientOcclusion = null;
             try
@@ -452,14 +647,14 @@ namespace SpaceEngineersVR.Rendering
                 }
                 eyesDrawn = drawn;
                 headsetEyes = drawn && toHeadset;
-                DeathView.Drawing = true;
+                ForcedView.Drawing = true;
                 // The debug drawing releases the scene's ambient occlusion after it; this frame has none of its own to give.
-                ambientOcclusion = borrowRtv.Invoke(texturesPool.GetValue(null), new object[] { "VR death AO", 8, 8, windowFormat, 1, 0 });
+                ambientOcclusion = borrowRtv.Invoke(texturesPool.GetValue(null), new object[] { "VR forced view AO", 8, 8, windowFormat, 1, 0 });
             }
             catch (Exception e)
             {
-                DeathView.DrawFailed(e);
-                DeathView.Drawing = false;
+                ForcedView.DrawFailed(e);
+                ForcedView.Drawing = false;
                 eyesDrawn = headsetEyes = false;
                 if (ambientOcclusion != null)
                     release.Invoke(ambientOcclusion, null);
@@ -473,7 +668,7 @@ namespace SpaceEngineersVR.Rendering
             return true;
         }
 
-        /// <summary>True when this frame goes to the headset. Any OpenXR failure turns the headset off for the rest of the run.</summary>
+        /// <summary>True when this frame goes to the headset.</summary>
         private static bool BeginHeadsetFrame()
         {
             if (!XrSession.Exists)
@@ -485,8 +680,7 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                Log.Error(e, "Headset frame failed; VR display stops");
-                XrSession.Destroy();
+                HeadsetFailed(e);
                 return false;
             }
         }
@@ -501,8 +695,7 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                Log.Error(e, "Headset frame failed; VR display stops");
-                XrSession.Destroy();
+                HeadsetFailed(e);
             }
         }
 
@@ -531,14 +724,14 @@ namespace SpaceEngineersVR.Rendering
         // it only reads windowSize.
         private static void ReportWindowResolution(ref Vector2I __result)
         {
-            if (windowSize.X != 0)
+            if (windowSize.X != 0 && StereoPatches.VRPicture)
                 __result = windowSize;
         }
 
         // Patches: MyDX11Render.MainViewport (postfix); same threading as ReportWindowResolution.
         private static void ReportWindowViewport(ref MyViewport __result)
         {
-            if (windowSize.X != 0)
+            if (windowSize.X != 0 && StereoPatches.VRPicture)
                 __result = new MyViewport(windowSize.X, windowSize.Y);
         }
 
@@ -549,8 +742,11 @@ namespace SpaceEngineersVR.Rendering
         private static bool RenderSpritesToPanel()
         {
             Trace(ref spriteCalls, "RenderMainSprites");
-            if (windowSize.X == 0)
+            if (!BeginFrame() || windowSize.X == 0)
                 return true;
+            // Frames without a scene (menus, loading) have no DrawEyes to follow the headset in.
+            if (!eyesDrawn && FollowHeadset())
+                DynamicResolution.Apply();
 
             Vector2I gui = GuiLayout.Size;
             float scale = (float)mainViewportScale.GetValue(null);
@@ -577,6 +773,9 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         private static void ShowPanel()
         {
+            frameBegun = false;
+            if (!vrFrame)
+                return;
             bool eyes = eyesDrawn, headset = headsetEyes;
             eyesDrawn = headsetEyes = false;
             PerfMeter.FrameBeginIfClosed(); // menus and loading screens have no scene
