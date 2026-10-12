@@ -97,7 +97,7 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 // The detectors run for the controlled character only (UpdateAfterSimulation10 returns otherwise).
-                if (!HandTools.IsLocalOnFoot(character) || !HandTools.TryGetHand(out _, out MatrixD aim) || !HandTools.Ray(aim, out origin, out forward))
+                if (!HandTools.IsLocalOnFoot(character) || !HandTools.TryGetHand(out _, out MatrixD aim) || !HandTools.ReachRay(character, aim, out origin, out forward))
                     return false;
                 up = aim.Up;
                 return true;

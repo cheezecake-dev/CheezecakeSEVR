@@ -7,6 +7,7 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.GameSystems;
 using Sandbox.Game.World;
+using SpaceEngineersVR.OpenXR;
 using VRage.ModAPI;
 using VRageMath;
 using VRageRender;
@@ -82,7 +83,8 @@ namespace SpaceEngineersVR.Tracking
             try
             {
                 MyCharacter pilot = __instance.Pilot;
-                if (pilot == null || pilot != MySession.Static?.LocalCharacter)
+                // Without the headset in use the game gets the pilot up as usual.
+                if (pilot == null || pilot != MySession.Static?.LocalCharacter || !XrSession.Focused)
                     return;
                 __state.Pilot = pilot;
                 __state.Look = CockpitHead.Look(__instance);

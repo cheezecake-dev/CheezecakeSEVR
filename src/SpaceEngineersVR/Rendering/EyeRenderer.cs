@@ -24,7 +24,7 @@ namespace SpaceEngineersVR.Rendering
     /// With a headset, each eye is drawn from the runtime's eye pose and field of view and copied into the eye's OpenXR
     /// swapchain image; the window shows the left eye. Without one, the eyes sit side by side in the window.
     /// </remarks>
-    internal static class EyeRenderer
+    internal static partial class EyeRenderer
     {
         private static readonly Assembly Render11 = typeof(MyDX11Render).Assembly;
         private static readonly Type Render = Render11.GetType("VRageRender.MyRender11", throwOnError: true);
@@ -228,6 +228,10 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
+        // A test aid (DriveEyes): the drive's shot of the eye images as submitted to the headset.
+        static partial void TestAidsFrameBegin(bool headset);
+        static partial void TestAidsCapture(object target, int eye, Vector2I size, long frame);
+
         /// <summary>Replaces MyRender11.DrawScene: both eyes, then the mirror, then the game's debug drawing.</summary>
         private static bool DrawEyes()
         {
@@ -237,7 +241,7 @@ namespace SpaceEngineersVR.Rendering
             PerfMeter.FrameBegin();
             DynamicResolution.Apply();
             bool headset = BeginHeadsetFrame();
-            DriveEyes.FrameBegin(headset);
+            TestAidsFrameBegin(headset);
             PerfMeter.GpuStart();
             object window = backbuffer.GetValue(null);
             Vector2I eye = RenderResolution, image = EyeResolution;
@@ -345,7 +349,7 @@ namespace SpaceEngineersVR.Rendering
 
                     if (headset)
                     {
-                        DriveEyes.Capture(eyeTargets[i], i, eye, drawCalls); // test capture: this eye as submitted
+                        TestAidsCapture(eyeTargets[i], i, eye, drawCalls);
                         SharpDX.Direct3D11.Texture2D xrImage = XrSession.AcquireImage(i);
                         try
                         {

@@ -7,6 +7,7 @@ using Sandbox.Engine.Physics;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.World;
+using SpaceEngineersVR.OpenXR;
 using VRage.Game;
 using VRageMath;
 
@@ -109,11 +110,12 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>
         /// Turns a first-person head matrix of <paramref name="character"/> from the body's up to the smoothed up, about the
-        /// body's middle. Game thread; <see cref="CharacterHead"/> calls it for every head matrix it builds.
+        /// body's middle, while the headset is in use. Game thread; <see cref="CharacterHead"/> calls it for every head
+        /// matrix it builds.
         /// </summary>
         public static void Apply(MyCharacter character, ref MatrixD head)
         {
-            if (Off || !held || character != body)
+            if (Off || !held || character != body || !XrSession.Focused)
                 return;
             MatrixD world = character.PositionComp.WorldMatrixRef;
             Vector3D up = world.Up;

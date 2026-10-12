@@ -18,12 +18,12 @@ namespace SpaceEngineersVR.Rendering
     /// ("Perf stall: render thread stuck 2.3 s"), again at 10 s and 30 s (then every 30 s), with the thread's state and kernel
     /// wait (/proc/self/task/tid/stat, wchan), its CPU time, the bytes the process read and wrote (/proc/self/io), the garbage
     /// collections and the video memory. A last line gives the stall's length when the thread moves again.
-    /// RenderDebug StallStacks=0 turns it off.
+    /// Off unless RenderDebug has StallStacks=1: it is a diagnostic.
     /// </summary>
     internal static class StallWatchdog
     {
-        /// <summary>RenderDebug StallStacks=0.</summary>
-        public static bool Off;
+        /// <summary>True unless RenderDebug has StallStacks=1.</summary>
+        public static bool Off = true;
 
         private const int PollMs = 250;
         private const double StuckMs = 2000.0;
@@ -102,8 +102,8 @@ namespace SpaceEngineersVR.Rendering
         {
             try
             {
-                if (RenderDebug.Peek("StallStacks") == 0)
-                    Off = true;
+                if (RenderDebug.Peek("StallStacks") is int on && on != 0)
+                    Off = false;
             }
             catch (Exception)
             {

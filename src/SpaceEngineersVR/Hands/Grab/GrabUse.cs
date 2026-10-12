@@ -38,8 +38,8 @@ namespace SpaceEngineersVR.Hands
     /// too; the box nearest the palm that is taken wins. Every kind is taken (<see cref="Classify"/>) except a short list,
     /// each for a reason: the kinds other features own (the ladder: the ladder grab; the push-buttons: the fingertip), and
     /// from a seat, the other seats and pods (the game seats a standing character, not one already seated) and the
-    /// wardrobe (it re-dresses the body standing in the medical room). RenderDebug GrabAll=0 restricts it to an
-    /// allow-list instead (seat, cryo pod, airtight and advanced doors, medical room and survival kit, cargo, terminal; on foot only).</para>
+    /// wardrobe (it re-dresses the body standing in the medical room). A test aid (renderdebug GrabAll=0) restricts it to
+    /// the allow-list of before (seat, cryo pod, airtight and advanced doors, medical room and survival kit, cargo, terminal; on foot only).</para>
     /// <para>How each is used (<see cref="Kind"/>): most things the moment the hand closes on them. A door, a hatch, a
     /// hangar door and a maintenance panel are pulled or pushed: used once the held hand has moved <see cref="DoorPull"/>
     /// from where it took hold (in the door's own frame, so a ship's motion does not count), so a stray grip does not slam
@@ -77,17 +77,8 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Debug: no grab to use (<see cref="Rendering.RenderDebug"/> GrabUse=0).</summary>
         public static bool Off { get; set; }
 
-        /// <summary>Debug: false restricts grabbing to a fixed allow-list of use objects, on foot only (<see cref="Rendering.RenderDebug"/> GrabAll=0).</summary>
-        public static bool All { get; set; } = true;
-
         /// <summary>Debug: log each grip's line of reach, clear or what blocked it (<see cref="Rendering.RenderDebug"/> GrabUseTrace=1).</summary>
         public static bool Trace { get; set; }
-
-        /// <summary>The line of reach is swept with a ball this wide (SurfaceStop's fingertip ball), metres.</summary>
-        private const float ReachBallRadius = 0.01f;
-
-        /// <summary>A probe this wide at the start of the line finds what the reach starts inside (the seated body's blocks), metres.</summary>
-        private const float StartProbeRadius = 0.002f;
 
         /// <summary>A shoulder farther than this from the palm is stale (the arms not yet known); the eyes are the origin then, metres.</summary>
         private const double MaxShoulderToPalm = 1.5;
@@ -95,7 +86,7 @@ namespace SpaceEngineersVR.Hands
         private const int MaxTraceLogs = 400;
 
         /// <summary>The palm is on a use object when it is inside its detector box or this close to it, metres.</summary>
-        public const double Reach = 0.15;
+        public const double UseRadius = 0.15;
 
         /// <summary>A held door is used after the hand has moved this far from where it took hold, metres.</summary>
         public const double DoorPull = 0.12;
@@ -193,23 +184,16 @@ namespace SpaceEngineersVR.Hands
             ["MyUseObjectWardrobe"] = "a wardrobe: the game re-dresses a standing character",
         };
 
-        /// <summary>The allow-list used with RenderDebug GrabAll=0: doors are pulled, the rest used on grab.</summary>
-        private static readonly HashSet<string> OldDoorTypes = new HashSet<string>
-        {
-            "MyUseObjectAirtightDoors",
-            "MyUseObjectAdvancedDoorTerminal",
-        };
-
-        private static readonly HashSet<string> OldDeviceTypes = new HashSet<string>
-        {
-            "MyUseObjectCockpitDoor",
-            "MyUseObjectCryoChamberDoor",
-            "MyUseObjectLifeSupportingBlock",
-            "MyUseObjectInventory",
-            "MyUseObjectTerminal",
-        };
-
         internal static Kind Classify(IMyUseObject use, bool seated) => Classify(use, seated, out _);
+
+        /// <summary>
+        /// A test aid (renderdebug GrabAll=0) puts back the allow-list of before: <paramref name="listed"/>, and how the use
+        /// object of type <paramref name="name"/> is grabbed by that list, or why not.
+        /// </summary>
+        static partial void TestAidsOldList(string name, bool seated, ref bool listed, ref Kind kind, ref string why);
+
+        /// <summary>A test aid (renderdebug GrabAll=0) keeps grabbing to the character on foot, as the allow-list of before did.</summary>
+        static partial void TestAidsSeatedGrab(ref bool allowed);
 
         /// <summary>How a use object is grabbed, and when it is not, why (for the log).</summary>
         internal static Kind Classify(IMyUseObject use, bool seated, out string why)
@@ -218,15 +202,11 @@ namespace SpaceEngineersVR.Hands
             if (use == null)
                 return Kind.None;
             string name = use.GetType().Name;
-            if (!All)
-            {
-                if (OldDoorTypes.Contains(name))
-                    return Kind.Door;
-                if (OldDeviceTypes.Contains(name) && !seated)
-                    return Kind.Device;
-                why = "not on the old list (GrabAll=0)";
-                return Kind.None;
-            }
+            bool listed = false;
+            Kind kind = Kind.None;
+            TestAidsOldList(name, seated, ref listed, ref kind, ref why);
+            if (listed)
+                return kind;
             if (FingerPress.IsPushButton(use))
             {
                 why = "a push-button: the fingertip's";
@@ -356,7 +336,7 @@ namespace SpaceEngineersVR.Hands
 
             hooked = true;
             GripClaim.Register(ClaimName, ClaimPriority, Take);
-            Log.Info($"Grab to use: hooked (grip claim '{ClaimName}' at {ClaimPriority}, reach {Reach * 100:0} cm, door pull {DoorPull * 100:0} cm, " +
+            Log.Info($"Grab to use: hooked (grip claim '{ClaimName}' at {ClaimPriority}, use radius {UseRadius * 100:0} cm, door pull {DoorPull * 100:0} cm, " +
                      $"paid use held {DeliberateSeconds:0.0} s, highlight {(highlight != null ? "on" : "off")})");
         }
 
@@ -413,7 +393,9 @@ namespace SpaceEngineersVR.Hands
                 return Place.None;
             if (HandTools.IsLocalOnFoot(character))
                 return Place.OnFoot;
-            if (!All || !character.IsSitting || !(MySession.Static.ControlledEntity is MyCockpit cockpit) || cockpit.Pilot != character
+            bool seatedGrab = true;
+            TestAidsSeatedGrab(ref seatedGrab);
+            if (!seatedGrab || !character.IsSitting || !(MySession.Static.ControlledEntity is MyCockpit cockpit) || cockpit.Pilot != character
                 || !(cockpit.IsInFirstPersonView || cockpit.ForceFirstPersonCamera))
                 return Place.None;
             seat = MySession.Static.ControlledEntity.Entity;
@@ -458,7 +440,7 @@ namespace SpaceEngineersVR.Hands
             if (!HandWorld.TryGetTrackingToBody(character, out MatrixD trackingToModel, out _))
                 return false;
             MatrixD modelToWorld = MatrixD.Invert(character.PositionComp.WorldMatrixNormalizedInv);
-            if (!TryPalm(hand, trackingToModel, modelToWorld, out Vector3D palm))
+            if (!TryPalm(hand, character, trackingToModel, modelToWorld, out Vector3D palm))
                 return false;
             Gather(character, seat, place, palm);
             if (!BestReachable(hand, character, seat, palm, trackingToModel, modelToWorld, Trace, out Candidate best))
@@ -539,7 +521,7 @@ namespace SpaceEngineersVR.Hands
                 foreach (Hand hand in bothHands)
                 {
                     bool holds = hand == Hand.Left ? leftHolds : rightHolds;
-                    bool havePalm = TryPalm(hand, trackingToModel, modelToWorld, out Vector3D palm);
+                    bool havePalm = TryPalm(hand, __instance, trackingToModel, modelToWorld, out Vector3D palm);
                     Step(hand, __instance, seat, place, holds, havePalm, palm, now, trackingToModel, modelToWorld);
                 }
                 if (place == Place.Seated && hover[0] == null && hover[1] == null)

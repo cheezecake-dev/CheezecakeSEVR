@@ -29,7 +29,7 @@ namespace SpaceEngineersVR.Rendering
     /// a throwaway thread (<c>SEVR stall capture</c>) that the watchdog gives 3 s, then resumes the target regardless and says
     /// so, so a walk that hangs cannot freeze the game for good. If the watchdog itself wakes late, every thread of the process
     /// was held (a garbage collection waiting for a thread, or a machine that did not run us), which it logs.
-    /// RenderDebug StallStacks=0 turns it off.
+    /// Off unless RenderDebug has StallStacks=1: it is a diagnostic, and it suspends game threads.
     /// </para>
     /// <para>
     /// On CoreCLR (Pulsar's Interim) nothing can read another thread's stack, so the log says the stack was not read and keeps
@@ -38,8 +38,8 @@ namespace SpaceEngineersVR.Rendering
     /// </summary>
     internal static class StallWatchdog
     {
-        /// <summary>RenderDebug StallStacks=0.</summary>
-        public static bool Off;
+        /// <summary>True unless RenderDebug has StallStacks=1.</summary>
+        public static bool Off = true;
 
         private const int PollMs = 250;
         private const double StuckMs = 2000.0;
@@ -127,8 +127,8 @@ namespace SpaceEngineersVR.Rendering
             int failures = 0;
             try
             {
-                if (RenderDebug.Peek("StallStacks") == 0)
-                    Off = true;
+                if (RenderDebug.Peek("StallStacks") is int on && on != 0)
+                    Off = false;
             }
             catch (Exception)
             {

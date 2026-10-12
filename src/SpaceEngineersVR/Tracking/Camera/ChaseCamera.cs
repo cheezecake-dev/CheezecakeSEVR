@@ -5,6 +5,7 @@ using Sandbox.Engine.Utils;
 using Sandbox.Game.Entities;
 using Sandbox.Game.GameSystems;
 using Sandbox.Game.World;
+using SpaceEngineersVR.OpenXR;
 using VRageMath;
 
 namespace SpaceEngineersVR.Tracking
@@ -101,7 +102,7 @@ namespace SpaceEngineersVR.Tracking
             if (failed)
                 return;
             MyCockpit seat = ThirdPersonSeat();
-            if (seat == null || Off || !VRSettings.LevelChaseCamera)
+            if (seat == null || Off || !VRSettings.LevelChaseCamera || !XrSession.Focused)
             {
                 Leave(seat);
                 return;
@@ -168,7 +169,7 @@ namespace SpaceEngineersVR.Tracking
         /// </summary>
         private static void View(ref MatrixD __result)
         {
-            if (failed || Off || !frame.Started || !VRSettings.LevelChaseCamera || MySession.Static?.CameraController == null)
+            if (failed || Off || !frame.Started || !VRSettings.LevelChaseCamera || !XrSession.Focused || MySession.Static?.CameraController == null)
                 return;
             MyCockpit seat = ThirdPersonSeat();
             if (seat == null || seat != owner)

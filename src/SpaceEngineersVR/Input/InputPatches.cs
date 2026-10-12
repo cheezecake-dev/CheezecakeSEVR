@@ -11,20 +11,17 @@ namespace SpaceEngineersVR.Input
     /// sticks and grips added (<see cref="VRControls"/>), and the questions about a control being pressed answer for the buttons
     /// too. Keyboard and mouse keep working beside them.
     /// </summary>
-    internal static class InputPatches
+    internal static partial class InputPatches
     {
-        private static readonly DesktopHands desktop = new DesktopHands();
-
         /// <summary>
         /// Each patch on its own: a hand input that cannot be hooked must not take the rendering patches down with it
         /// (an exception out of here is caught as "patching the renderer failed").
         /// </summary>
         public static void Patch(Harmony harmony)
         {
-            VRInput.Desktop = desktop;
             PatchRegistry.Apply(nameof(ControlGrip), () => ControlGrip.Patch(harmony));
             PatchRegistry.Apply(nameof(HandFlight), () => HandFlight.Patch(harmony));
-            PatchRegistry.Apply(nameof(Drive), () => Drive.Patch(harmony));
+            PatchTestAids(harmony);
 
             // The game's input update, once per frame on the game thread, just before the screens read the controls.
             // The keys' "new pressed" is decided there too, so the hands' edges advance in step with them.
@@ -56,10 +53,17 @@ namespace SpaceEngineersVR.Input
         private static void Hook(Harmony harmony, string what, System.Reflection.MethodBase target, string postfix) =>
             PatchRegistry.Hook(harmony, typeof(InputPatches), "Hand input", "it will not reach the game", what, target, postfix: postfix);
 
+        // The test aids (src/SpaceEngineersVR.TestAids: the drive and the fake hands) go in here. They are compiled only
+        // into test builds; without them these calls compile away.
+        static partial void PatchTestAids(Harmony harmony);
+        static partial void TestAidsFrame(MyVRageInput input, bool gameFocused);
+        static partial void TestAidsMovement(ref VRageMath.Vector3 delta);
+        static partial void TestAidsRotation(ref VRageMath.Vector2 rotation);
+        static partial void TestAidsControl(MyStringId control, MyControlStateType type, ref bool wanted);
+
         private static void FrameStart(MyVRageInput __instance, bool gameFocused)
         {
-            Drive.Frame(__instance, gameFocused);
-            desktop.Poll();
+            TestAidsFrame(__instance, gameFocused);
             VRInput.Update();
             VRControls.Update();
             Hands.ViewScreenGrab.Frame();
@@ -70,13 +74,13 @@ namespace SpaceEngineersVR.Input
         private static void Movement(ref VRageMath.Vector3 __result)
         {
             VRControls.AddMovement(ref __result);
-            Drive.AddMovement(ref __result);
+            TestAidsMovement(ref __result);
         }
 
         private static void Rotation(ref VRageMath.Vector2 __result)
         {
             VRControls.AddRotation(ref __result);
-            Drive.AddRotation(ref __result);
+            TestAidsRotation(ref __result);
         }
 
         private static void Roll(ref float __result) => VRControls.AddRoll(ref __result);
@@ -85,7 +89,9 @@ namespace SpaceEngineersVR.Input
         {
             if (__result || joystickOnly)
                 return;
-            if (Drive.Wants(controlId, type))
+            bool driven = false;
+            TestAidsControl(controlId, type, ref driven);
+            if (driven)
                 __result = true;
             else if (ToolbarWheel.Answer(context, controlId, type))
                 __result = true;
@@ -110,7 +116,9 @@ namespace SpaceEngineersVR.Input
         {
             if (result || input.IsControlBlocked(control))
                 return;
-            if (Drive.Wants(control, type))
+            bool driven = false;
+            TestAidsControl(control, type, ref driven);
+            if (driven)
                 result = true;
             else if (VRControls.MayAnswer(control))
                 result = VRControls.Wants(control, type, VRControls.EntityContext());

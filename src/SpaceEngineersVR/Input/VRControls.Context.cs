@@ -44,7 +44,7 @@ namespace SpaceEngineersVR.Input
         public static VRContext CurrentContext()
         {
             VRContext last = context;
-            if (ContextOverride.HasValue)
+            if (Seamed(out _, out _, out _))
                 return last;
             try
             {
@@ -162,6 +162,19 @@ namespace SpaceEngineersVR.Input
             }
         }
 
+        /// <summary>A test aid implements this to stand in for the controlled entity; <paramref name="active"/> is set when it does.</summary>
+        static partial void ContextSeam(ref bool active, ref VRContext context, ref bool camera, ref bool sticks);
+
+        private static bool Seamed(out VRContext context, out bool camera, out bool sticks)
+        {
+            bool active = false;
+            context = VRContext.None;
+            camera = false;
+            sticks = true;
+            ContextSeam(ref active, ref context, ref camera, ref sticks);
+            return active;
+        }
+
         /// <summary>
         /// What the local player controls: the character (on foot or flying), a ship controller (cockpit, remote
         /// control, a rover's seat), or a turret and the like, which the game gives the ship controls' context too.
@@ -173,12 +186,8 @@ namespace SpaceEngineersVR.Input
             detail = null;
             camera = false;
             sticks = true;
-            if (ContextOverride.HasValue)
-            {
-                camera = CameraViewOverride;
-                sticks = !SeatCannotFlyOverride;
-                return ContextOverride.Value;
-            }
+            if (Seamed(out VRContext seamed, out camera, out sticks))
+                return seamed;
             MySession session = MySession.Static;
             var entity = session?.ControlledEntity;
             if (session == null)

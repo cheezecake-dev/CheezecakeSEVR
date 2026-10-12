@@ -12,7 +12,7 @@ namespace SpaceEngineersVR
     /// influence render device creation (adapter choice, stereo flag). Two hosts call it there:
     /// SpaceEngineersVR.Launcher, and Pulsar through <see cref="global::Preloader.Finish"/>.
     /// </summary>
-    public static class Bootstrap
+    public static partial class Bootstrap
     {
         private static bool initialized;
 
@@ -46,6 +46,7 @@ namespace SpaceEngineersVR
             Log.Info("Args: " + string.Join(" ", args ?? Array.Empty<string>()));
             Input.FocusReturn.Start();
 
+            UserFiles.CopyFromOldPlace(VRSettings.FileName);
             VRSettings.Load(args);
             if (!VRSettings.Enabled)
             {
@@ -53,10 +54,20 @@ namespace SpaceEngineersVR
                 return;
             }
 
-            if (!beforeGame)
-                Log.Warn("Loaded after the render device was created; stereo rendering needs SpaceEngineersVR.Launcher.exe or Pulsar's Preloader hook");
-            else
+            if (beforeGame)
                 FindHeadset();
+            else
+                Log.Warn("Loaded after the render device was created; VR needs SpaceEngineersVR.Launcher.exe or Pulsar's Preloader hook");
+
+            bool vr = XrRuntime.HasSystem;
+            if (!vr)
+                VRWithoutHeadset(ref vr);
+            if (!vr)
+            {
+                // Patches change what the player can do (recoil, camera, controls), so none go on unless VR is in use.
+                Log.Info("No headset found: nothing is patched and the game runs as usual");
+                return;
+            }
 
             try
             {
@@ -74,6 +85,9 @@ namespace SpaceEngineersVR
                 Harmony?.UnpatchAll(Harmony.Id);
             }
         }
+
+        /// <summary>A test build's switch for VR without a headset (src/SpaceEngineersVR.TestAids/); a player's build has none.</summary>
+        static partial void VRWithoutHeadset(ref bool on);
 
 #if LINUX
         private const int RuntimeWaitMs = 15000;
@@ -117,12 +131,12 @@ namespace SpaceEngineersVR
                 return;
 #endif
             if (!XrRuntime.TryGetSystem())
-                Log.Info("No headset connected (connect it before starting the game); both eyes go side by side in the window");
+                Log.Info("No headset connected (connect it before starting the game)");
         }
 
         /// <summary>
         /// Before the game picks its GPU: the headset runtime says which one the session has to be on. Without a
-        /// headset (or without OpenXR) the game runs with both eyes side by side in the window.
+        /// headset (or without OpenXR) nothing is patched and the game runs as usual.
         /// </summary>
         private static void FindHeadset()
         {
@@ -134,7 +148,7 @@ namespace SpaceEngineersVR
                         () => System.Threading.Interlocked.CompareExchange(ref lookup, Abandoned, Waiting) == Waiting))
                 {
                     Log.Warn($"No OpenXR answer from the runtime after {RuntimeWaitMs / 1000} s (WiVRn waits for the headset to connect); " +
-                             "starting without VR, both eyes go side by side in the window. Connect the headset before starting the game");
+                             "starting without VR. Connect the headset before starting the game");
                 }
 #else
                 FindHeadsetBlocking();
@@ -147,11 +161,11 @@ namespace SpaceEngineersVR
 #if LINUX
                          " (start the WiVRn server, connect the headset, then start the game)" +
 #endif
-                         "; both eyes go side by side in the window");
+                         "; starting without VR");
             }
             catch (Exception e)
             {
-                Log.Error(e, "OpenXR is not usable; both eyes go side by side in the window");
+                Log.Error(e, "OpenXR is not usable; starting without VR");
             }
         }
     }

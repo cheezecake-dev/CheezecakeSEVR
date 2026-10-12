@@ -260,7 +260,7 @@ namespace SpaceEngineersVR.Hands
                 Hold hold = holds[i];
                 if (hold.Kind != Kind.Hull || !TryModel((Hand)i, trackingToModel, out Vector3D model))
                     continue;
-                Vector3D hand = Vector3D.Transform(model, modelToWorld);
+                Vector3D hand = Reach.Limit(body, Vector3D.Transform(model, modelToWorld));
                 Vector3D anchor = Vector3D.Transform(hold.Anchor, hold.Grid.PositionComp.WorldMatrixRef);
                 Vector3D handGap = anchor - hand;
                 double stretch = handGap.Length();
@@ -437,7 +437,7 @@ namespace SpaceEngineersVR.Hands
                 return false;
             if (!HandWorld.TryGetTrackingToBody(body, out MatrixD trackingToModel, out _) || !TryModel(hand, trackingToModel, out Vector3D model))
                 return false;
-            Vector3D world = Vector3D.Transform(model, body.PositionComp.WorldMatrixRef);
+            Vector3D world = Reach.Limit(body, Vector3D.Transform(model, body.PositionComp.WorldMatrixRef));
             Hold hold = holds[(int)hand];
 
             if (ladders && TryLadder(world, out MyLadder ladder))

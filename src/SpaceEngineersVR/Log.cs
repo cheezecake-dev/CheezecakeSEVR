@@ -6,7 +6,7 @@ using System.Threading;
 namespace SpaceEngineersVR
 {
     /// <summary>
-    /// Plugin log, written beside the game's own logs in %AppData%\SpaceEngineers.
+    /// Plugin log, written beside the game's own logs in its user data folder (<see cref="UserFiles"/>).
     /// The game's MyLog is not available yet when the launcher bootstraps us, so we keep our own.
     /// <para>
     /// A caller never touches the disk: <see cref="Info"/>, <see cref="Warn"/> and <see cref="Error(string)"/> put the line
@@ -92,7 +92,7 @@ namespace SpaceEngineersVR
 
         public static string FilePath { get; private set; }
 
-        public static void Init() => Init(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpaceEngineers"));
+        public static void Init() => Init(UserFiles.Dir);
 
         /// <summary>Logs into <paramref name="dir"/> (the folder is made if it is not there); <see cref="Init()"/> uses the game's.</summary>
         internal static void Init(string dir)

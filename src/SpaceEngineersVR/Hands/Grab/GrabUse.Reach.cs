@@ -87,7 +87,7 @@ namespace SpaceEngineersVR.Hands
             inReach.Clear();
             foreach (Candidate c in candidates)
             {
-                if (c.Kind != Kind.None && c.Distance <= Reach)
+                if (c.Kind != Kind.None && c.Distance <= UseRadius)
                     inReach.Add(c);
             }
             if (inReach.Count == 0)
@@ -130,142 +130,40 @@ namespace SpaceEngineersVR.Hands
             return character.GetHeadMatrix(false).Translation;
         }
 
-        private static readonly List<MyPhysics.HitInfo> reachHits = new List<MyPhysics.HitInfo>();
-        private static readonly List<HkBodyCollision> startsIn = new List<HkBodyCollision>();
-        private static readonly Vector3D[] reachPoint = new Vector3D[1];
-        private static HkShape reachBall, startProbe;
-        private static bool reachShapesMade;
-        private static int reachErrors;
-
         /// <summary>
         /// Whether nothing solid lies on the line from <paramref name="origin"/> (the shoulder, or the eyes) to the palm other
-        /// than the target's own block and the seat. A 1 cm ball is swept along it with
-        /// <c>MyPhysics.CastShapeReturnContactBodyDatas</c> on the character collision layer, as <see cref="SurfaceStop"/>
-        /// sweeps the drawn hands, and solid is what <see cref="SurfaceStop.Solid"/> says (a grid that is not a projection, or
-        /// voxels). Also passed: a back face (the line leaving something) and whatever the line starts inside (a 2 mm probe at
-        /// the origin: the seated body's blocks). Physics that cannot be asked from here (inside the simulation, another
-        /// thread) or a failed cast count as clear, so this never takes away a grab it could not check.
+        /// than the target's own block and the seat (<see cref="Reach.Sweep"/>). A line that could not be checked (physics
+        /// busy, or a failed cast) counts as clear, so this never takes away a grab it could not check.
         /// </summary>
         private static bool LineOfReach(Vector3D origin, Vector3D palm, IMyUseObject use, MyEntity seat, bool note, out string verdict)
         {
-            verdict = "clear";
-            if (reachErrors >= 3 || !MyPhysics.CheckThread() || MyPhysics.InsideSimulation)
+            StringBuilder passed = note ? new StringBuilder() : null;
+            if (!Reach.Sweep(origin, palm, Reach.BlockOf(use?.Owner as MyEntity), Reach.BlockOf(seat), passed, out float first, out object blocker))
             {
-                verdict = "not checked (physics busy)";
+                verdict = "not checked (physics busy or failed)";
                 return true;
             }
-            Vector3D way = palm - origin;
-            double length = way.Length();
-            if (length < 2 * ReachBallRadius)
-                return true;
-            try
+            string alsoPassed = passed != null && passed.Length > 0 ? $"; passed {passed}" : string.Empty;
+            if (blocker == null)
             {
-                if (!reachShapesMade)
-                {
-                    reachBall = new HkSphereShape(ReachBallRadius).Base;
-                    startProbe = new HkSphereShape(StartProbeRadius).Base;
-                    reachShapesMade = true;
-                }
-                MySlimBlock target = BlockOf(use?.Owner as MyEntity);
-                MySlimBlock seatBlock = BlockOf(seat);
-
-                startsIn.Clear();
-                Vector3D start = origin;
-                Quaternion none = Quaternion.Identity;
-                MyPhysics.GetPenetrationsShape(startProbe, ref start, ref none, startsIn, MyPhysics.CollisionLayers.CharacterCollisionLayer);
-
-                reachHits.Clear();
-                MatrixD at = MatrixD.CreateTranslation(origin);
-                MyPhysics.CastShapeReturnContactBodyDatas(palm, reachBall, ref at, (uint)MyPhysics.CollisionLayers.CharacterCollisionLayer, 0f, reachHits);
-
-                float first = float.MaxValue;
-                object blocker = null;
-                StringBuilder passed = note ? new StringBuilder() : null;
-                int notes = 0;
-                foreach (MyPhysics.HitInfo hit in reachHits)
-                {
-                    HkHitInfo info = hit.HkHitInfo;
-                    if (Vector3D.Dot(info.Normal, way) > 0.0)
-                        continue; // a back face: the line leaving something
-                    MyEntity owner = SurfaceStop.Solid(info, out MySlimBlock block, out object what);
-                    if (owner == null)
-                        continue;
-                    string why = target != null && block == target ? "the target's own block"
-                        : seatBlock != null && block == seatBlock ? "the seat"
-                        : StartsInside(info, owner, block, origin) ? "starts inside it"
-                        : null;
-                    if (why != null)
-                    {
-                        if (passed != null && notes++ < 4)
-                            passed.Append(passed.Length == 0 ? string.Empty : ", ")
-                                  .Append($"{SurfaceStop.Describe(what)} at {info.HitFraction * length * 100:0} cm ({why})");
-                        continue;
-                    }
-                    if (info.HitFraction < first)
-                    {
-                        first = info.HitFraction;
-                        blocker = what;
-                    }
-                }
-                reachHits.Clear();
-                startsIn.Clear();
-                string alsoPassed = passed != null && passed.Length > 0 ? $"; passed {passed}" : string.Empty;
-                if (blocker == null)
-                {
-                    verdict = "clear" + alsoPassed;
-                    return true;
-                }
-                verdict = $"blocked by {SurfaceStop.Describe(blocker)} {first * length * 100:0} cm along{alsoPassed}";
-                return false;
-            }
-            catch (Exception e)
-            {
-                reachHits.Clear();
-                startsIn.Clear();
-                Log.Error(e, ++reachErrors < 3 ? "Grab use: the line of reach could not be checked" : "Grab use: the line of reach failed again; not checked until the game restarts");
-                verdict = "not checked (failed)";
+                verdict = "clear" + alsoPassed;
                 return true;
             }
-        }
-
-        /// <summary>Whether the line began inside what it hit (the probe at its start was in the same body and block, or in the voxels).</summary>
-        private static bool StartsInside(HkHitInfo info, MyEntity owner, MySlimBlock block, Vector3D origin)
-        {
-            if (owner is MyVoxelBase)
-            {
-                reachPoint[0] = origin;
-                MyVoxelBase voxels = info.GetHitEntity() as MyVoxelBase ?? (MyVoxelBase)owner;
-                return voxels.IsAnyOfPointInside(reachPoint);
-            }
-            foreach (HkBodyCollision c in startsIn)
-            {
-                if (c.Body != info.Body)
-                    continue;
-                if (block == null || (owner is MyCubeGrid grid && SurfaceStop.BlockOf(grid, c.ShapeKey) == block))
-                    return true;
-            }
+            verdict = $"blocked by {SurfaceStop.Describe(blocker)} {first * Vector3D.Distance(origin, palm) * 100:0} cm along{alsoPassed}";
             return false;
         }
 
-        /// <summary>The block an entity is, or is a part of (a door's leaf, a seat); null for anything else.</summary>
-        private static MySlimBlock BlockOf(MyEntity entity)
-        {
-            for (MyEntity e = entity; e != null; e = e.Parent)
-            {
-                if (e is MyCubeBlock block)
-                    return block.SlimBlock;
-            }
-            return null;
-        }
-
-        /// <summary>The palm in the world: the grip pose's position, put in the world as this frame's camera will have the body.</summary>
-        private static bool TryPalm(Hand hand, in MatrixD trackingToModel, in MatrixD modelToWorld, out Vector3D palm)
+        /// <summary>
+        /// The palm in the world: the grip pose's position, put in the world as this frame's camera will have the body, and
+        /// kept within the arm's reach (<see cref="Reach.Limit"/>).
+        /// </summary>
+        private static bool TryPalm(Hand hand, MyCharacter character, in MatrixD trackingToModel, in MatrixD modelToWorld, out Vector3D palm)
         {
             palm = Vector3D.Zero;
             HandState state = VRInput.Get(hand);
             if (!state.Tracked)
                 return false;
-            palm = Vector3D.Transform(Vector3D.Transform((Vector3D)state.Grip.Translation, trackingToModel), modelToWorld);
+            palm = Reach.Limit(character, Vector3D.Transform(Vector3D.Transform((Vector3D)state.Grip.Translation, trackingToModel), modelToWorld));
             return true;
         }
 

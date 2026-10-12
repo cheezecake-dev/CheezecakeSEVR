@@ -29,6 +29,9 @@ namespace SpaceEngineersVR.Rendering
     /// does for a camera view (the overlay, the zoom keys, the camera's activity count) happens.</item>
     /// <item>A camera that cannot be used now (gone, unpowered, out of antenna range, no access) leaves the screen on third
     /// person, with a short label, and the choice stays: it returns to the camera when that works again.</item>
+    /// <item>Third person follows the world's setting, as the game's own camera does (MySession.Settings.Enable3rdPersonView):
+    /// where it is off, the chase camera cannot be chosen, the screen showing it closes (also when the setting goes off
+    /// during the session), and a camera that cannot be used shows nothing until it can.</item>
     /// </list>
     /// </summary>
     internal static class ExternalViewSource
@@ -61,6 +64,13 @@ namespace SpaceEngineersVR.Rendering
 
         private static double Seconds() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
+        private const string ThirdPersonOff = "Third person view is off in this world";
+
+        /// <summary>The world allows the third-person camera (true outside a session).</summary>
+        public static bool ThirdPersonAllowed => MySession.Static?.Settings?.Enable3rdPersonView != false;
+
+        private static bool barredNoted;
+
         // ---- Words. ----
 
         /// <summary>The chosen camera block's name as the wheel and the labels say it (shortened).</summary>
@@ -87,7 +97,9 @@ namespace SpaceEngineersVR.Rendering
             if (!VRSettings.ExternalViewIsCamera)
                 return "Third person";
             string name = Short(VRSettings.ExternalViewCameraName);
-            return lost ? $"Third person ({name} out of reach)" : $"Camera: {name}";
+            if (!lost)
+                return $"Camera: {name}";
+            return ThirdPersonAllowed ? $"Third person ({name} out of reach)" : $"{name} out of reach";
         }
 
         /// <summary>The camera the screen is showing (not one it fell back from), by entity id.</summary>
@@ -156,8 +168,13 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Turns the screen off. What it showed is kept for the next time it is turned on.</summary>
         public static void TurnOff() => Switch("External view off", off: true, camera: null);
 
-        /// <summary>Shows the chase camera, turning the screen on if it is off.</summary>
-        public static void UseThirdPerson() => Switch("External view: third person", off: false, camera: null);
+        /// <summary>Shows the chase camera, turning the screen on if it is off. Refused where the world has third person off.</summary>
+        public static void UseThirdPerson()
+        {
+            if (Refused())
+                return;
+            Switch("External view: third person", off: false, camera: null);
+        }
 
         /// <summary>Shows a camera block's view, turning the screen on if it is off.</summary>
         public static void UseCamera(MyCameraBlock camera) =>
@@ -171,7 +188,7 @@ namespace SpaceEngineersVR.Rendering
         {
             if (ExternalView.On)
                 TurnOff();
-            else
+            else if (VRSettings.ExternalViewIsCamera || !Refused())
                 Switch(VRSettings.ExternalViewIsCamera ? $"External view: camera {Short(VRSettings.ExternalViewCameraName)}" : "External view: third person",
                     off: false, camera: null, keepSource: true);
         }
@@ -188,14 +205,7 @@ namespace SpaceEngineersVR.Rendering
                 Log.Info("External view: next camera: there is none to step to");
                 return false;
             }
-            int at = 0;
-            if (VRSettings.ExternalViewIsCamera)
-            {
-                long id = VRSettings.ExternalViewCameraId;
-                int index = cameras.FindIndex(camera => camera.EntityId == id);
-                at = index < 0 ? 0 : index + 1;
-            }
-            int to = (at + 1) % (cameras.Count + 1);
+            int to = NextIndex(cameras);
             if (to == 0)
                 UseThirdPerson();
             else
@@ -206,6 +216,13 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>What the next step would show, for the wheel's words under "Next camera".</summary>
         public static string NextName(List<MyCameraBlock> cameras)
         {
+            int to = NextIndex(cameras);
+            return to == 0 ? "Third person" : "Camera: " + Names(cameras)[to - 1];
+        }
+
+        /// <summary>The step after the source chosen: 0 for third person, else one more than the camera's index. Third person is left out where the world has it off.</summary>
+        private static int NextIndex(List<MyCameraBlock> cameras)
+        {
             int at = 0;
             if (VRSettings.ExternalViewIsCamera)
             {
@@ -213,8 +230,37 @@ namespace SpaceEngineersVR.Rendering
                 int index = cameras.FindIndex(camera => camera.EntityId == id);
                 at = index < 0 ? 0 : index + 1;
             }
-            int to = (at + 1) % (cameras.Count + 1);
-            return to == 0 ? "Third person" : "Camera: " + Names(cameras)[to - 1];
+            if (!ThirdPersonAllowed)
+                return cameras.Count == 0 ? 0 : at % cameras.Count + 1;
+            return (at + 1) % (cameras.Count + 1);
+        }
+
+        /// <summary>Where the world has third person off: says so on the HUD and returns true.</summary>
+        private static bool Refused()
+        {
+            if (ThirdPersonAllowed)
+                return false;
+            Log.Info("External view: third person refused; the world has it off");
+            HudToolbar.Notice(ThirdPersonOff);
+            return true;
+        }
+
+        /// <summary>
+        /// Game thread, when the picture would be the chase camera but the world has third person off: a screen set to third
+        /// person is turned off, once, with a notice (a camera that cannot be used just shows nothing until it can).
+        /// </summary>
+        public static void ThirdPersonBarred()
+        {
+            if (VRSettings.ExternalViewIsCamera || !VRSettings.ExternalViewOn)
+                return;
+            if (ExternalView.Debug.HasValue)
+            {
+                if (!barredNoted)
+                    Log.Info("External view: third person is off in this world; RenderDebug ExternalView is in force, so nothing is drawn");
+                barredNoted = true;
+                return;
+            }
+            Switch(ThirdPersonOff + ": external view off", off: true, camera: null);
         }
 
         private static void Switch(string label, bool off, MyCameraBlock camera, bool keepSource = false)
@@ -318,9 +364,10 @@ namespace SpaceEngineersVR.Rendering
                 {
                     lost = true;
                     string name = Short(VRSettings.ExternalViewCameraName);
-                    Log.Info($"External view: camera {name} cannot be shown ({why}); third person instead");
+                    bool chase = ThirdPersonAllowed;
+                    Log.Info($"External view: camera {name} cannot be shown ({why}); {(chase ? "third person instead" : "nothing until it can")}");
                     ExternalView.Retime("the camera was lost");
-                    HudToolbar.Notice($"Camera {name} out of reach: third person");
+                    HudToolbar.Notice(chase ? $"Camera {name} out of reach: third person" : $"Camera {name} out of reach");
                 }
                 return null;
             }

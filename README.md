@@ -115,7 +115,8 @@ the game with `XR_RUNTIME_JSON` set to its `.json` file; your choice always wins
 - **Settings:** everything is in **Options > VR**, on five tabs: Display, Comfort, Controls, Hands and Interface.
   - Each setting's tooltip says what it does.
   - Every way out keeps your changes. **Undo changes** puts back what you had when you opened the screen.
-  - The file is `%APPDATA%\SpaceEngineers\SpaceEngineersVR.cfg`.
+  - The file is `SpaceEngineersVR.cfg` in the game's own folder beside `SpaceEngineers.cfg`: `%APPDATA%\SpaceEngineers\`
+    (`~/.config/SpaceEngineers/` on Linux), or the folder given to the game with `-appdata`.
 
 ## Controls
 
@@ -308,14 +309,14 @@ report form asks for what we need:
 
 - your **headset and how it is connected**: Link cable, Air Link, Virtual Desktop or SteamVR;
 - your **graphics card and driver version**;
-- **both plugin logs**, from `%APPDATA%\SpaceEngineers\`:
+- **both plugin logs**, from `%APPDATA%\SpaceEngineers\` (`~/.config/SpaceEngineers/` on Linux, or the game's `-appdata` folder):
   - `SpaceEngineersVR.log` is the last run;
   - `SpaceEngineersVR.prev.log` is the run before it. Starting the game again moves the old log there, so if you
     restarted after the problem, that is the one with it in;
 - **steps to reproduce**: what you did, what happened, and what you expected.
 
 Before you report, check these:
-- **No headset found** (the log says `No headset connected`): start Link or SteamVR before the game, and check that your
+- **No headset found** (the log says `No headset found`): start Link or SteamVR before the game, and check that your
   headset's runtime is the active OpenXR runtime ([Install](#install-with-pulsar), step 2).
 - **No sound in the headset:** **Sound through the headset** (Options > VR > Display) is on by default and needs a
   restart after a change. Start Link before the game.

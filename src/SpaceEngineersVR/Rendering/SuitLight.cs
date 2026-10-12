@@ -29,7 +29,7 @@ namespace SpaceEngineersVR.Rendering
     /// RenderDebug SuitLightEye=0 gives the game's placement back; SuitLightEye=2 also logs once a second whether the lamp was
     /// placed in the frame the camera was sent from.
     /// </remarks>
-    internal static class SuitLight
+    internal static partial class SuitLight
     {
         /// <summary>The lamp's place from the eye, in the head's own axes, metres: a few cm above it, a little ahead of the face.</summary>
         private const float Up = 0.04f, Ahead = 0.06f;
@@ -37,11 +37,10 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>RenderDebug SuitLightEye=0: the game's own placement.</summary>
         public static bool Off { get; set; }
 
-        /// <summary>RenderDebug SuitLightEye=2: log how the lamp's frame compares with the camera's, and charge an empty suit so the lamp has power.</summary>
+        /// <summary>RenderDebug SuitLightEye=2: log how the lamp's frame compares with the camera's (and, in a test build, charge an empty suit so the lamp has power).</summary>
         public static bool Diag { get; set; }
 
         private static bool logged;
-        private static MyCharacter charged;
         private static long lightFrame = -1;
         private static int updates, cameras, behind, ahead;
         private static long diagAt;
@@ -86,24 +85,15 @@ namespace SpaceEngineersVR.Rendering
             }
             if (Diag)
             {
-                if (charged != character)
-                    Charge(character);
+                TestAidsCharge(character);
                 Interlocked.Exchange(ref lightFrame, (long)MySandboxGame.Static.SimulationFrameCounter);
                 Interlocked.Increment(ref updates);
             }
             return false;
         }
 
-        /// <summary>Test aid (SuitLightEye=2): a world whose suit is empty has no lamp, so the battery gets a charge, once per character.</summary>
-        private static void Charge(MyCharacter character)
-        {
-            charged = character;
-            var source = character.SuitBattery?.ResourceSource;
-            if (source == null || source.RemainingCapacityByType(MyResourceDistributorComponent.ElectricityId) > 1E-05f)
-                return;
-            source.SetRemainingCapacityByType(MyResourceDistributorComponent.ElectricityId, 1E-04f);
-            Log.Info("Suit light: the suit's battery was empty; charged it for the test (SuitLightEye=2)");
-        }
+        /// <summary>A test aid (SuitLightEye=2): a world whose suit is empty has no lamp, so the battery gets a charge.</summary>
+        static partial void TestAidsCharge(MyCharacter character);
 
         /// <summary>Once: where the game would have put the lamp, and where it is now, in cm from the eye (right, up, forward).</summary>
         private static void LogMove(MyCharacter character, in MatrixD eye, in Vector3D now)

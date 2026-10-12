@@ -13,7 +13,7 @@ namespace SpaceEngineersVR.Tracking
     /// derive from it), the first-person camera while the local player sits in it. The seat's forward is the tracking
     /// space's forward.
     /// </summary>
-    internal static class CockpitHead
+    internal static partial class CockpitHead
     {
         private static readonly AccessTools.FieldRef<MyCockpit, MatrixD> CameraDummy = AccessTools.FieldRefAccess<MyCockpit, MatrixD>("m_cameraDummy");
 
@@ -114,7 +114,9 @@ namespace SpaceEngineersVR.Tracking
                 Vector3 fromHead = FromHead(__instance, basis, __result.Translation);
                 LastOffset = offset;
                 LastFromHead = fromHead;
-                if (!BodyGuard.SeatClampOff && VRSettings.SeatReach > 0f)
+                bool unclamped = false;
+                TestAidsSeatUnclamped(ref unclamped);
+                if (!unclamped && VRSettings.SeatReach > 0f)
                     offset = Hold(__instance, fromHead, offset, frame);
                 LastHeld = offset;
                 LastFrame = frame;
@@ -123,6 +125,9 @@ namespace SpaceEngineersVR.Tracking
             __result = result;
             GameHead.UsedForView();
         }
+
+        /// <summary>A test aid (renderdebug SeatClamp=0) lets the seated head leave the character's head by any distance.</summary>
+        static partial void TestAidsSeatUnclamped(ref bool unclamped);
 
         /// <summary>
         /// The head's offset from the seat's eye, held round the seated character's head (<see cref="BodyVolume.LockSeat"/>):

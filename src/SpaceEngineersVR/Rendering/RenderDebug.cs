@@ -2,19 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Reflection;
-using HarmonyLib;
 using SpaceEngineersVR.Gui;
 using SpaceEngineersVR.Input;
 using SpaceEngineersVR.Tracking;
-using VRageRender;
 
 namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
-    /// Debug aid: switches the renderer's own passes on and off (MyRender11.DebugOverrides), to find which pass
-    /// differs between the eyes. Controlled by %APPDATA%\SpaceEngineers\SpaceEngineersVR.renderdebug, re-read about
-    /// once a second, e.g. "SSAO=0 Shadows=0"; names are MyRenderDebugOverrides fields, or one of <see cref="Paths"/>.
+    /// Debug aid: switches the plugin's own parts on and off, and their logging, to find what a problem comes from. Controlled by
+    /// SpaceEngineersVR.renderdebug in the game's user data folder, re-read about once a second, e.g. "Laser=0 HandResidual=1".
+    /// The switches that change the game's state or reach past its checks, and the renderer's own debug overrides
+    /// (MyRender11.DebugOverrides), are test aids (src/SpaceEngineersVR.TestAids/RenderDebug.TestAids.cs), not in a player's build.
     /// RightFirst=1 draws the right eye first; EyeOffset=0 turns off <see cref="EyeOffset"/>,
     /// SharedBillboards=1 lets the eyes share <see cref="OnceBillboards"/>, HudCamera=0 turns off <see cref="HudCamera"/>,
     /// HudVisor=0 puts the whole HUD back on the flat panel (<see cref="HudVisor"/>), HudVisorCylinder=0 draws its pieces on flat quads
@@ -43,7 +41,7 @@ namespace SpaceEngineersVR.Rendering
     /// close to the pose's palm a grip takes a stick or throttle, cm.
     /// HandResidual=1 logs once a second how far the drawn palms are from the controllers; HandGhost=1 draws each controller's
     /// grip pose as a small axis triad, with a dot where the palm belongs (<see cref="Tracking.HandResidual"/>); HandGhost=2 also draws
-    /// the handle as an orange bar and a cyan dot where the finger press takes the index fingertip to be (FingerReach=&lt;mm&gt; tries another reach past the finger's last joint).
+    /// the handle as an orange bar and a cyan dot where the finger press takes the index fingertip to be.
     /// ToolSteady=1 logs once a second, while a tool is held on foot, how far the tool, the controller it is placed from, the palm on
     /// it, the camera off the head and the body's push ahead moved in the view (<see cref="Tracking.ToolSteady"/>).
     /// Vignette=0 turns off the comfort vignette (<see cref="Vignette"/>), VignetteTest=1 draws it at full strength without any motion.
@@ -72,7 +70,6 @@ namespace SpaceEngineersVR.Rendering
     /// FingerPress=0 turns off pressing buttons by touching them with a fingertip (<see cref="Hands.FingerPress"/>);
     /// TouchToolbar=0 keeps the ship's toolbar off every cockpit screen (<see cref="TouchToolbar"/>); TouchToolbarScreen=n puts it
     /// on screen n (0-based) instead of the central-most one when no screen is set to Touch Toolbar.
-    /// FingerPressAll=1 lifts its allow-list so doors, terminals and the rest can be touched too (for testing).
     /// ScreenGlass=0 turns off the screens' glass: no touch on screens, no stopping on them, no lines (<see cref="Hands.ScreenGlass"/>, <see cref="Hands.ScreenTouch"/>).
     /// HandStop=0 turns off the drawn hand stopping on solid things, of every kind (<see cref="Hands.HandStop"/>).
     /// TouchTrace=1 logs, every frame a fingertip is on a screen's glass or near it (or the drawn hand is stopped), the tip's distance
@@ -83,7 +80,6 @@ namespace SpaceEngineersVR.Rendering
     /// each other, the weapon written and read back, and the arm target taken from it (<see cref="Hands.HeldTrace"/>).
     /// ViewGrab=0 turns off moving the external view screen with a grip on it (<see cref="Hands.ViewScreenGrab"/>).
     /// GrabUse=0 turns off using things by closing the grip on them (<see cref="Hands.GrabUse"/>); the right grip is then Use along the ray only.
-    /// GrabAll=0 puts back grab to use's allow-list of before (seats, cryo pods, airtight and advanced doors, medical rooms, cargo, terminals; on foot only).
     /// GrabUseTrace=1 logs each grab-to-use grip's line of reach from the shoulder: clear, or the block in the way.
     /// HeadGestures=0 turns off the helmet grip and the temple tap for the lamp (<see cref="Hands.HeadGestures"/>).
     /// ToolGrasp=0 holds a tool by the game's wrist spot instead of the middle of the hand, as before (<see cref="Hands.HeldItem.WristGrasp"/>).
@@ -103,8 +99,7 @@ namespace SpaceEngineersVR.Rendering
     /// InputLog=0 stops the log line for each headset button press and release, and the menu focus lines beside them (<see cref="InputLog"/>; on by default, at most 10 lines a second).
     /// VRPrompts=0 gives the game's prompts their keyboard names back (<see cref="VRPrompts"/>); VRRadial=0 gives back the game's gamepad radial menus, labels and entries (<see cref="Gui.VRRadialMenus"/>); ActionsWheel=0 has the left stick click on the tools wheel open the game's radial screen instead of the wheel at the hand (<see cref="Gui.ActionsWheel"/>); HudToolbar=1 shows the HUD's bottom toolbar on foot too (<see cref="HudToolbar"/>).
     /// BodyClearance=0 lets the eye go into the character's own body (<see cref="Tracking.BodyGuard"/>), CrouchWithHead=0 stops the head's crouch crouching
-    /// the character, SeatClamp=0 lets the head leave the seated character's head by any distance, back into the body too (<see cref="Tracking.CockpitHead"/>),
-    /// HeadLock=0 lets the head on foot go any distance from the character's head (<see cref="Tracking.BodyGuard"/>);
+    /// the character;
     /// HeadPush=0 gives the lock its soft hold back, which leaves the on-foot centre where the last recentre put it and holds a head far from it off the view, in place of the pushed edge that moves the centre with the head (<see cref="Tracking.GameHead.PushOnFoot"/>).
     /// EyeHold=0 lets the eye follow the animated head bone on foot and upright (a tool coming up or going away, a walk that stops), as before, instead of the headset (<see cref="Tracking.EyeHold"/>);
     /// EyeTrace=1 logs a line for every simulation frame on foot with the movement state, the body's drop and the eye's height above the feet.
@@ -112,7 +107,7 @@ namespace SpaceEngineersVR.Rendering
     /// BodyForwardMm=n draws it n millimetres forward instead (<see cref="Tracking.BodyShift"/>); BodyForwardHold=0 brings the body forward again as soon as
     /// the room in front of the eye allows, at 0.4 m/s, as before, instead of holding it back 0.75 s after the room last held it and then at 0.25 m/s.
     /// SuitLightEye=0 gives the game's own placement of the suit's lamp back (15 cm above the head bone, aimed along the body), in place of the lamp at the
-    /// eye, a few cm above it and ahead, aimed where the head looks (<see cref="SuitLight"/>); SuitLightEye=2 also logs once a second whether the lamp was placed in the camera's frame, and charges an empty suit battery once so the lamp has power.
+    /// eye, a few cm above it and ahead, aimed where the head looks (<see cref="SuitLight"/>); SuitLightEye=2 also logs once a second whether the lamp was placed in the camera's frame.
     /// RecentreAll=0 makes a recentre only turn, as before, leaving the eye where it is (<see cref="Tracking.GameHead.Recentre"/>).
     /// SeatedPlay=1 is seated play and SeatedPlay=0 standing play, whatever the Play position setting says (<see cref="VRSettings.SeatedPlay"/>).
     /// CameraShake=0 (Off), 1 (Low, a quarter) or 2 (Full) sets how much of the game's camera shake, camera spring and walking head bob reaches the view, whatever the Camera shake setting says (<see cref="Tracking.CameraShake"/>).
@@ -131,36 +126,16 @@ namespace SpaceEngineersVR.Rendering
     /// in the world again, so they are not moved on with the view and the cockpit (<see cref="Rendering.MotionExtrapolation.AddLine"/>); ToolPartsRide=0 leaves
     /// the held tool's parts (the drill's spike, the grinder's disc) where the game frame put them again, so they slide against the tool while the body moves
     /// (<see cref="Rendering.MotionExtrapolation.PartsOff"/>); DesktopIpd=0 (mm) sets how far
-    /// apart the desktop eyes are, in place of the IPD setting (0 draws both from one point, so the two halves of the window should match);
-    /// ShadowFreeze=1 is the renderer's own frozen shadow camera (the cascades stop following the view), UsageSkip=0 stops it skipping
-    /// cascades few pixels use.
-    /// Drive=0 stops the test command file being read and run (<see cref="Input.Drive"/>).
-    /// FakeHandsPoll=N reads the fake hands' file every N frames (1 to 60), not every 15 (<see cref="Input.DesktopHands"/>), for a test that presses twice within half a second.
+    /// apart the desktop eyes are, in place of the IPD setting (0 draws both from one point, so the two halves of the window should match).
     /// FocusMute=1 gives the game's own mute when its window is in the background back, even in the headset (<see cref="SoundFocus"/>; by default the sound stays on in VR).
     /// HeadsetAudio=0 plays the game's sound through the Windows default output, not the headset's audio device (<see cref="HeadsetAudio"/>); read when the
     /// game starts its sound (at start-up, or again after its audio device went away).
     /// Removing a name restores it.
     /// </summary>
-    internal static class RenderDebug
+    internal static partial class RenderDebug
     {
-        private static readonly string ControlFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpaceEngineers", "SpaceEngineersVR.renderdebug");
+        private static readonly string ControlFile = UserFiles.File("SpaceEngineersVR.renderdebug");
 
-        private static readonly Type Render11 = typeof(MyDX11Render).Assembly.GetType("VRageRender.MyRender11", throwOnError: true);
-        private static readonly PropertyInfo Overrides = AccessTools.Property(Render11, "DebugOverrides");
-
-        /// <summary>Other switches, as a static field path (struct fields are written back).</summary>
-        private static readonly Dictionary<string, (Type Type, string[] Path)> Paths = new Dictionary<string, (Type, string[])>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["CascadesEveryFrame"] = (typeof(MyDX11Render).Assembly.GetType("VRageRender.MyShadowCascades", throwOnError: true),
-                new[] { "Settings", "Data", "UpdateCascadesEveryFrame" }),
-            ["UsageSkip"] = (Render11, new[] { "Settings", "ShadowCascadeUsageBasedSkip" }),
-            ["ShadowFreeze"] = (Render11, new[] { "Settings", "ShadowCameraFrozen" }),
-            ["EyeAdaptation"] = (Render11, new[] { "Postprocess", "EnableEyeAdaptation" }),
-        };
-
-        private static readonly Dictionary<FieldInfo, bool> original = new Dictionary<FieldInfo, bool>();
-        private static readonly Dictionary<string, bool> originalPaths = new Dictionary<string, bool>();
         private static string lastText;
 
         /// <summary>Draw the right eye first, to tell state left over between the eyes from the eyes themselves.</summary>
@@ -201,6 +176,10 @@ namespace SpaceEngineersVR.Rendering
             return found;
         }
 
+        // The test aids' switches: put back what they changed, and take one switch ("name=value").
+        static partial void ResetTestAids();
+        static partial void TestAidsSwitch(string part, List<string> applied, ref bool taken);
+
         /// <param name="frame">Frame counter; the control file is read about once a second.</param>
         public static void Update(int frame)
         {
@@ -220,13 +199,7 @@ namespace SpaceEngineersVR.Rendering
                 return;
             lastText = text;
 
-            object overrides = Overrides.GetValue(null);
-            foreach (KeyValuePair<FieldInfo, bool> restore in original)
-                restore.Key.SetValue(overrides, restore.Value);
-            original.Clear();
-            foreach (KeyValuePair<string, bool> restore in originalPaths)
-                SetPath(Paths[restore.Key].Type, null, Paths[restore.Key].Path, 0, restore.Value);
-            originalPaths.Clear();
+            ResetTestAids();
             RightFirst = false;
             DesktopIpd = null;
             SharedShadows.Off = true;
@@ -254,7 +227,6 @@ namespace SpaceEngineersVR.Rendering
             BloodPulse.TestHits = null;
             VRControls.Off = false;
             Laser.Off = false;
-            Drive.Off = false;
             SoundFocus.GameMute = false;
             HandIK.ResetDebug();
             Tracking.HandResidual.On = false;
@@ -271,7 +243,7 @@ namespace SpaceEngineersVR.Rendering
             ExternalView.Debug = null;
             PerfMeter.Off = false;
             PerfMeter.PassMarks = false;
-            StallWatchdog.Off = false;
+            StallWatchdog.Off = true;
             Tracking.ChaseCamera.Off = false;
             WristButton.Off = false;
             WristStatus.Off = false;
@@ -290,10 +262,7 @@ namespace SpaceEngineersVR.Rendering
             Hands.HeldTrace.On = false;
             TouchToolbar.Off = false;
             TouchToolbar.ScreenOverride = -1;
-            Hands.FingerPress.All = false;
-            Hands.FingerPress.ReachDebug = 0.0;
             Hands.GrabUse.Off = false;
-            Hands.GrabUse.All = true;
             Hands.GrabUse.Trace = false;
             Hands.ViewScreenGrab.Off = false;
             Hands.HeadGestures.Off = false;
@@ -323,8 +292,6 @@ namespace SpaceEngineersVR.Rendering
             HudToolbar.ForceShown = false;
             Tracking.BodyGuard.Off = false;
             Tracking.BodyGuard.CrouchOff = false;
-            Tracking.BodyGuard.SeatClampOff = false;
-            Tracking.BodyGuard.LockOff = false;
             Tracking.BodyGuard.PushOff = false;
             Tracking.BodyGuard.HoldOff = false;
             Tracking.BodyGuard.TraceOn = false;
@@ -341,7 +308,6 @@ namespace SpaceEngineersVR.Rendering
             Tracking.ZeroGPivot.Off = false;
             Tracking.MagBootsSmoothing.Off = false;
             Tracking.MagBootsSmoothing.SmoothSeconds = Tracking.MagBootsSmoothing.DefaultSmoothSeconds;
-            Input.DesktopHands.PollEveryFrames = 15;
             Input.VRControls.MenuHoldOff = false;
             Input.ControlGrip.Debug = null;
             Input.ControlGrip.LogInputs = false;
@@ -411,12 +377,6 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"BodyForwardMm={setting}");
                         continue;
                     }
-                    if (pair[0].Equals("HeadLock", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Tracking.BodyGuard.LockOff = setting == 0;
-                        applied.Add($"HeadLock={!Tracking.BodyGuard.LockOff}");
-                        continue;
-                    }
                     if (pair[0].Equals("HeadPush", StringComparison.OrdinalIgnoreCase))
                     {
                         Tracking.BodyGuard.PushOff = setting == 0;
@@ -442,12 +402,6 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"SuitLightEye={(setting == 0 ? "game's placement" : setting >= 2 ? "at the eye, with the frame log" : "at the eye")}");
                         continue;
                     }
-                    if (pair[0].Equals("SeatClamp", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Tracking.BodyGuard.SeatClampOff = setting == 0;
-                        applied.Add($"SeatClamp={!Tracking.BodyGuard.SeatClampOff}");
-                        continue;
-                    }
                     if (pair[0].Equals("RecentreAll", StringComparison.OrdinalIgnoreCase))
                     {
                         Tracking.GameHead.RecentreTurnOnly = setting == 0;
@@ -464,12 +418,6 @@ namespace SpaceEngineersVR.Rendering
                     {
                         VRSettings.CameraShakeOverride = Math.Max(0, Math.Min(2, setting));
                         applied.Add($"CameraShake={VRSettings.CameraShakeOverride} ({new[] { "Off", "Low", "Full" }[VRSettings.CameraShakeOverride.Value]})");
-                        continue;
-                    }
-                    if (pair[0].Equals("FakeHandsPoll", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Input.DesktopHands.PollEveryFrames = Math.Max(1, Math.Min(60, setting));
-                        applied.Add($"FakeHandsPoll={Input.DesktopHands.PollEveryFrames}");
                         continue;
                     }
                     if (pair[0].Equals("ZeroGPivot", StringComparison.OrdinalIgnoreCase))
@@ -590,12 +538,6 @@ namespace SpaceEngineersVR.Rendering
                     {
                         VRControls.Off = setting == 0;
                         applied.Add($"VRInput={!VRControls.Off}");
-                        continue;
-                    }
-                    if (pair[0].Equals("Drive", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Drive.Off = setting == 0;
-                        applied.Add($"Drive={!Drive.Off}");
                         continue;
                     }
                     if (pair[0].Equals("FocusMute", StringComparison.OrdinalIgnoreCase))
@@ -826,12 +768,6 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"GrabUse={!Hands.GrabUse.Off}");
                         continue;
                     }
-                    if (pair[0].Equals("GrabAll", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Hands.GrabUse.All = setting != 0;
-                        applied.Add($"GrabAll={Hands.GrabUse.All}");
-                        continue;
-                    }
                     if (pair[0].Equals("GrabUseTrace", StringComparison.OrdinalIgnoreCase))
                     {
                         Hands.GrabUse.Trace = setting != 0;
@@ -970,18 +906,6 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"InputLog={!InputLog.Off}");
                         continue;
                     }
-                    if (pair[0].Equals("FingerReach", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Hands.FingerPress.ReachDebug = setting / 1000.0;
-                        applied.Add($"FingerReach={setting} mm");
-                        continue;
-                    }
-                    if (pair[0].Equals("FingerPressAll", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Hands.FingerPress.All = setting != 0;
-                        applied.Add($"FingerPressAll={Hands.FingerPress.All}");
-                        continue;
-                    }
                     if (pair[0].Equals("PanelCursor", StringComparison.OrdinalIgnoreCase))
                     {
                         PanelCursor.Off = setting == 0;
@@ -1067,47 +991,13 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"EyeOffset={!EyeOffset.Off}");
                         continue;
                     }
-                    if (Paths.TryGetValue(pair[0], out var path))
-                    {
-                        if (!originalPaths.ContainsKey(pair[0]))
-                            originalPaths[pair[0]] = (bool)GetPath(path.Type, null, path.Path, 0);
-                        SetPath(path.Type, null, path.Path, 0, setting != 0);
-                        applied.Add($"{pair[0]}={setting != 0}");
-                        continue;
-                    }
                 }
-                FieldInfo field = pair.Length == 2 ? AccessTools.Field(overrides.GetType(), pair[0]) : null;
-                if (field == null || field.FieldType != typeof(bool) || !int.TryParse(pair[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
-                {
+                bool taken = false;
+                TestAidsSwitch(part, applied, ref taken);
+                if (!taken)
                     Log.Warn($"Render debug: ignored '{part}'");
-                    continue;
-                }
-                original[field] = (bool)field.GetValue(overrides);
-                field.SetValue(overrides, value != 0);
-                applied.Add($"{field.Name}={value != 0}");
             }
             Log.Info(applied.Count > 0 ? "Render debug: " + string.Join(", ", applied) : "Render debug off");
-        }
-
-        private static object GetPath(Type type, object obj, string[] path, int i)
-        {
-            FieldInfo field = AccessTools.Field(type, path[i]);
-            object value = field.GetValue(obj);
-            return i == path.Length - 1 ? value : GetPath(field.FieldType, value, path, i + 1);
-        }
-
-        private static void SetPath(Type type, object obj, string[] path, int i, object value)
-        {
-            FieldInfo field = AccessTools.Field(type, path[i]);
-            if (i == path.Length - 1)
-            {
-                field.SetValue(obj, value);
-                return;
-            }
-            object child = field.GetValue(obj); // a struct comes back boxed: change the box, then write it back
-            SetPath(field.FieldType, child, path, i + 1, value);
-            if (field.FieldType.IsValueType)
-                field.SetValue(obj, child);
         }
     }
 }

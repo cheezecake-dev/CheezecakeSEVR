@@ -249,7 +249,7 @@ namespace SpaceEngineersVR.Hands
                 MyCharacter character = MySession.Static?.LocalCharacter;
                 if (!MayGrab(character, hand) || !HandWorld.TryGetNow(character, hand, out MatrixD grip, out _, out _))
                     return false;
-                state.Pending = Nearest(grip.Translation, GrabReach, out _);
+                state.Pending = Nearest(Reach.Limit(character, grip.Translation), GrabReach, out _);
                 return state.Pending != null;
             }
             catch (Exception e)
@@ -298,6 +298,7 @@ namespace SpaceEngineersVR.Hands
                 return;
             }
             MatrixD grip = (MatrixD)input.Grip * trackingToWorld;
+            grip.Translation = Reach.Limit(character, grip.Translation);
             state.Push(grip.Translation, frame);
 
             bool ours = GripClaim.Holds(hand, Name);

@@ -153,7 +153,7 @@ namespace SpaceEngineersVR.Hands
                     __result = HandTools.CameraLike(heldOrigin, heldForward, up);
                     return;
                 }
-                if (!HandTools.TryGetHand(out _, out MatrixD aim) || !HandTools.Ray(aim, out Vector3D origin, out Vector3D forward))
+                if (!HandTools.TryGetHand(out _, out MatrixD aim) || !HandTools.ReachRay(character, aim, out Vector3D origin, out Vector3D forward))
                     return;
                 __result = HandTools.CameraLike(origin, forward, aim.Up);
             }
@@ -174,7 +174,7 @@ namespace SpaceEngineersVR.Hands
                 if (!HandTools.IsLocalOnFoot(character))
                     return false;
                 // While the left stick click turns the block the ray stays where it was when the click went down (BuildMode).
-                return BuildMode.TryFrozenRay(character, out origin, out direction) || HandTools.TryGetRay(out origin, out direction);
+                return BuildMode.TryFrozenRay(character, out origin, out direction) || HandTools.TryGetReachRay(out origin, out direction);
             }
             catch (Exception e)
             {

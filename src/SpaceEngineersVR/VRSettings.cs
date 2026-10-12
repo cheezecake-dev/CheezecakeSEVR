@@ -617,12 +617,10 @@ namespace SpaceEngineersVR
         /// <summary>How many times <see cref="Save"/> has written the file. The options screen uses it to see whether anything saved while it was open.</summary>
         public static int SaveCount { get; private set; }
 
-        /// <summary>
-        /// The settings file, SpaceEngineers/SpaceEngineersVR.cfg under the per-user application data folder: %APPDATA% on
-        /// Windows, where .NET puts <see cref="Environment.SpecialFolder.ApplicationData"/> on Linux (~/.config).
-        /// </summary>
-        public static string FilePath { get; set; } =
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpaceEngineers", "SpaceEngineersVR.cfg");
+        /// <summary>The settings file, SpaceEngineersVR.cfg in the game's user data folder (<see cref="UserFiles"/>).</summary>
+        public static string FilePath { get; set; } = UserFiles.File(FileName);
+
+        internal const string FileName = "SpaceEngineersVR.cfg";
 
         private static T Add<T>(T setting) where T : Setting
         {

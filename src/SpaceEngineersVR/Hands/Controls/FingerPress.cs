@@ -49,13 +49,10 @@ namespace SpaceEngineersVR.Hands
     /// since the last frame is swept too (in the body's frame, so a ship's or the body's motion does not count);
     /// something moving through a still hand faster than a few centimetres a frame is not caught.</para>
     /// </remarks>
-    internal static class FingerPress
+    internal static partial class FingerPress
     {
         /// <summary>Debug: no finger pressing (<see cref="Rendering.RenderDebug"/> FingerPress=0).</summary>
         public static bool Off { get; set; }
-
-        /// <summary>Debug: every use object can be touched, not only the allow-list (<see cref="Rendering.RenderDebug"/> FingerPressAll=1).</summary>
-        public static bool All { get; set; }
 
         /// <summary>
         /// The use objects a fingertip may press: the ones whose whole purpose is a push-button, that do one thing, once,
@@ -75,10 +72,20 @@ namespace SpaceEngineersVR.Hands
             typeof(SpaceEngineers.Game.Entities.UseObjects.VendingMachine.MyUseObjectVendingMachinePrevious),
         };
 
-        /// <summary>Whether a fingertip may press this use object: it is a push-button of the allow-list, or <see cref="All"/> is on.</summary>
-        internal static bool IsPressSwitch(object use) => use != null && (All || IsPushButton(use));
+        /// <summary>Whether a fingertip may press this use object: it is a push-button of the allow-list.</summary>
+        internal static bool IsPressSwitch(object use)
+        {
+            if (use == null)
+                return false;
+            bool all = false;
+            TestAidsPressAll(ref all);
+            return all || IsPushButton(use);
+        }
 
-        /// <summary>Whether this use object is one of the push-buttons the fingertip owns, whatever <see cref="All"/> says (<see cref="GrabUse"/> leaves them alone).</summary>
+        /// <summary>A test aid (renderdebug FingerPressAll=1) lets the fingertip press every use object, not only the allow-list.</summary>
+        static partial void TestAidsPressAll(ref bool all);
+
+        /// <summary>Whether this use object is one of the push-buttons the fingertip owns, whatever a test aid allows (<see cref="GrabUse"/> leaves them alone).</summary>
         internal static bool IsPushButton(object use)
         {
             if (use == null)
@@ -96,12 +103,20 @@ namespace SpaceEngineersVR.Hands
         /// points along its bones' -X): the furthest of the 65 glove vertices skinned at least half to that bone
         /// (RightGlove and LeftGlove in SE_astronaut_LOD0.mwm, bind pose), which lie within 0.3 cm of the bone's line.
         /// </summary>
-        public static double FingertipReach => ReachDebug > 0.0 ? ReachDebug : DefaultFingertipReach;
+        public static double FingertipReach
+        {
+            get
+            {
+                double reach = DefaultFingertipReach;
+                TestAidsFingertipReach(ref reach);
+                return reach;
+            }
+        }
 
         public const double DefaultFingertipReach = 0.033;
 
-        /// <summary>RenderDebug FingerReach=&lt;millimetres&gt;: <see cref="FingertipReach"/> to try, for fitting the tip to the glove (0 = the default).</summary>
-        internal static double ReachDebug;
+        /// <summary>A test aid (renderdebug FingerReach=&lt;millimetres&gt;): another <see cref="FingertipReach"/> to try, for fitting the tip to the glove.</summary>
+        static partial void TestAidsFingertipReach(ref double reach);
 
         /// <summary>A use object is touched when the tip is inside its detector box or this close to it, metres.</summary>
         public const double TouchMargin = 0.015;
@@ -359,6 +374,7 @@ namespace SpaceEngineersVR.Hands
 
             Vector3D tip = Fingertip(hand, grip);
             Tracking.HandResidual.NotePress(hand, tip);
+            tip = Reach.Limit(character, tip);
             long now = Stopwatch.GetTimestamp();
             if (state.SeenAt == 0 || now - state.SeenAt > GapSeconds * Stopwatch.Frequency)
             {

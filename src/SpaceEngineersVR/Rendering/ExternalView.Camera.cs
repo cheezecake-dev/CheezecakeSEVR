@@ -73,7 +73,7 @@ namespace SpaceEngineersVR.Rendering
         /// Where the picture is taken from this frame: the chosen camera block's view (its world matrix and field of view,
         /// read only: the player's own view is never moved to it, and the block is never made the active camera), or the
         /// chase camera when that is the source, or when the chosen camera cannot be used now (<see cref="ExternalViewSource"/>
-        /// says so once).
+        /// says so once). No chase camera where the world has third person off (<see cref="ExternalViewSource.ThirdPersonAllowed"/>).
         /// </summary>
         private static bool TryViewpoint(out MatrixD camera, out float field)
         {
@@ -82,6 +82,11 @@ namespace SpaceEngineersVR.Rendering
             {
                 field = MathHelper.Clamp(cameraField, MinFieldOfView, MaxFieldOfView);
                 return true;
+            }
+            if (!ExternalViewSource.ThirdPersonAllowed)
+            {
+                ExternalViewSource.ThirdPersonBarred();
+                return false;
             }
             return TryChaseCamera(out camera);
         }
@@ -131,8 +136,11 @@ namespace SpaceEngineersVR.Rendering
             ChasingCharacter = onFoot;
 
             Vector3 gravity = MyGravityProviderSystem.CalculateNaturalGravityInPoint(center);
-            return Compose(frame, center, gravity, distance, height,
-                MathHelper.ToRadians(VRSettings.ExternalViewOrbit), MathHelper.ToRadians(VRSettings.ExternalViewElevation), out camera);
+            if (!Compose(frame, center, gravity, distance, height,
+                    MathHelper.ToRadians(VRSettings.ExternalViewOrbit), MathHelper.ToRadians(VRSettings.ExternalViewElevation), out camera))
+                return false;
+            KeepClear(entity, center, ref camera);
+            return true;
         }
 
         /// <summary>The third-person camera's distance from what it follows, metres, the last time it was placed (for the wrist panel's words). Zero before then.</summary>

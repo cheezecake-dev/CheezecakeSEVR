@@ -22,7 +22,7 @@ namespace SpaceEngineersVR.Rendering
     /// Everything the game sees of the mouse is in GUI pixels: the mouse area it is told (GetMouseAreaSize) is the GUI's
     /// size, so it scales nothing, and the position is mapped into it here. Only the platform's own mouse is in window pixels.
     /// </remarks>
-    internal static class PanelCursor
+    internal static partial class PanelCursor
     {
         /// <summary>Debug: the cursor is the window stretched over the GUI, not read through the panel (<see cref="RenderDebug"/> PanelCursor=0).</summary>
         public static bool Off { get; set; }
@@ -169,11 +169,16 @@ namespace SpaceEngineersVR.Rendering
             __result = (__instance.GetRawMousePosition() - __instance.GetMouseAreaSize() / 2f * (1f - scale)) / scale;
         }
 
+        // A test aid (Drive) is driving the game while its window has no focus.
+        static partial void KeepsRealMouse(ref bool keep);
+
         // While the laser has the cursor the game placing it is dropped: SetMousePosition moves the real Windows cursor.
         // So it is while a test drives the game without focus (Drive): the cursor belongs to someone else then.
         private static bool SetPosition(ref int x, ref int y)
         {
-            if (Laser.HoldsCursor || Drive.KeepsRealMouse)
+            bool drivenUnfocused = false;
+            KeepsRealMouse(ref drivenUnfocused);
+            if (Laser.HoldsCursor || drivenUnfocused)
                 return false;
             Vector2 window = ToWindow(new Vector2(x, y));
             x = (int)window.X;

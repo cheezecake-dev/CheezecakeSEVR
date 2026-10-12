@@ -16,14 +16,23 @@ namespace SpaceEngineersVR.Input
 {
     internal static partial class VRControls
     {
+        /// <summary>A test aid implements this to stand in for the screen that has focus; <paramref name="active"/> is set when it does.</summary>
+        static partial void MenuScreenSeam(ref bool active, ref object screen);
+
+        /// <summary>A test aid implements this to stand in for the game's gameplay input pass.</summary>
+        static partial void GameplayPassSeam(ref Action pass);
+
         /// <summary>
         /// The screen that has focus when it is a menu, or null: the gameplay screen has focus while the player plays, and
         /// anything else (the pause menu, options, the terminal, the G menu, the wrist panel, a message box) is a menu.
         /// </summary>
         private static object MenuScreen()
         {
-            if (MenuScreenOverride != null)
-                return MenuScreenOverride();
+            bool seamed = false;
+            object seam = null;
+            MenuScreenSeam(ref seamed, ref seam);
+            if (seamed)
+                return seam;
             try
             {
                 MyGuiScreenBase focus = MyScreenManager.GetScreenWithFocus();
@@ -63,7 +72,8 @@ namespace SpaceEngineersVR.Input
                 return;
             try
             {
-                Action pass = GameplayPassOverride;
+                Action pass = null;
+                GameplayPassSeam(ref pass);
                 if (pass == null)
                 {
                     MyGuiScreenGamePlay gameplay = MyGuiScreenGamePlay.Static;

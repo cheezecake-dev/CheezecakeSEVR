@@ -57,8 +57,9 @@ namespace SpaceEngineersVR.Gui
                     Name = "Third person",
                     Icon = PageIcon,
                     Run = ExternalViewSource.UseThirdPerson,
-                    CanUse = usable,
-                    StateText = () => ExternalView.On && !VRSettings.ExternalViewIsCamera ? Showing : "Behind and above you",
+                    CanUse = () => ExternalView.Usable && ExternalViewSource.ThirdPersonAllowed,
+                    StateText = () => !ExternalViewSource.ThirdPersonAllowed ? "Off in this world"
+                        : ExternalView.On && !VRSettings.ExternalViewIsCamera ? Showing : "Behind and above you",
                 },
                 // In a seat Y does not open the wrist panel, so its External view page is reached from here.
                 new ActionsWheel.Entry

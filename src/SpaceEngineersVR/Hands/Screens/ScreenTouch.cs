@@ -39,7 +39,7 @@ namespace SpaceEngineersVR.Hands
     /// builder. The surface index is the game's (IMyTextSurfaceProvider.GetSurface). One log line per Down and Up;
     /// RenderDebug ScreenGlass=0 turns it off with the glass.
     /// </summary>
-    internal static class ScreenTouch
+    internal static partial class ScreenTouch
     {
         internal delegate void TouchHandler(MyCubeBlock block, int surfaceIndex, Vector2 pixel, TouchPhase phase, Hand hand);
 
@@ -120,13 +120,16 @@ namespace SpaceEngineersVR.Hands
             }
         }
 
+        /// <summary>A test aid placing a fake fingertip on a screen (ScreenTest), before the touch reads the hands.</summary>
+        static partial void TestAidsFrame(MyCharacter character);
+
         private static void AfterSimulation(MyCharacter __instance)
         {
             if (__instance != MySession.Static?.LocalCharacter)
                 return;
             try
             {
-                ScreenTest.Frame(__instance);
+                TestAidsFrame(__instance);
                 bool live = !ScreenGlass.Off && VRInput.Active && !__instance.IsDead && !__instance.Closed && __instance.PositionComp != null;
                 object focused = live ? MyScreenManager.GetScreenWithFocus() : null;
                 bool building = (MyCubeBuilder.Static != null && MyCubeBuilder.Static.IsActivated)
@@ -156,7 +159,7 @@ namespace SpaceEngineersVR.Hands
                 h.Armed.Clear();
                 return;
             }
-            Vector3D tip = FingerPress.Fingertip(hand, grip);
+            Vector3D tip = Reach.Limit(character, FingerPress.Fingertip(hand, grip));
             long now = Stopwatch.GetTimestamp();
             long armWindow = (long)(ScreenGlass.ArmSeconds * Stopwatch.Frequency);
 

@@ -8,6 +8,7 @@ using Sandbox.Game.Weapons;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Common;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.OpenXR;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRageMath;
@@ -29,8 +30,8 @@ namespace SpaceEngineersVR.Hands
     /// <para>Guns kick per shot from the gun's own recoil (the weapon definition's vertical and horizontal ground recoil, times
     /// the game's multiplier for stance and aiming; off with the world's EnableRecoil), scaled up. The game applies that recoil
     /// to the character instead, turning the head on foot and spinning the body in zero g; in a headset that would turn the
-    /// view, so for the local character it is kept off the head and body (<see cref="BeforeGameRecoil"/>,
-    /// <see cref="AfterGunUpdate"/>) and lands at the wrist here.</para>
+    /// view, so for the local character, while the headset session has the focus, it is kept off the head and body
+    /// (<see cref="KeepsRecoil"/>, <see cref="BeforeGameRecoil"/>, <see cref="AfterGunUpdate"/>) and lands at the wrist here.</para>
     /// <para>The grinder and drill fight the hand whenever they run (less in the air, <see cref="AirShare"/>): a yank on
     /// spin-up, a climb and a sideways pull while the trigger stays down, and jerks. Amounts are in units of the tool's own
     /// camera shake, so the drill, which the game shakes harder, kicks harder. The drill also twists the hand about its bit.</para>
@@ -146,7 +147,7 @@ namespace SpaceEngineersVR.Hands
             }, "Kickback could not be hooked; tools and guns in one hand do not kick"))
                 hooked = false;
 
-            // The game's own recoil, kept off the local character's head and body whatever the kickback setting: the shot's
+            // The game's own recoil, kept off the local character's head and body in VR whatever the kickback setting: the shot's
             // recoil as it arrives (on the server at once, on a client when the server's value does), and the head angles the
             // gun's update animates (a save and restore around it, so nothing it does to the head is missed).
             PatchRegistry.Apply("game recoil", () =>
@@ -156,7 +157,7 @@ namespace SpaceEngineersVR.Hands
                 harmony.Patch(AccessTools.Method(typeof(MyAutomaticRifleGun), nameof(MyAutomaticRifleGun.UpdateAfterSimulation)),
                     prefix: new HarmonyMethod(typeof(Kickback), nameof(BeforeGunUpdate)),
                     postfix: new HarmonyMethod(typeof(Kickback), nameof(AfterGunUpdate)));
-                Log.Info("Kickback: the game's own gun recoil is kept off the local character (no head turn on foot, no body spin on the jetpack); it kicks at the wrist instead");
+                Log.Info("Kickback: the game's own gun recoil is kept off the local character while the headset has the focus (no head turn on foot, no body spin on the jetpack); it kicks at the wrist instead");
             }, "Kickback: the game's own gun recoil could not be kept off the local character; each shot turns the head (or spins the body on the jetpack), and the view with it");
         }
 
@@ -313,12 +314,19 @@ namespace SpaceEngineersVR.Hands
         // ---- The game's own recoil, kept off the local character ----
 
         /// <summary>
+        /// The game's recoil is kept off <paramref name="owner"/>: the local character, while the headset session has the
+        /// focus. Without a headset in use (none connected, it was lost, or the runtime's dashboard is up) the head is the
+        /// game's and the recoil turns it as usual.
+        /// </summary>
+        private static bool KeepsRecoil(MyCharacter owner) => XrSession.Focused && Haptics.IsLocal(owner);
+
+        /// <summary>
         /// A shot's recoil reaching a hand gun (MyAutomaticRifleGun.RecoilValueChangedCallback, on the character's synced
         /// recoil value). On the jetpack, or falling in zero g, it sets the body's angular velocity (by RecoilJetpackVertical
         /// and Horizontal, degrees a second): the whole character turns. Otherwise it sets the head's next pitch
         /// (RecoilGroundVertical times the movement multiplier, animated over the next frames by AnimateRecoil) and turns
-        /// the head sideways at once (RecoilGroundHorizontal times its draw, AddHorizontalRecoil). For the local character
-        /// none of it runs: the head and the body are the player's in a headset, and the recoil is the wrist's
+        /// the head sideways at once (RecoilGroundHorizontal times its draw, AddHorizontalRecoil). For the local character in
+        /// VR (<see cref="KeepsRecoil"/>) none of it runs: the head and the body are the player's, and the recoil is the wrist's
         /// (<see cref="Shot"/>, with the game's sideways draw). Without it the gun is never recoiling, so the jetpack's own
         /// damping (MyCharacter, IsRecoiling) stops any spin as usual.
         /// </summary>
@@ -327,7 +335,7 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 MyCharacter owner = __instance.Owner;
-                if (!Haptics.IsLocal(owner))
+                if (!KeepsRecoil(owner))
                     return true;
                 if (Sandbox.Game.Multiplayer.Sync.IsServer)
                 {
@@ -360,7 +368,7 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 MyCharacter owner = __instance.Owner;
-                if (Haptics.IsLocal(owner))
+                if (KeepsRecoil(owner))
                     __state = new HeadAngles { Owner = owner, X = owner.HeadLocalXAngle, Y = owner.HeadLocalYAngle };
             }
             catch (Exception e)

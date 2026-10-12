@@ -6,6 +6,7 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
+using SpaceEngineersVR.OpenXR;
 using VRage.Game;
 using VRage.Game.ModAPI.Interfaces;
 using VRageMath;
@@ -17,7 +18,8 @@ namespace SpaceEngineersVR.Tracking
     /// foot and in every seat, the camera-mode key does nothing, and a save or seat that remembers third person is put
     /// back to first person. It is the gate the game has for a world that disables third person (the world setting
     /// Enable3rdPersonView), applied from our setting instead; the world's setting is not touched, because it is saved
-    /// with the world and shared in multiplayer.
+    /// with the world and shared in multiplayer. Only while the headset is in use (<see cref="InVR"/>): without it the game's
+    /// own camera modes stand.
     /// </summary>
     /// <remarks>
     /// Every way into third person ends in a write to the controller's IsInFirstPersonView, so the gate is the setter
@@ -40,6 +42,9 @@ namespace SpaceEngineersVR.Tracking
     internal static class ThirdPersonGate
     {
         private static bool failed;
+
+        /// <summary>The headset is in use (its session has the focus): the gate applies only then.</summary>
+        private static bool InVR => XrSession.Focused;
 
         public static void Patch(Harmony harmony)
         {
@@ -140,7 +145,7 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>The game's gate for a world with third person off, from our setting: asking for third person gets first person.</summary>
         private static void FirstPersonOnly(ref bool value)
         {
-            if (value)
+            if (value || !InVR)
                 return;
             if (!VRSettings.ThirdPerson)
                 value = true;
@@ -163,13 +168,13 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>The camera-mode key and the radial menu entry have nothing to switch to.</summary>
         private static void NoSwitch(ref bool __result)
         {
-            if (!VRSettings.ThirdPerson)
+            if (!VRSettings.ThirdPerson && InVR)
                 __result = false;
         }
 
         private static bool SwitchAllowed()
         {
-            if (!VRSettings.ThirdPerson)
+            if (!VRSettings.ThirdPerson && InVR)
                 return false;
             EndStarting();
             return true;
@@ -180,7 +185,7 @@ namespace SpaceEngineersVR.Tracking
         {
             try
             {
-                if (!VRSettings.ThirdPerson)
+                if (!VRSettings.ThirdPerson && InVR)
                     __instance.EnableFirstPersonView = true;
             }
             catch (Exception e)
@@ -196,7 +201,7 @@ namespace SpaceEngineersVR.Tracking
         private static void LeaveThirdPerson()
         {
             bool starting = VRSettings.ThirdPerson && Starting;
-            if (failed || (VRSettings.ThirdPerson && !starting))
+            if (failed || !InVR || (VRSettings.ThirdPerson && !starting))
                 return;
             try
             {

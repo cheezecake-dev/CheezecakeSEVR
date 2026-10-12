@@ -26,6 +26,10 @@
 #   --no-dxvk         Skip the DXVK step (once CometWorks ships the fix).
 #   --launcher        Install a desktop launcher that starts the WiVRn server,
 #                     sets up adb and starts Pulsar.
+#   --test-aids       Register the test build (SpaceEngineersVR.TestAids.xml):
+#                     the plugin plus the drive, fake hands and fake head of
+#                     src/SpaceEngineersVR.TestAids/. For development only; run
+#                     again without it to go back to the player's build.
 #   --check           Only report what is installed. Changes nothing.
 #   -h, --help        Show this text.
 
@@ -33,7 +37,9 @@ set -euo pipefail
 
 STEAM_APP_ID=244850
 PLUGIN_ID=SpaceEngineersVR
-PLUGIN_DATA_FILE=SpaceEngineersVR.xml
+PLAYER_DATA_FILE=SpaceEngineersVR.xml
+TEST_DATA_FILE=SpaceEngineersVR.TestAids.xml
+PLUGIN_DATA_FILE=$PLAYER_DATA_FILE
 WIVRN_FLATPAK=io.github.wivrn.wivrn
 
 COMETWORKS_DEPS_REPO=https://github.com/CometWorks/linux-dependencies.git
@@ -86,12 +92,18 @@ while [ $# -gt 0 ]; do
         --install-deps) INSTALL_DEPS=1 ;;
         --no-dxvk)      SKIP_DXVK=1 ;;
         --launcher)     WANT_LAUNCHER=1 ;;
+        --test-aids)    PLUGIN_DATA_FILE=$TEST_DATA_FILE ;;
         --check)        CHECK_ONLY=1 ;;
         -h|--help)      usage; exit 0 ;;
         *)              die "unknown option: $1 (try --help)" ;;
     esac
     shift
 done
+
+# The public repository does not carry the test aids.
+if [ "$PLUGIN_DATA_FILE" = "$TEST_DATA_FILE" ] && [ ! -f "$REPO_DIR/$TEST_DATA_FILE" ]; then
+    die "--test-aids: $TEST_DATA_FILE is not here; the test aids are only in the development repository"
+fi
 
 # ---- small helpers ----------------------------------------------------------
 
@@ -246,13 +258,15 @@ dxvk_has_fix() {
 # nothing else in them is touched (the .NET serializer is picky about the
 # header and the namespaces, and a parse-and-rewrite would drop them). Python
 # only parses the file to look for the entry and to check the result.
-#   sources.xml  <LocalPluginSources> lists the development folder.
+#   sources.xml  <LocalPluginSources> lists the development folder, with the
+#                data file it is built from (the player's or the test build's;
+#                both carry the same plugin Id, so there is only ever one entry).
 #   Current.xml  <DevFolder> lists which of those folders are enabled.
 # Files are never created: Pulsar writes them on its first start, and a
 # sources.xml made by hand lacks the plugin hub, so the core plugins do not load.
 # Usage: pulsar_xml check|apply sources|profile FILE
 pulsar_xml() {
-    python3 -I - "$@" "$REPO_DIR" "$PLUGIN_ID" "$PLUGIN_DATA_FILE" <<'PY'
+    python3 -I - "$@" "$REPO_DIR" "$PLUGIN_ID" "$PLUGIN_DATA_FILE" "$PLAYER_DATA_FILE" "$TEST_DATA_FILE" <<'PY'
 import os
 import re
 import sys
@@ -260,6 +274,7 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 mode, kind, path, repo, plugin_id, data_file = sys.argv[1:7]
+data_files = set(sys.argv[7:])
 repo = os.path.normpath(repo)
 
 
@@ -286,13 +301,15 @@ def insert_child(text, parent, child):
 root = ET.parse(path).getroot()
 if kind == "sources":
     candidates = root.findall("./LocalPluginSources/LocalPlugin")
-    matches = [c for c in candidates if c.findtext("File") == data_file]
+    matches = [c for c in candidates if c.findtext("File") in data_files]
+    # This folder's own entry first, whichever data file it has.
+    matches.sort(key=lambda c: not same_folder(c.findtext("Folder")))
 else:
     candidates = root.findall("./DevFolder/LocalFolderConfig")
     matches = [c for c in candidates if c.findtext("Id") == plugin_id]
 entry = matches[0] if matches else None
 if kind == "sources":
-    present = entry is not None and same_folder(entry.findtext("Folder"))
+    present = entry is not None and same_folder(entry.findtext("Folder")) and entry.findtext("File") == data_file
 else:
     present = entry is not None
 
@@ -309,11 +326,12 @@ text = raw.decode("utf-8-sig")
 if kind == "sources":
     folder = escape(repo)
     if entry is not None:
-        # Same data file, other folder: the repository was moved. Repoint it.
+        # The repository was moved, or the other build was registered. Repoint it.
         blocks = list(re.finditer(r"<LocalPlugin>.*?</LocalPlugin>", text, re.S))
         index = candidates.index(entry)
         block = blocks[index]
         fixed = re.sub(r"<Folder>.*?</Folder>", lambda _: "<Folder>%s</Folder>" % folder, block.group(0), flags=re.S)
+        fixed = re.sub(r"<File>.*?</File>", lambda _: "<File>%s</File>" % escape(data_file), fixed, flags=re.S)
         text = text[:block.start()] + fixed + text[block.end():]
     else:
         text = insert_child(text, "LocalPluginSources", [
@@ -560,10 +578,10 @@ step_plugin() {
         fi
     done
     if pulsar_xml check sources "$sources" && pulsar_xml check profile "$profile"; then
-        ok "Development folder registered: $REPO_DIR"
+        ok "Development folder registered: $REPO_DIR ($PLUGIN_DATA_FILE)"
         return
     fi
-    missing "Development folder not registered"
+    missing "Development folder not registered with $PLUGIN_DATA_FILE"
     [ "$CHECK_ONLY" -eq 0 ] || return 0
     if pulsar_running; then
         die "Pulsar is running from $PULSAR_DIR; it rewrites these files on exit. Close it first."
@@ -574,7 +592,7 @@ step_plugin() {
     pulsar_xml apply sources "$sources"
     pulsar_xml apply profile "$profile"
     resolved
-    ok "Registered $REPO_DIR as a development folder (backups next to the XML files)"
+    ok "Registered $REPO_DIR as a development folder with $PLUGIN_DATA_FILE (backups next to the XML files)"
     TODO+=("Start Pulsar: the plugin is listed and enabled. Pulsar compiles it on that start.")
 }
 

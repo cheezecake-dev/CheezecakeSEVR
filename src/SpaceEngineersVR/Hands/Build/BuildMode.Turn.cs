@@ -98,7 +98,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Holds the builder's ray where the hand points now, relative to the body, for as long as the hand turns the block (<see cref="TryFrozenRay"/>).</summary>
         private static void FreezeRay(MyCharacter character)
         {
-            rayFrozen = HandTools.TryGetRay(out Vector3D origin, out Vector3D direction);
+            rayFrozen = HandTools.TryGetReachRay(out Vector3D origin, out Vector3D direction);
             if (!rayFrozen)
                 return;
             MatrixD toBody = MatrixD.Invert(character.WorldMatrix);

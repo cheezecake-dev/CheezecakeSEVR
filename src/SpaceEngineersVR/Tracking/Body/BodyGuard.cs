@@ -31,7 +31,7 @@ namespace SpaceEngineersVR.Tracking
     /// with an acceleration ramp, not a position, so a step of 15 cm cannot be asked of it, and its only position move
     /// (MyDeltaNetCommand) is a teleport that is not synced. The head roams outside the body instead.
     /// </summary>
-    internal static class BodyGuard
+    internal static partial class BodyGuard
     {
         /// <summary>RenderDebug BodyClearance=0: the eye is not pushed out of the body.</summary>
         public static bool Off { get; set; }
@@ -39,17 +39,11 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>RenderDebug CrouchWithHead=0: the head's crouch does not crouch the character.</summary>
         public static bool CrouchOff { get; set; }
 
-        /// <summary>RenderDebug HeadLock=0: on foot, the head is not held to the body (<see cref="BodyVolume.LockHead"/>).</summary>
-        public static bool LockOff { get; set; }
-
         /// <summary>
         /// RenderDebug HeadPush=0: on foot, the lock is the soft hold (<see cref="BodyVolume.LockHead"/>) and the on-foot centre
         /// stays where the last recentre put it instead of following the pushed edge (<see cref="BodyVolume.PushEdge"/>).
         /// </summary>
         public static bool PushOff { get; set; }
-
-        /// <summary>RenderDebug SeatClamp=0: seated, the head is not held round the seated character's head (<see cref="CockpitHead"/>, <see cref="BodyVolume.LockSeat"/>).</summary>
-        public static bool SeatClampOff { get; set; }
 
         /// <summary>RenderDebug EyeHold=0: on foot and upright the eye follows the animated head bone (<see cref="EyeHold"/> off).</summary>
         public static bool HoldOff { get; set; }
@@ -99,7 +93,7 @@ namespace SpaceEngineersVR.Tracking
             // (seated play, the option, CrouchOff): the eye stays where the head is as the body rises under it.
             bool crouch = (CrouchEnabled || driver.Ours) && standHeight.HasValue;
             bool clear = !Off && VRSettings.BodyClearance;
-            float reach = !LockOff && VRSettings.HeadLock ? VRSettings.HeadReach : 0f;
+            float reach = HeadReach();
             bool push = reach > 0f && !PushOff;
             ulong frame = MySandboxGame.Static.SimulationFrameCounter;
             float extra = HoldExtra(character, bodyDrop, crouch, tracked.Y, frame);
@@ -131,6 +125,17 @@ namespace SpaceEngineersVR.Tracking
             return offset;
         }
 
+        /// <summary>How far the head on foot may go from the character's head before it is held, metres; 0: not held.</summary>
+        private static float HeadReach()
+        {
+            bool unlocked = false;
+            TestAidsHeadUnlocked(ref unlocked);
+            return !unlocked && VRSettings.HeadLock ? VRSettings.HeadReach : 0f;
+        }
+
+        /// <summary>A test aid (renderdebug HeadLock=0) lets the head on foot go any distance from the character's head.</summary>
+        static partial void TestAidsHeadUnlocked(ref bool unlocked);
+
         /// <summary>
         /// How far ahead of the head bone the body can be drawn for this tracked head, up to <paramref name="wanted"/>,
         /// without the eye ending up in it (<see cref="BodyShift"/>): the eye as <see cref="Offset"/> places it before the
@@ -142,7 +147,7 @@ namespace SpaceEngineersVR.Tracking
             if (character != known || character.IsDead || Off || !VRSettings.BodyClearance)
                 return wanted;
             bool crouch = (CrouchEnabled || driver.Ours) && standHeight.HasValue;
-            float reach = !LockOff && VRSettings.HeadLock ? VRSettings.HeadReach : 0f;
+            float reach = HeadReach();
             Vector3 eye = BodyEye.Offset(tracked, lastBodyDrop, driver.Ours, crouch, false, reach, 0f, lastEyeExtra, reach > 0f && !PushOff);
             return BodyVolume.Room(eye, wanted);
         }

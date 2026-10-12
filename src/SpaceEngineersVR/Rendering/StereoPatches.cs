@@ -144,7 +144,7 @@ namespace SpaceEngineersVR.Rendering
             ForceVRDeviceSettings(ref settings);
             __result = settings;
             Log.Info($"VR mode: mirror window {settings.BackBufferWidth}x{settings.BackBufferHeight}, adapter {settings.AdapterOrdinal} " +
-                     $"(user setting {userVideo.Value.BackBufferWidth}x{userVideo.Value.BackBufferHeight} {userVideo.Value.WindowMode} kept in config)");
+                     $"(user setting {userVideo.Value.BackBufferWidth}x{userVideo.Value.BackBufferHeight} {userVideo.Value.WindowMode} VSync {userVideo.Value.VSync} kept in config)");
         }
 
         private static MyRenderDeviceSettings? userVideo;
@@ -173,6 +173,13 @@ namespace SpaceEngineersVR.Rendering
                 userVideo = settings;
             else if (!userVideo.HasValue)
                 userVideo = settings;
+            else if (settings.VSync != (XrRuntime.HasSystem ? 0 : userVideo.Value.VSync))
+            {
+                // The mirror window re-applied with a VSync the plugin did not set: the player changed it in the options.
+                MyRenderDeviceSettings user = userVideo.Value;
+                user.VSync = settings.VSync;
+                userVideo = user;
+            }
 
             // Keen's side-by-side stereo mode stays off: half its passes are mono, and EyeRenderer draws each eye whole.
             settings.UseStereoRendering = false;
@@ -186,7 +193,8 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// The game writes its live device settings back to the config whenever it saves video options. Put the
-        /// player's own resolution and window mode back so the VR mirror window never replaces them.
+        /// player's own resolution, window mode and VSync back so the VR mirror window and the headset's VSync off never
+        /// replace them, and nothing of the plugin's stays in SpaceEngineers.cfg after it is removed.
         /// </summary>
         private static void KeepUserVideoConfig()
         {
@@ -198,6 +206,7 @@ namespace SpaceEngineersVR.Rendering
             config.ScreenWidth = user.BackBufferWidth;
             config.ScreenHeight = user.BackBufferHeight;
             config.WindowMode = user.WindowMode;
+            config.VerticalSync = user.VSync;
         }
     }
 }

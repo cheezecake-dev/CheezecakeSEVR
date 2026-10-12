@@ -87,7 +87,7 @@ namespace SpaceEngineersVR.Hands
         public static MatrixD HeadMatrix(MyCharacter character, bool includeY, bool includeX, bool forceHeadAnim, bool forceHeadBone, bool preferLocalOverSync)
         {
             if (HandTools.IsLocalOnFoot(character) && character.CurrentWeapon != null && HandTools.TryGetHand(out _, out MatrixD aim)
-                && HandTools.Ray(aim, out Vector3D origin, out Vector3D direction))
+                && HandTools.ReachRay(character, aim, out Vector3D origin, out Vector3D direction))
                 return HandTools.HeadLike(origin, direction, aim.Up);
             return character.GetHeadMatrix(includeY, includeX, forceHeadAnim, forceHeadBone, preferLocalOverSync);
         }
@@ -182,7 +182,7 @@ namespace SpaceEngineersVR.Hands
                 bool got = frame.HasValue ? HandTools.TryGetHand(frame.Value, out grip, out aim) : HandTools.TryGetHand(out grip, out aim);
                 if (!got)
                     return HeldTrace.On && HeldTrace.Refused(character, forArms, "no hand (not tracked, or the view refused it)");
-                if (!HandTools.Ray(aim, out Vector3D origin, out Vector3D forward))
+                if (!HandTools.ReachRay(character, aim, out Vector3D origin, out Vector3D forward))
                     return HeldTrace.On && HeldTrace.Refused(character, forArms, "no ray from the aim");
 
                 // What the sensors read first, then the weapon: moving the weapon makes the tools refresh their sensor too.
@@ -190,6 +190,8 @@ namespace SpaceEngineersVR.Hands
                 SetLogicalOrientation(__instance, forward);
                 SetCrosshairPoint(__instance, origin + forward * CrosshairDistance);
                 MatrixD world = WeaponWorld(grip, aim, GraspInItem(item.RightHand, false));
+                if (weapon is IMyHandheldGunObject<MyGunBase> gun && gun.GunBase != null)
+                    world.Translation += MuzzleShift(character, gun.GunBase, world);
                 NotePlacement(item, world, grip);
                 weapon.WorldMatrix = world;
                 SetGraphicalPosition(__instance, world.Translation);
@@ -202,6 +204,17 @@ namespace SpaceEngineersVR.Hands
                     HeldTrace.Placed(character, forArms, item, weapon, grip, aim, world);
                 return true;
             }
+        }
+
+        /// <summary>
+        /// How far to move a gun placed at <paramref name="world"/> so its muzzle is on the near side of anything solid
+        /// between the head and it (<see cref="Reach.Unblocked"/>): the shot starts at the muzzle, and a barrel pushed into
+        /// a wall would fire from behind it. Zero when the way is clear.
+        /// </summary>
+        private static Vector3D MuzzleShift(MyCharacter character, MyGunBase gun, in MatrixD world)
+        {
+            Vector3D muzzle = Vector3D.Transform(gun.GetMuzzleLocalPosition(), world);
+            return Reach.Unblocked(character, muzzle) - muzzle;
         }
 
         private static MyHandItemDefinition noted;

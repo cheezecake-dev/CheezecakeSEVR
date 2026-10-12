@@ -107,6 +107,26 @@ namespace SpaceEngineersVR.Hands
             return true;
         }
 
+        /// <summary>
+        /// The hand's aim pose as a ray that acts on the world (the use ray, the building ray, the held tool's sensors): it
+        /// starts within the arm's reach (<see cref="Reach.Limit"/>), so a hand pushed through a wall or held out past an
+        /// arm's length does not cast from there.
+        /// </summary>
+        internal static bool ReachRay(MyCharacter character, in MatrixD aim, out Vector3D origin, out Vector3D direction)
+        {
+            if (!Ray(aim, out origin, out direction))
+                return false;
+            origin = Reach.Limit(character, origin);
+            return true;
+        }
+
+        /// <summary>The dominant hand's <see cref="ReachRay"/> for the local character.</summary>
+        public static bool TryGetReachRay(out Vector3D origin, out Vector3D direction)
+        {
+            origin = direction = Vector3D.Zero;
+            return TryGetHand(out _, out MatrixD aim) && ReachRay(MySession.Static?.LocalCharacter, aim, out origin, out direction);
+        }
+
         /// <summary>This is the player's own character, which the player controls directly (not through a seat or a remote).</summary>
         public static bool IsLocalOnFoot(MyCharacter character) =>
             character != null && MySession.Static != null && character == MySession.Static.LocalCharacter

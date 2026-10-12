@@ -40,7 +40,7 @@ namespace SpaceEngineersVR.Input
     /// the cursor pinned to the edge, so a drag does not drop. In plain gameplay the cursor is hidden and none of this runs:
     /// the buttons would be a tool being fired.
     /// </remarks>
-    internal static class Laser
+    internal static partial class Laser
     {
         /// <summary>Debug: the plain mouse, as before the laser (<see cref="RenderDebug"/> Laser=0).</summary>
         public static bool Off { get; set; }
@@ -192,6 +192,9 @@ namespace SpaceEngineersVR.Input
             }
         }
 
+        /// <summary>A test aid (Drive's gui commands) has the cursor: where on the GUI, in GUI pixels, and whether the left button is down.</summary>
+        static partial void DrivenCursor(ref bool drives, ref Vector2 onGui, ref bool left);
+
         /// <summary>Game thread, once per frame, as the game has just updated its mouse state.</summary>
         private static void Frame(MyVRageInput input, bool gameFocused)
         {
@@ -205,7 +208,11 @@ namespace SpaceEngineersVR.Input
 
             // A test driving the GUI (Drive's gui commands) has the cursor: it is where the command put it, and the left
             // button is the command's, through the same mouse state.
-            if (cursorShown && Drive.TryCursor(out Vector2 driven, out bool driveLeft))
+            bool drives = false, driveLeft = false;
+            Vector2 driven = default;
+            if (cursorShown)
+                DrivenCursor(ref drives, ref driven, ref driveLeft);
+            if (drives)
             {
                 leftHeld = rightHeld = mouseWins = false;
                 scrollCarry = 0f;

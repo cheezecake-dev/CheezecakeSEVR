@@ -5,6 +5,7 @@ using System.Reflection.Emit;
 using HarmonyLib;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.World;
+using SpaceEngineersVR.OpenXR;
 using VRage.Game.Utils;
 using VRageMath;
 
@@ -40,8 +41,11 @@ namespace SpaceEngineersVR.Tracking
     /// </remarks>
     internal static class CameraShake
     {
-        /// <summary>The share of the game's camera movement that reaches the view now.</summary>
-        public static float Scale => VRSettings.CameraShakeScale;
+        /// <summary>
+        /// The share of the game's camera movement that reaches the view now: the setting's while the headset is in use
+        /// (its session has the focus), all of it otherwise, as the game has it.
+        /// </summary>
+        public static float Scale => XrSession.Focused ? VRSettings.CameraShakeScale : 1f;
 
         private static readonly string[] LevelNames = { "Off", "Low", "Full" };
 
