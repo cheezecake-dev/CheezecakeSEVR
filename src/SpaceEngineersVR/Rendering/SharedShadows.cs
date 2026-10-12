@@ -24,11 +24,11 @@ namespace SpaceEngineersVR.Rendering
     /// behind the eyes just far enough that both eyes are inside it. A cascade is fitted to the slice between two split
     /// depths measured from that apex, so near each slice's far end an eye sees up to the pull-back further than the slice
     /// reaches; each cascade's sphere is widened by that much along the frustum's edge, so it holds everything both eyes see.
-    /// Eyes that are not parallel (canted displays) keep a fit each, as before.
+    /// Eyes that are not parallel (canted displays) keep a fit each.
     /// </remarks>
     internal static class SharedShadows
     {
-        /// <summary>Each eye fits and draws its own cascades, as the renderer does. On until the shared fit is checked in game (a 2026-10-10 run froze 2 s after it, with SharedSpotShadows and ProbeOnce, was turned on; not yet separated from the known driver freeze); <see cref="RenderDebug"/> SharedShadows=1 shares.</summary>
+        /// <summary>Each eye fits and draws its own cascades, as the renderer does. Off (not shared) because the shared fit is not yet confirmed safe: a freeze seen with it enabled has not been told apart from a known driver freeze. <see cref="RenderDebug"/> SharedShadows=1 shares.</summary>
         public static bool Off { get; set; } = true;
 
         private static object env;
@@ -45,7 +45,7 @@ namespace SpaceEngineersVR.Rendering
                 transpiler: new HarmonyMethod(typeof(SharedShadows), nameof(WidenSpheres)),
                 finalizer: new HarmonyMethod(typeof(SharedShadows), nameof(AfterPrepare)));
             if (!patched)
-                Log.Warn("Shadow cascades: the cascade fit has changed shape; each eye keeps its own cascades");
+                throw new MissingMethodException("Shadow cascades: the cascade fit has changed shape; each eye keeps its own cascades");
         }
 
         /// <summary>

@@ -29,7 +29,7 @@ namespace SpaceEngineersVR.Gui
     {
         private const string MountIcon = "Textures\\GUI\\Icons\\HUD 2017\\BlockRotate.png";
         private const string VoxelIcon = "Textures\\GUI\\Icons\\HUD 2017\\SetupVoxelHand.png";
-        private const string BackIcon = "Textures\\GUI\\Icons\\HUD 2017\\RotateCounterClockWise.png";
+        private const string BackIcon = GuiTextures.Back;
         private const string RadialComponentType = "Sandbox.Game.Screens.Helpers.MyRadialMenuComponent";
 
         private static MethodInfo pushLastUsedVoxel;

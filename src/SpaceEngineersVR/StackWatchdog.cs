@@ -41,6 +41,10 @@ namespace SpaceEngineersVR
             Log.Info($"Stack watchdog armed: dump in {seconds}s");
         }
 
+#if NETCOREAPP
+        // CoreCLR has no way to read another thread's stack in-process: StackTrace(Thread) is gone and Thread.Suspend/Resume throw.
+        private static string Capture(Thread thread) => "(not available: this runtime cannot read another thread's stack)";
+#else
 #pragma warning disable 618 // Suspend/Resume are deprecated, but the only way to read another thread's stack in-process.
         private static string Capture(Thread thread)
         {
@@ -62,5 +66,6 @@ namespace SpaceEngineersVR
             }
         }
 #pragma warning restore 618
+#endif
     }
 }

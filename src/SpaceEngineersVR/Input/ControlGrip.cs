@@ -56,10 +56,9 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>
         /// A grip takes its control with the palm this close to where the game's pose holds it, metres (RenderDebug
-        /// ControlGripTake=cm). From a drop pod run (SmallBlockCockpit, 2026-10-10, the 30 cm zones of before): every
-        /// grip that went on to touch the cab's screen closed 21 to 35 cm from the pose's palm, and every grip closed 13 cm
-        /// or nearer was a hand going to its control and touched nothing. The pose's palms are 49-56 cm below, 20-22 cm
-        /// ahead of and 29-41 cm to the side of the eye; the cab's screens 71-75 cm from the eyes.
+        /// ControlGripTake=cm). It separates a grip meant for the cab's screen from a hand going to its control: in a small
+        /// cockpit a grip that went on to touch the screen closed 21 to 35 cm from the pose's palm, while a grip closed within
+        /// 13 cm was a hand on its control. The pose's palms sit 49-56 cm below, 20-22 cm ahead of and 29-41 cm to the side of the eye.
         /// </summary>
         public const float DefaultTakeRadius = 0.14f;
 
@@ -148,6 +147,7 @@ namespace SpaceEngineersVR.Input
         private static Vector3 tilt;
         private static bool hintShown;
         private static MyCockpit noPoseLogged;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(ControlGrip));
         private static int errors, drawErrors;
 
         // What the animation says this frame (Capture), in the body's model space.
@@ -199,16 +199,12 @@ namespace SpaceEngineersVR.Input
         public static void Patch(Harmony harmony)
         {
             GripClaim.Register(ClaimName, ClaimPriority, Take);
-            try
+            PatchRegistry.Apply("rings", () =>
             {
                 harmony.Patch(AccessTools.Method(typeof(MySession), nameof(MySession.DrawSync)),
                     postfix: new HarmonyMethod(typeof(ControlGrip), nameof(DrawRings)));
                 hooked = true;
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Hands on the controls: the ring on a control could not be hooked; holding the controls still works");
-            }
+            }, "Hands on the controls: the ring on a control could not be hooked; holding the controls still works");
         }
 
         /// <summary>
@@ -217,6 +213,13 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         public static void Frame(bool shipSeat)
         {
+            if (!guard.On)
+            {
+                // Switched off by its guard: the controls let go, as when leaving the seat.
+                Stop();
+                tilt = Vector3.Zero;
+                return;
+            }
             try
             {
                 MyCockpit cockpit = shipSeat ? PilotSeat() : null;
@@ -253,8 +256,7 @@ namespace SpaceEngineersVR.Input
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hands on the controls failed this frame");
+                guard.Failed(e, "Hands on the controls failed this frame");
             }
         }
 

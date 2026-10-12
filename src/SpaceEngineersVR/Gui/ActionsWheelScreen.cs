@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Sandbox;
-using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Input;
@@ -20,12 +19,12 @@ namespace SpaceEngineersVR.Gui
     /// entry the hand is on, its state, and how to use or close it. The hand that opened it reads its stick and its
     /// position each frame; the screen does the choosing, the using and the closing itself.
     /// </summary>
-    internal sealed class ActionsWheelScreen : MyGuiScreenBase
+    internal sealed partial class ActionsWheelScreen : MyGuiScreenBase
     {
-        private const string SectorTexture = "Textures\\GUI\\Controls\\RadialSectorUnSelected.dds";
-        private const string SelectedTexture = "Textures\\GUI\\Controls\\RadialSectorSelected.dds";
-        private const string CentreTexture = "Textures\\GUI\\Controls\\RadialCentralCircle.dds";
-        private const string CentreSelectedTexture = "Textures\\GUI\\Controls\\RadialCentralCircleSelected.dds";
+        private const string SectorTexture = GuiTextures.RadialSector;
+        private const string SelectedTexture = GuiTextures.RadialSectorSelected;
+        private const string CentreTexture = GuiTextures.RadialCentre;
+        private const string CentreSelectedTexture = GuiTextures.RadialCentreSelected;
 
         /// <summary>A ring has at least the game's eight places, so a short page keeps the same sector shape (the rest stay empty).</summary>
         internal const int MinPositions = 8;
@@ -494,38 +493,6 @@ namespace SpaceEngineersVR.Gui
             if (!used)
                 Log.Info($"Actions wheel: closed, {why}");
             CloseScreen();
-        }
-
-        // ---- The drive's "wheel" command (test aid: ActionsWheelDrive) ----
-
-        /// <summary>The ring up now: its name and its entries, each with its state line and greyed if it cannot be used.</summary>
-        internal string Describe()
-        {
-            var parts = new List<string>(shown?.Count ?? 0);
-            if (shown != null)
-            {
-                foreach (ActionsWheel.Entry entry in shown)
-                {
-                    string state = entry.Page != null && entry.StateText == null ? $"{entry.Page.Count - 1} more" : entry.State;
-                    parts.Add($"{entry.Name}{(entry.Page != null ? " >" : string.Empty)}{(string.IsNullOrEmpty(state) ? string.Empty : "=" + state)}{(entry.Enabled ? string.Empty : " (greyed)")}");
-                }
-            }
-            return $"{title}: {string.Join(", ", parts)}";
-        }
-
-        /// <summary>Chooses the entry of that name on the ring up now, as a trigger pulled on it does; false with the ring's entries when there is none.</summary>
-        internal bool DrivePick(string name, out string detail)
-        {
-            ActionsWheel.Entry entry = shown?.Find(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (entry == null)
-            {
-                detail = $"no '{name}' on {Describe()}";
-                return false;
-            }
-            pickedBy = "the drive";
-            Choose(entry, false);
-            detail = entry.Name;
-            return true;
         }
 
         /// <summary>A screen that was not up when the wheel opened is up now (and is not the HUD's kind, drawn without the focus).</summary>

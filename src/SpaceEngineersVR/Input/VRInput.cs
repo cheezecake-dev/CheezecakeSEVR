@@ -134,14 +134,17 @@ namespace SpaceEngineersVR.Input
         private static HandState left, right;
         private static VRButtons leftBefore, rightBefore;
 
-        /// <summary>The headset's controllers; used whenever it is active.</summary>
+        /// <summary>The headset's controllers; used whenever it is active, unless the desktop emulator is (see <see cref="Desktop"/>).</summary>
         public static IVRInputSource Headset
         {
             get => sources[0];
             set => sources[0] = value;
         }
 
-        /// <summary>The desktop emulator; used when the headset source is not active.</summary>
+        /// <summary>
+        /// The desktop emulator; used when the headset source is not active, and also over an active headset while it has hands
+        /// to report: it is only active while its control file has content, which is a test asking for those hands.
+        /// </summary>
         public static IVRInputSource Desktop
         {
             get => sources[1];
@@ -160,7 +163,7 @@ namespace SpaceEngineersVR.Input
             Sequence++;
             leftBefore = left.Buttons;
             rightBefore = right.Buttons;
-            IVRInputSource source = sources[0]?.Active == true ? sources[0] : sources[1]?.Active == true ? sources[1] : null;
+            IVRInputSource source = InUse();
             Active = source != null;
             if (Active)
                 source.Read(out left, out right);
@@ -168,7 +171,26 @@ namespace SpaceEngineersVR.Input
                 left = right = default;
         }
 
+        /// <summary>The source that gives the hands now: the desktop emulator while it is active, else the headset, else none.</summary>
+        private static IVRInputSource InUse() => sources[1]?.Active == true ? sources[1] : sources[0]?.Active == true ? sources[0] : null;
+
         public static HandState Get(Hand hand) => hand == Hand.Left ? left : right;
+
+        /// <summary>
+        /// The hands from the source in use now, not the frame's snapshot, for code that can run on any thread
+        /// (<see cref="Tracking.HeightCalibration"/>). False when no source is active.
+        /// </summary>
+        public static bool TryReadLive(out HandState leftHand, out HandState rightHand)
+        {
+            IVRInputSource source = InUse();
+            if (source == null)
+            {
+                leftHand = rightHand = default;
+                return false;
+            }
+            source.Read(out leftHand, out rightHand);
+            return true;
+        }
 
         public static bool IsPressed(Hand hand, VRButtons button) => (Get(hand).Buttons & button) != 0;
 
@@ -178,7 +200,7 @@ namespace SpaceEngineersVR.Input
 
         public static void Haptic(Hand hand, float amplitude, float seconds)
         {
-            IVRInputSource source = sources[0]?.Active == true ? sources[0] : sources[1];
+            IVRInputSource source = InUse() ?? sources[1];
             source?.Haptic(hand, amplitude, seconds);
         }
 

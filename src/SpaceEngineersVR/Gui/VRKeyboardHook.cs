@@ -7,7 +7,6 @@ using Sandbox.Graphics;
 using Sandbox.Graphics.GUI;
 using SpaceEngineers.Game.GUI;
 using SpaceEngineersVR.Input;
-using VRage.Game;
 using VRage.Input;
 
 namespace SpaceEngineersVR.Gui
@@ -72,33 +71,23 @@ namespace SpaceEngineersVR.Gui
         /// <summary>Each hook on its own: a keyboard that cannot be hooked must not take the rest of the plugin down with it.</summary>
         public static void Patch(Harmony harmony)
         {
-            try
+            PatchRegistry.Apply("keyboard request", () =>
             {
                 Type input = FindDirectInput();
                 MethodInfo show = input == null ? null : AccessTools.DeclaredMethod(input, ShowName,
                     new[] { typeof(Action<string>), typeof(Action), typeof(string), typeof(string), typeof(int) });
                 if (show == null)
-                    Log.Warn($"{DirectInputTypeName}.{ShowName} was not found; the game's own requests for a keyboard get no VR keyboard (the game changed?)");
-                else
-                    harmony.Patch(show, prefix: new HarmonyMethod(typeof(VRKeyboardHook), nameof(OnRequest)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Could not hook the game's request for a virtual keyboard; continuing without it");
-            }
+                    throw new MissingMethodException($"{DirectInputTypeName}.{ShowName} was not found; the game's own requests for a keyboard get no VR keyboard (the game changed?)");
+                harmony.Patch(show, prefix: new HarmonyMethod(typeof(VRKeyboardHook), nameof(OnRequest)));
+            }, "Could not hook the game's request for a virtual keyboard; continuing without it");
 
-            try
+            PatchRegistry.Apply("screen input", () =>
             {
                 MethodInfo handle = AccessTools.DeclaredMethod(typeof(MyScreenManager), nameof(MyScreenManager.HandleInput), Type.EmptyTypes);
                 if (handle == null)
-                    Log.Warn("MyScreenManager.HandleInput was not found; clicking a text box opens no VR keyboard (the game changed?)");
-                else
-                    harmony.Patch(handle, postfix: new HarmonyMethod(typeof(VRKeyboardHook), nameof(AfterScreenInput)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Could not hook the screen input; continuing without it");
-            }
+                    throw new MissingMethodException("MyScreenManager.HandleInput was not found; clicking a text box opens no VR keyboard (the game changed?)");
+                harmony.Patch(handle, postfix: new HarmonyMethod(typeof(VRKeyboardHook), nameof(AfterScreenInput)));
+            }, "Could not hook the screen input; continuing without it");
             Log.Info("On-screen keyboard hooked");
         }
 

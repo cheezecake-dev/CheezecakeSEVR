@@ -27,7 +27,7 @@ namespace SpaceEngineersVR.OpenXR
     /// profile is the Vive wand's has its trackpad and Menu button put in the Quest's layout before they are reported
     /// (<see cref="WandLayout"/>), so Stick, StickClick, B, A, Y and Menu mean what they do on a Quest.
     /// </remarks>
-    internal sealed unsafe class XrInput : IVRInputSource
+    internal sealed unsafe partial class XrInput : IVRInputSource
     {
         // The analog bits press and release at different values, so a trigger resting at the edge does not flicker.
         private const float PressAt = 0.6f, ReleaseAt = 0.4f;
@@ -37,7 +37,7 @@ namespace SpaceEngineersVR.OpenXR
         // The game reads the hands published in headset frame M, builds its frame from them, and the renderer shows that
         // frame in a later headset frame N, which the eyes are located for (with the late head correction, CameraHeadLink).
         // The hands in it are right when they are located for N's display time, not M's. N - M is not fixed (the game
-        // runs at its own rate, and a headset frame with no new game frame shows the old one again), so it is measured:
+        // runs at its own rate, and a headset frame with no new game frame shows the old one again), so it is sampled:
         // each frame, this frame's display time less the frame time of the hands in the camera it draws (CameraHeadLink.HandsFrameTime),
         // averaged. Until a sample arrives the lead is one display period.
 
@@ -47,10 +47,10 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>Samples further behind than this many display periods are not a drawn game frame (a pause, a load) and are skipped.</summary>
         private const int MaxLeadPeriods = 4;
 
-        /// <summary>The measured lead is logged once, after this many samples.</summary>
+        /// <summary>The averaged lead is logged once, after this many samples.</summary>
         private const int LeadSamplesToLog = 300;
 
-        /// <summary>RenderDebug HandIKLead=0: the game's hands at the display time of the frame they are read in, as before, to compare.</summary>
+        /// <summary>RenderDebug HandIKLead=0: the game's hands at the display time of the frame they are read in, to compare.</summary>
         public static bool Lead = true;
 
         private static double leadNs;
@@ -242,38 +242,6 @@ namespace SpaceEngineersVR.OpenXR
                      $"({string.Join(", ", taken)}), palm pose {(palmAction != 0 ? "asked for (" + XrConst.PalmPoseExtension + ")" : "not offered")}");
         }
 
-        // ---- Controllers whose profile comes with an extension ----
-        // The instance is OpenXR 1.0, where these profiles are not core: each is there only on an instance with its
-        // extension. XrRuntime enables one only when the runtime lists it, and its profile is suggested only when it is
-        // enabled, so a runtime without it never sees the profile, and no other profile depends on it.
-
-        private const string PicoExtension = "XR_BD_controller_interaction";
-        private const string PicoUltraExtension = "XR_BD_ultra_controller_interaction";
-        private const string ReverbExtension = "XR_EXT_hp_mixed_reality_controller";
-        private const string SteamFrameExtension = "XR_VALVE_frame_controller_interaction";
-
-        private static readonly string[] ProfileExtensions =
-            { PicoExtension, PicoUltraExtension, ReverbExtension, SteamFrameExtension };
-
-        /// <summary>Those of <see cref="ProfileExtensions"/> enabled on the instance.</summary>
-        private static readonly HashSet<string> enabledProfileExtensions = new HashSet<string>();
-
-        /// <summary>
-        /// While the instance is made (<see cref="XrRuntime.CreateInstance"/>): adds to <paramref name="extensions"/> each
-        /// controller extension the runtime lists in <paramref name="available"/>, and remembers them for the bindings.
-        /// </summary>
-        public static void AddProfileExtensions(HashSet<string> available, List<string> extensions)
-        {
-            enabledProfileExtensions.Clear();
-            foreach (string extension in ProfileExtensions)
-            {
-                if (!available.Contains(extension))
-                    continue;
-                enabledProfileExtensions.Add(extension);
-                extensions.Add(extension);
-            }
-        }
-
         private ulong CreateAction(string name, string localizedName, XrActionType type, bool perHand)
         {
             ulong* subactionPaths = stackalloc ulong[2];
@@ -303,303 +271,6 @@ namespace SpaceEngineersVR.OpenXR
             };
             Xr.Check(Xr.xrCreateActionSpace(session, ref info, out ulong space), "xrCreateActionSpace", XrRuntime.Instance);
             return space;
-        }
-
-        /// <summary>
-        /// Each profile binds only what its controller has: a controller without a thumbstick gets no stick, without
-        /// A/B/X/Y no buttons. A boolean control (a click) bound to a float action reads 0 or 1. Returns the profiles
-        /// the runtime took; one it does not know, or whose extension it does not offer, is skipped, not fatal.
-        /// </summary>
-        /// <remarks>
-        /// Every profile is suggested on its own, and within one a binding the runtime refuses costs only that control
-        /// (<see cref="Suggest"/>), so the palm pose and the touch sensors, the extras, can never cost the controllers.
-        /// Every controller takes the Quest's layout as far as it has the controls: the same hand and the same role.
-        /// </remarks>
-        private List<string> SuggestBindings()
-        {
-            var taken = new List<string>();
-            var unoffered = new List<string>();
-
-            // Quest over Link. X, Y and Menu are on the left controller, A and B on the right (the spec's oculus/touch_controller
-            // has menu/click on the left only, and a system button on the right that apps cannot take). Every path here is in
-            // that profile's list, and the runtime validates them in xrSuggestInteractionProfileBindings.
-            var touch = new List<XrActionSuggestedBinding>();
-            var touchExtra = new List<XrActionSuggestedBinding>();
-            BindTouchLayout(touch, touchExtra, menuBothHands: false, touchSensors: true, thumbrest: true);
-            Offer(taken, unoffered, "/interaction_profiles/oculus/touch_controller", null, touch, touchExtra);
-
-            // Quest 3 and 3S (Touch Plus) and Quest Pro (Touch Pro) controllers are left on oculus/touch_controller: a runtime
-            // given no binding for meta/touch_controller_plus or facebook/touch_controller_pro uses this one for them, which is
-            // the path the Quest 3 was tested on. Their own profiles would bring the same buttons and nothing more, only the
-            // chance of a pose or sensor the runtime takes differently.
-
-            // PICO 4 and PICO Neo3 (one extension) and PICO 4 Ultra: the Quest's controls, no thumbrest sensor. The Neo3 has a
-            // Menu button on each controller, the others on the left only.
-            var pico4 = new List<XrActionSuggestedBinding>();
-            var pico4Extra = new List<XrActionSuggestedBinding>();
-            BindTouchLayout(pico4, pico4Extra, menuBothHands: false, touchSensors: true, thumbrest: false);
-            Offer(taken, unoffered, "/interaction_profiles/bytedance/pico4_controller", PicoExtension, pico4, pico4Extra);
-
-            var picoNeo3 = new List<XrActionSuggestedBinding>();
-            var picoNeo3Extra = new List<XrActionSuggestedBinding>();
-            BindTouchLayout(picoNeo3, picoNeo3Extra, menuBothHands: true, touchSensors: true, thumbrest: false);
-            Offer(taken, unoffered, "/interaction_profiles/bytedance/pico_neo3_controller", PicoExtension, picoNeo3, picoNeo3Extra);
-
-            var picoUltra = new List<XrActionSuggestedBinding>();
-            var picoUltraExtra = new List<XrActionSuggestedBinding>();
-            BindTouchLayout(picoUltra, picoUltraExtra, menuBothHands: false, touchSensors: true, thumbrest: false);
-            Offer(taken, unoffered, "/interaction_profiles/bytedance/pico_ultra_controller_bd", PicoUltraExtension, picoUltra, picoUltraExtra);
-
-            // HP Reverb G2: the Quest's controls with a Menu button on each controller, and no touch sensors.
-            var reverb = new List<XrActionSuggestedBinding>();
-            var reverbExtra = new List<XrActionSuggestedBinding>();
-            BindTouchLayout(reverb, reverbExtra, menuBothHands: true, touchSensors: false, thumbrest: false);
-            Offer(taken, unoffered, "/interaction_profiles/hp/mixed_reality_controller", ReverbExtension, reverb, reverbExtra);
-
-            // Index has A and B on both hands (the left ones act as X and Y) and no menu button apps can use.
-            var index = new List<XrActionSuggestedBinding>();
-            var indexExtra = new List<XrActionSuggestedBinding>();
-            BindHands(index, indexExtra, "trigger/value", "squeeze/value", "thumbstick", "thumbstick/click");
-            Bind(index, aAction, "/user/hand/right/input/a/click");
-            Bind(index, bAction, "/user/hand/right/input/b/click");
-            Bind(index, xAction, "/user/hand/left/input/a/click");
-            Bind(index, yAction, "/user/hand/left/input/b/click");
-            Offer(taken, unoffered, "/interaction_profiles/valve/index_controller", null, index, indexExtra);
-
-            // Steam Frame: a gamepad split in two. Where the Quest's left controller has X, Y and Menu, the Frame's has a D-pad
-            // and View: View is Menu (as SteamVR maps the Quest's Menu when a game has no Frame bindings), and the D-pad's
-            // down and up are X and Y, as X sits below Y on the Quest. The right controller's A and B are A and B. Its X and Y,
-            // its Menu, both bumpers and the D-pad's left and right are left free: they have no control of their own here,
-            // and X and Y on the right hand would be the left hand's buttons. The paths are Valve's (Steamworks, Steam Frame
-            // Input); the profile is not in the Khronos registry.
-            var frame = new List<XrActionSuggestedBinding>();
-            var frameExtra = new List<XrActionSuggestedBinding>();
-            BindHands(frame, frameExtra, "trigger/value", "squeeze/value", "thumbstick", "thumbstick/click");
-            Bind(frame, xAction, "/user/hand/left/input/dpad_down/click");
-            Bind(frame, yAction, "/user/hand/left/input/dpad_up/click");
-            Bind(frame, menuAction, "/user/hand/left/input/view/click");
-            Bind(frame, aAction, "/user/hand/right/input/a/click");
-            Bind(frame, bAction, "/user/hand/right/input/b/click");
-            // The thumb's sensors: on any button of the left's D-pad or the right's four, the thumb is on the controller's face.
-            for (int h = 0; h < 2; h++)
-            {
-                string hand = "/user/hand/" + HandNames[h];
-                Bind(frameExtra, triggerTouchAction, hand + "/input/trigger/touch");
-                Bind(frameExtra, stickTouchAction, hand + "/input/thumbstick/touch");
-            }
-            Bind(frameExtra, xTouchAction, "/user/hand/left/input/dpad_down/touch");
-            Bind(frameExtra, xTouchAction, "/user/hand/left/input/dpad_left/touch");
-            Bind(frameExtra, yTouchAction, "/user/hand/left/input/dpad_up/touch");
-            Bind(frameExtra, yTouchAction, "/user/hand/left/input/dpad_right/touch");
-            Bind(frameExtra, aTouchAction, "/user/hand/right/input/a/touch");
-            Bind(frameExtra, aTouchAction, "/user/hand/right/input/x/touch");
-            Bind(frameExtra, bTouchAction, "/user/hand/right/input/b/touch");
-            Bind(frameExtra, bTouchAction, "/user/hand/right/input/y/touch");
-            Offer(taken, unoffered, "/interaction_profiles/valve/frame_controller_valve", SteamFrameExtension, frame, frameExtra);
-
-            // Vive wands: the trackpad and its click stand in for the thumbstick and its click, the grip buttons are clicks. The wand
-            // has no A, B, X or Y, so those come from the trackpad and the Menu buttons in ReadHand (WandLayout). The trackpad's touch
-            // sensor is the thumb on the controller, for the hand's pose.
-            var vive = new List<XrActionSuggestedBinding>();
-            var viveExtra = new List<XrActionSuggestedBinding>();
-            BindHands(vive, viveExtra, "trigger/value", "squeeze/click", "trackpad", "trackpad/click");
-            BindMenuBothHands(vive);
-            for (int h = 0; h < 2; h++)
-                Bind(viveExtra, stickTouchAction, "/user/hand/" + HandNames[h] + "/input/trackpad/touch");
-            Offer(taken, unoffered, WandLayout.Profile, null, vive, viveExtra);
-
-            var windowsMixedReality = new List<XrActionSuggestedBinding>();
-            var windowsMixedRealityExtra = new List<XrActionSuggestedBinding>();
-            BindHands(windowsMixedReality, windowsMixedRealityExtra, "trigger/value", "squeeze/click", "thumbstick", "thumbstick/click");
-            BindMenuBothHands(windowsMixedReality);
-            Offer(taken, unoffered, "/interaction_profiles/microsoft/motion_controller", null, windowsMixedReality, windowsMixedRealityExtra);
-
-            // The fallback every runtime has: one select button (as the trigger), a menu button, the poses.
-            var simple = new List<XrActionSuggestedBinding>();
-            var simpleExtra = new List<XrActionSuggestedBinding>();
-            BindHands(simple, simpleExtra, "select/click", null, null, null);
-            BindMenuBothHands(simple);
-            Offer(taken, unoffered, "/interaction_profiles/khr/simple_controller", null, simple, simpleExtra);
-
-            if (unoffered.Count > 0)
-                Log.Info("OpenXR controllers this runtime does not offer, so not bound: " + string.Join(", ", unoffered));
-            return taken;
-        }
-
-        /// <summary>
-        /// The Quest's layout, which the Touch Plus, Touch Pro, PICO and HP Reverb G2 controllers share: X and Y on the
-        /// left, A and B on the right, Menu on the left (on both with <paramref name="menuBothHands"/>). The touch sensors go
-        /// in <paramref name="extra"/>, all but the thumbrest's without <paramref name="thumbrest"/>.
-        /// </summary>
-        private void BindTouchLayout(List<XrActionSuggestedBinding> bindings, List<XrActionSuggestedBinding> extra, bool menuBothHands, bool touchSensors, bool thumbrest)
-        {
-            BindHands(bindings, extra, "trigger/value", "squeeze/value", "thumbstick", "thumbstick/click");
-            Bind(bindings, xAction, "/user/hand/left/input/x/click");
-            Bind(bindings, yAction, "/user/hand/left/input/y/click");
-            if (menuBothHands)
-                BindMenuBothHands(bindings);
-            else
-                Bind(bindings, menuAction, "/user/hand/left/input/menu/click");
-            Bind(bindings, aAction, "/user/hand/right/input/a/click");
-            Bind(bindings, bAction, "/user/hand/right/input/b/click");
-            if (!touchSensors)
-                return;
-            // The capacitive sensors: a finger resting on a control.
-            for (int h = 0; h < 2; h++)
-            {
-                string hand = "/user/hand/" + HandNames[h];
-                Bind(extra, triggerTouchAction, hand + "/input/trigger/touch");
-                Bind(extra, stickTouchAction, hand + "/input/thumbstick/touch");
-                if (thumbrest)
-                    Bind(extra, thumbrestTouchAction, hand + "/input/thumbrest/touch");
-            }
-            Bind(extra, xTouchAction, "/user/hand/left/input/x/touch");
-            Bind(extra, yTouchAction, "/user/hand/left/input/y/touch");
-            Bind(extra, aTouchAction, "/user/hand/right/input/a/touch");
-            Bind(extra, bTouchAction, "/user/hand/right/input/b/touch");
-        }
-
-        /// <summary>
-        /// Poses, haptics and the analog controls every hand has; a null path leaves that control unbound. The palm pose,
-        /// which XR_EXT_palm_pose adds to every profile with hands, goes in <paramref name="extra"/>.
-        /// </summary>
-        private void BindHands(List<XrActionSuggestedBinding> bindings, List<XrActionSuggestedBinding> extra, string trigger, string squeeze, string stick, string stickClick)
-        {
-            for (int h = 0; h < 2; h++)
-            {
-                string hand = "/user/hand/" + HandNames[h];
-                Bind(bindings, gripAction, hand + "/input/grip/pose");
-                Bind(bindings, aimAction, hand + "/input/aim/pose");
-                if (palmAction != 0)
-                    Bind(extra, palmAction, hand + "/input/palm_ext/pose");
-                Bind(bindings, hapticAction, hand + "/output/haptic");
-                Bind(bindings, triggerAction, hand + "/input/" + trigger);
-                if (squeeze != null)
-                    Bind(bindings, squeezeAction, hand + "/input/" + squeeze);
-                if (stick != null)
-                    Bind(bindings, stickAction, hand + "/input/" + stick);
-                if (stickClick != null)
-                    Bind(bindings, stickClickAction, hand + "/input/" + stickClick);
-            }
-        }
-
-        private void BindMenuBothHands(List<XrActionSuggestedBinding> bindings)
-        {
-            for (int h = 0; h < 2; h++)
-                Bind(bindings, menuAction, "/user/hand/" + HandNames[h] + "/input/menu/click");
-        }
-
-        /// <summary>A path the runtime cannot make (xrStringToPath fails) is left out with a warning, never thrown: it costs only that control.</summary>
-        private static void Bind(List<XrActionSuggestedBinding> bindings, ulong action, string path)
-        {
-            int result = Xr.xrStringToPath(XrRuntime.Instance, path, out ulong binding);
-            if (result < 0)
-            {
-                Log.Warn($"OpenXR binding {path} left out: xrStringToPath failed: {Xr.ResultName(XrRuntime.Instance, result)} ({result})");
-                return;
-            }
-            bindings.Add(new XrActionSuggestedBinding { Action = action, Binding = binding });
-        }
-
-        /// <summary>
-        /// Suggests the profile when it is core (<paramref name="extension"/> null) or its extension is enabled, and adds
-        /// it to <paramref name="taken"/> when the runtime takes it, or to <paramref name="unoffered"/> when the extension
-        /// is not there. Never throws: one profile can never cost another.
-        /// </summary>
-        private static void Offer(List<string> taken, List<string> unoffered, string profile, string extension,
-                                  List<XrActionSuggestedBinding> bindings, List<XrActionSuggestedBinding> extra)
-        {
-            string name = profile.Replace("/interaction_profiles/", string.Empty);
-            if (extension != null && !enabledProfileExtensions.Contains(extension))
-            {
-                unoffered.Add($"{name} ({extension})");
-                return;
-            }
-            try
-            {
-                if (Suggest(profile, bindings, extra))
-                    taken.Add(name);
-            }
-            catch (Exception e)
-            {
-                Log.Warn($"The bindings for {profile} could not be suggested: {e.Message}");
-            }
-        }
-
-        /// <summary>
-        /// The profile's bindings with <paramref name="extra"/>. If the runtime refuses them it is offered them again one
-        /// at a time, keeping each it takes, so a path it does not know costs only that control; a later suggestion for
-        /// the same profile replaces the earlier one. Refusing the first on its own (the left grip pose, which every
-        /// controller has) is refusing the profile. Logs one line when anything was refused.
-        /// </summary>
-        /// <returns>True when the runtime took bindings for the profile.</returns>
-        private static bool Suggest(string profile, List<XrActionSuggestedBinding> bindings, List<XrActionSuggestedBinding> extra)
-        {
-            var all = new List<XrActionSuggestedBinding>(bindings);
-            all.AddRange(extra);
-            if (all.Count == 0)
-                return false;
-            if (TrySuggest(profile, all, out string refused))
-                return true;
-
-            var kept = new List<XrActionSuggestedBinding>(all.Count);
-            var without = new List<string>();
-            bool lastTaken = false;
-            foreach (XrActionSuggestedBinding binding in all)
-            {
-                kept.Add(binding);
-                lastTaken = TrySuggest(profile, kept, out string error);
-                if (lastTaken)
-                    continue;
-                kept.RemoveAt(kept.Count - 1);
-                if (kept.Count == 0)
-                {
-                    Log.Warn($"The runtime did not take the bindings for {profile}: {refused}");
-                    return false;
-                }
-                without.Add($"{PathName(binding.Binding)} ({error})");
-            }
-            // The refused last one may have replaced the set the runtime had taken: leave it the bindings it took.
-            if (!lastTaken && !TrySuggest(profile, kept, out string again))
-            {
-                Log.Warn($"The runtime did not take the bindings for {profile}: {refused}; offered again without the ones it refused, {again}");
-                return false;
-            }
-            Log.Warn($"The runtime did not take all the bindings for {profile} ({refused}); it took {kept.Count} of {all.Count}, " +
-                     $"without {(without.Count > 0 ? string.Join(", ", without) : "none, one at a time")}");
-            return true;
-        }
-
-        private static bool TrySuggest(string profile, List<XrActionSuggestedBinding> bindings, out string error)
-        {
-            XrActionSuggestedBinding[] array = bindings.ToArray();
-            error = null;
-            try
-            {
-                fixed (XrActionSuggestedBinding* ptr = array)
-                {
-                    var info = new XrInteractionProfileSuggestedBinding
-                    {
-                        Type = XrStructureType.InteractionProfileSuggestedBinding,
-                        InteractionProfile = StringToPath(profile),
-                        CountSuggestedBindings = (uint)array.Length,
-                        SuggestedBindings = (IntPtr)ptr,
-                    };
-                    Xr.Check(Xr.xrSuggestInteractionProfileBindings(XrRuntime.Instance, ref info), "xrSuggestInteractionProfileBindings", XrRuntime.Instance);
-                }
-                return true;
-            }
-            catch (XrException e)
-            {
-                error = e.Message;
-                return false;
-            }
-        }
-
-        private static ulong StringToPath(string path)
-        {
-            Xr.Check(Xr.xrStringToPath(XrRuntime.Instance, path, out ulong value), "xrStringToPath " + path, XrRuntime.Instance);
-            return value;
         }
 
         private void Release()
@@ -995,33 +666,6 @@ namespace SpaceEngineersVR.OpenXR
             GameHead.Recentre("the headset's recentre");
         }
 
-        /// <summary>
-        /// The profile the runtime picked for each hand: the first read, then only when it changes. Also where a hand is found to be
-        /// on a Vive wand (or no longer), which puts its controls in the Quest's layout (<see cref="WandLayout"/>).
-        /// </summary>
-        private void LogProfiles()
-        {
-            try
-            {
-                if (viveProfile == 0)
-                    viveProfile = StringToPath(WandLayout.Profile);
-                for (int h = 0; h < 2; h++)
-                {
-                    var state = new XrInteractionProfileState { Type = XrStructureType.InteractionProfileState };
-                    Xr.Check(Xr.xrGetCurrentInteractionProfile(session, handPaths[h], ref state), "xrGetCurrentInteractionProfile", XrRuntime.Instance);
-                    if (state.InteractionProfile == loggedProfile[h])
-                        continue;
-                    loggedProfile[h] = state.InteractionProfile;
-                    Log.Info($"OpenXR {HandNames[h]} hand interaction profile: {PathName(state.InteractionProfile)}");
-                    SetWand(h, state.InteractionProfile == viveProfile);
-                }
-            }
-            catch (Exception e)
-            {
-                Log.Warn($"Could not read the interaction profiles: {e.Message}");
-            }
-        }
-
         /// <summary>The hand is on a Vive wand now, or is not; logged once each time it switches, so a log shows the layout engaged.</summary>
         private void SetWand(int h, bool onWand)
         {
@@ -1036,108 +680,6 @@ namespace SpaceEngineersVR.OpenXR
                 ? "OpenXR right hand is a Vive wand: Quest layout from the wand's controls (pad clicked: left or right turns, up or down jump and crouch " +
                   "or, in a seat, A and B; centre click is the stick click; Menu tapped is B, held half a second is the game menu)"
                 : "OpenXR left hand is a Vive wand: Quest layout from the wand's controls (pad is the stick and its click the stick click; Menu is Y)");
-        }
-
-        /// <summary>
-        /// Which controls the runtime bound to a real source, as of the last sync: an action that is not active has nothing
-        /// behind it (the profile the runtime chose has no such control, or took none of the bindings). This is what says,
-        /// on a headset session, that Menu, X, Y, A and B are really there, without anyone pressing them.
-        /// </summary>
-        private void LogSources()
-        {
-            try
-            {
-                var names = new List<string>();
-                for (int h = 0; h < 2; h++)
-                {
-                    ulong hand = handPaths[h];
-                    var list = new List<string>();
-                    if (BooleanActive(menuAction, hand))
-                        list.Add("menu");
-                    if (BooleanActive(stickClickAction, hand))
-                        list.Add("stick click");
-                    if (FloatActive(triggerAction, hand))
-                        list.Add("trigger");
-                    if (FloatActive(squeezeAction, hand))
-                        list.Add("squeeze");
-                    if (Vector2Active(stickAction, hand))
-                        list.Add("stick");
-                    if (palmAction != 0 && PoseActive(palmAction, hand))
-                        list.Add("palm pose");
-                    if (BooleanActive(triggerTouchAction, hand))
-                        list.Add("trigger touch");
-                    if (BooleanActive(stickTouchAction, hand))
-                        list.Add("stick touch");
-                    if (BooleanActive(thumbrestTouchAction, hand))
-                        list.Add("thumbrest touch");
-                    names.Add($"{HandNames[h]}: {(list.Count > 0 ? string.Join(", ", list) : "nothing")}");
-                }
-                var buttons = new List<string>();
-                if (BooleanActive(aAction, 0))
-                    buttons.Add("A");
-                if (BooleanActive(bAction, 0))
-                    buttons.Add("B");
-                if (BooleanActive(xAction, 0))
-                    buttons.Add("X");
-                if (BooleanActive(yAction, 0))
-                    buttons.Add("Y");
-                names.Add("face buttons: " + (buttons.Count > 0 ? string.Join(" ", buttons) : "none"));
-                var touches = new List<string>();
-                if (BooleanActive(aTouchAction, 0))
-                    touches.Add("A");
-                if (BooleanActive(bTouchAction, 0))
-                    touches.Add("B");
-                if (BooleanActive(xTouchAction, 0))
-                    touches.Add("X");
-                if (BooleanActive(yTouchAction, 0))
-                    touches.Add("Y");
-                names.Add("face touch: " + (touches.Count > 0 ? string.Join(" ", touches) : "none"));
-                Log.Info("OpenXR bound sources (active after a sync): " + string.Join("; ", names));
-            }
-            catch (Exception e)
-            {
-                Log.Warn($"Could not read which controls are bound: {e.Message}");
-            }
-        }
-
-        private bool BooleanActive(ulong action, ulong subactionPath)
-        {
-            var info = new XrActionStateGetInfo { Type = XrStructureType.ActionStateGetInfo, Action = action, SubactionPath = subactionPath };
-            var state = new XrActionStateBoolean { Type = XrStructureType.ActionStateBoolean };
-            Xr.Check(Xr.xrGetActionStateBoolean(session, ref info, ref state), "xrGetActionStateBoolean", XrRuntime.Instance);
-            return state.IsActive != 0;
-        }
-
-        private bool PoseActive(ulong action, ulong subactionPath)
-        {
-            var info = new XrActionStateGetInfo { Type = XrStructureType.ActionStateGetInfo, Action = action, SubactionPath = subactionPath };
-            var state = new XrActionStatePose { Type = XrStructureType.ActionStatePose };
-            Xr.Check(Xr.xrGetActionStatePose(session, ref info, ref state), "xrGetActionStatePose", XrRuntime.Instance);
-            return state.IsActive != 0;
-        }
-
-        private bool FloatActive(ulong action, ulong subactionPath)
-        {
-            var info = new XrActionStateGetInfo { Type = XrStructureType.ActionStateGetInfo, Action = action, SubactionPath = subactionPath };
-            var state = new XrActionStateFloat { Type = XrStructureType.ActionStateFloat };
-            Xr.Check(Xr.xrGetActionStateFloat(session, ref info, ref state), "xrGetActionStateFloat", XrRuntime.Instance);
-            return state.IsActive != 0;
-        }
-
-        private bool Vector2Active(ulong action, ulong subactionPath)
-        {
-            var info = new XrActionStateGetInfo { Type = XrStructureType.ActionStateGetInfo, Action = action, SubactionPath = subactionPath };
-            var state = new XrActionStateVector2f { Type = XrStructureType.ActionStateVector2f };
-            Xr.Check(Xr.xrGetActionStateVector2f(session, ref info, ref state), "xrGetActionStateVector2f", XrRuntime.Instance);
-            return state.IsActive != 0;
-        }
-
-        private static string PathName(ulong path)
-        {
-            if (path == 0)
-                return "(none yet)";
-            byte* buffer = stackalloc byte[256];
-            return Xr.xrPathToString(XrRuntime.Instance, path, 256, out uint _, buffer) >= 0 ? Xr.ReadString(buffer, 256) : path.ToString();
         }
     }
 }

@@ -28,9 +28,9 @@ namespace SpaceEngineersVR
     /// Lines still in the queue are flushed, with a 500 ms limit so a dead disk cannot hang the exit, on ProcessExit,
     /// DomainUnload, an unhandled exception and <see cref="Plugin.Dispose"/> (<see cref="Flush"/>). What cannot be saved is
     /// the few milliseconds of lines queued when the process is killed outright (TerminateProcess skips all of those).
-    /// Measured in the game: closing the window, and the main menu's Exit to Windows, end the process within a moment without
-    /// ProcessExit or <see cref="Plugin.Dispose"/> running, and a Harmony prefix on <c>MySandboxGame.ExitThreadSafe</c> did not
-    /// log either, so on that path the lines are safe only because the writer writes each one within about a millisecond.
+    /// Closing the window, and the main menu's Exit to Windows, end the process within a moment without ProcessExit or
+    /// <see cref="Plugin.Dispose"/> running, and a Harmony prefix on <c>MySandboxGame.ExitThreadSafe</c> does not log either, so
+    /// on that path the lines are safe only because the writer writes each one within about a millisecond.
     /// </para>
     /// </summary>
     internal static class Log
@@ -104,7 +104,11 @@ namespace SpaceEngineersVR
             writer = new StreamWriter(FilePath, append: false);
             string root = Path.GetPathRoot(FilePath);
             if (!string.IsNullOrEmpty(root))
-                drive = root.TrimEnd('\\', '/');
+            {
+                // "C:" for "C:\"; on Linux the root is "/" itself, which the trim would empty.
+                string trimmed = root.TrimEnd('\\', '/');
+                drive = trimmed.Length > 0 ? trimmed : root;
+            }
 
             writerThread = new Thread(Run) { IsBackground = true, Name = "SEVR log", Priority = ThreadPriority.BelowNormal };
             writerThread.Start();
@@ -128,7 +132,7 @@ namespace SpaceEngineersVR
         /// <summary>
         /// The run before this one stays readable: its log becomes SpaceEngineersVR.prev.log (the older one of those is
         /// replaced), so that starting the game again does not wipe what a headset session wrote. Never throws; a log that
-        /// cannot be moved (another game has it open) is left for the writer to deal with, as before.
+        /// cannot be moved (another game has it open) is left for the writer to deal with.
         /// </summary>
         internal static void KeepPrevious(string path)
         {
@@ -158,6 +162,22 @@ namespace SpaceEngineersVR
         public static void Error(string message) => Write(Level.Error, message);
 
         public static void Error(Exception e, string context) => Write(Level.Error, context + ": " + e);
+
+        /// <summary>
+        /// Runs a control's handler for a screen so that a mistake in it is logged as "<paramref name="owner"/>: <paramref name="what"/>"
+        /// and does not reach the game's menu loop.
+        /// </summary>
+        public static void Guard(string owner, string what, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception e)
+            {
+                Error(e, owner + ": " + what);
+            }
+        }
 
         /// <summary>
         /// Waits until every line logged before this call is on disk (written and flushed) or dropped, or the time is up (a
@@ -190,8 +210,8 @@ namespace SpaceEngineersVR
 
         /// <summary>
         /// The process is going down (or may be, any moment): the lines so far are flushed, then each line logged is waited for
-        /// (up to 100 ms) as it used to be written on the spot, so whatever is logged on the way out is in the file when the
-        /// process is killed. Called by the exit hooks in <see cref="Init(string)"/>.
+        /// (up to 100 ms) before the call returns, so whatever is logged on the way out is in the file when the process is
+        /// killed. Called by the exit hooks in <see cref="Init(string)"/>.
         /// </summary>
         private static void Closing(string why)
         {
@@ -209,7 +229,7 @@ namespace SpaceEngineersVR
             finally
             {
                 // From here the process is on its way out and the writer may not get another turn: a line logged now is
-                // waited for (briefly), as a line used to be written on the spot.
+                // waited for (briefly) instead of left to the writer.
                 closing = true;
             }
         }

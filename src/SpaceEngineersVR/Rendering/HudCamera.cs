@@ -23,7 +23,7 @@ namespace SpaceEngineersVR.Rendering
     /// </summary>
     internal static class HudCamera
     {
-        /// <summary>Debug: the HUD projects with the game camera, as before (<see cref="RenderDebug"/> HudCamera=0).</summary>
+        /// <summary>Debug: the HUD projects with the game camera (<see cref="RenderDebug"/> HudCamera=0).</summary>
         public static bool Off { get; set; }
 
         /// <summary>The HUD's classes; every method in them (and in the classes nested in them) that reads the camera.</summary>
@@ -52,6 +52,8 @@ namespace SpaceEngineersVR.Rendering
                 harmony.Patch(method, transpiler: transpiler);
                 patched.Add($"{method.DeclaringType.Name}.{method.Name}");
             }
+            if (patched.Count == 0)
+                throw new MissingMethodException("HUD camera: no HUD method reads the camera any more");
             Log.Info($"HUD camera: {patched.Count} methods ({string.Join(", ", patched)})");
         }
 

@@ -16,6 +16,8 @@ namespace SpaceEngineersVR
         /// <summary>The name of the openxr_loader.dll asset in SpaceEngineersVR.xml.</summary>
         private const string LoaderAsset = "openxr_loader";
 
+        private readonly FeatureGuard updateGuard = new FeatureGuard("PatchNotice");
+
         public Plugin()
         {
             Bootstrap.Initialize(Environment.GetCommandLineArgs(), beforeGame: false, "a plugin loader");
@@ -48,8 +50,19 @@ namespace SpaceEngineersVR
             Log.Info("Plugin.Init");
         }
 
+        /// <summary>Called by the game once a frame, on the game thread. Only shows the notice about patches that failed.</summary>
         public void Update()
         {
+            if (!updateGuard.On)
+                return;
+            try
+            {
+                PatchRegistry.Update();
+            }
+            catch (Exception e)
+            {
+                updateGuard.Failed(e, "The patch notice failed");
+            }
         }
 
         public void Dispose()

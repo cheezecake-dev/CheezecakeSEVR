@@ -43,10 +43,9 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// RenderDebug GpuPasses=1: the per-pass timestamps (<see cref="Mark(GpuPass, int)"/>), for the Perf line's GPU time by pass.
-        /// Off by default: with them the game ended in NVIDIA's driver (c0000005 in nvwgf2umx.dll at 0x60c2a3, on the driver's own
-        /// worker thread) 2 times in about 19 min of world time; without them (the build before they came, and PerfMeter=0) 0 in
-        /// 104 min. Off, the meter issues only the frame's start, end and disjoint queries, which dynamic resolution reads; the
-        /// pass queries are not even made until this is turned on.
+        /// Off by default: with them the game crashed inside NVIDIA's driver (an access violation in nvwgf2umx.dll, on the driver's
+        /// own worker thread), and did not without them. Off, the meter issues only the frame's start, end and disjoint queries,
+        /// which dynamic resolution reads; the pass queries are not even made until this is turned on.
         /// </summary>
         public static bool PassMarks;
 
@@ -88,10 +87,14 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                Log.Error(e, "Frame-time meter: could not hook the main thread; it will report the render thread only");
+                PatchRegistry.Lost(e, "Frame-time meter: could not hook the main thread; it will report the render thread only");
+                throw;
             }
         }
 
+        // Patches: Game.RunSingleFrame (prefix and postfix), which wraps one tick of the main thread's loop; and
+        // MySandboxGame.Update (prefix and postfix), the simulation part of it. All four run on the game's main thread, so
+        // tickStart and simStart need no lock; the histograms are shared with the reader, so they are written under mainLock.
         private static void TickPrefix()
         {
             StallWatchdog.MainProgress();
@@ -138,6 +141,9 @@ namespace SpaceEngineersVR.Rendering
             public bool Skipped, Submitted;
             public long Seq;
             public long Start, End, Interval, Wait, Slots;
+#if LINUX
+            public long CpuStart, CpuEnd;   // the render thread's CPU time (ns) at Start and End; -1 when unknown
+#endif
             public double PeriodMs, GpuMs;
             public long MainTickMax, MainSimMax;
             public int Gc0, Gc1, Gc2;
@@ -176,6 +182,9 @@ namespace SpaceEngineersVR.Rendering
         private static int frames, hitches, headsetFrames;
         private static long asked, submitted;
         private static readonly Hist cycleH = new Hist(), renderH = new Hist(), waitH = new Hist(), outsideH = new Hist(), gpuH = new Hist();
+#if LINUX
+        private static readonly Hist cpuH = new Hist();
+#endif
         private static Rec worst;
         private static double worstInterval;
         private static long lastBigHitchLog;
@@ -276,6 +285,9 @@ namespace SpaceEngineersVR.Rendering
             markCount[i] = 0;
             r.Seq = ++seq;
             r.Start = t;
+#if LINUX
+            r.CpuStart = ThreadCpu.Nanoseconds();
+#endif
             r.PeriodMs = lastPeriodMs;
             r.GpuMs = -1;
             cur = prev = i;
@@ -405,6 +417,9 @@ namespace SpaceEngineersVR.Rendering
                 ref Rec r = ref ring[cur];
                 EndGpu(ref r);
                 r.End = t0;
+#if LINUX
+                r.CpuEnd = ThreadCpu.Nanoseconds();
+#endif
                 r.State = 2;
                 open = false;
                 Poll();
@@ -638,7 +653,17 @@ namespace SpaceEngineersVR.Rendering
             if (r.GpuMs >= 0)
             {
                 gpuH.Add(r.GpuMs);
-                DynamicResolution.Sample(r.GpuMs, Math.Max(0.0, total - wait), r.PeriodMs, r.Slots > 0);
+                double cpu = Math.Max(0.0, total - wait);
+#if LINUX
+                // Under DXVK the render thread blocks on the GPU inside the frame, so its wall time cannot tell a GPU-bound frame from
+                // a CPU-bound one; the time it actually spent on the CPU can.
+                if (r.CpuStart >= 0 && r.CpuEnd >= r.CpuStart)
+                {
+                    cpu = (r.CpuEnd - r.CpuStart) / 1e6;
+                    cpuH.Add(cpu);
+                }
+#endif
+                DynamicResolution.Sample(r.GpuMs, cpu, r.PeriodMs, r.Slots > 0);
             }
             if (r.IntervalState != 1)
                 return;
@@ -759,6 +784,10 @@ namespace SpaceEngineersVR.Rendering
                     Append(sb, $"{frames} frames drawn ({frames / seconds:0}/s)");
                 Append(sb, $"; frame cycle {cycleH.Mean:0.0} ms avg / {cycleH.P95:0.0} p95 / {cycleH.Max:0.0} max (display period {lastPeriodMs:0.0}), {hitches} over 2x");
                 Append(sb, $"; render thread in-frame {renderH.Mean:0.0} / {renderH.P95:0.0} / {renderH.Max:0.0}");
+#if LINUX
+                if (cpuH.N > 0)
+                    Append(sb, $"; render thread CPU {cpuH.Mean:0.0} / {cpuH.P95:0.0} / {cpuH.Max:0.0}");
+#endif
                 if (waitH.N > 0)
                     Append(sb, $"; xrWaitFrame wait {waitH.Mean:0.0} avg / {waitH.Max:0.0} max");
                 Append(sb, $"; outside our frame {outsideH.Mean:0.0} / {outsideH.P95:0.0} / {outsideH.Max:0.0}");
@@ -786,6 +815,9 @@ namespace SpaceEngineersVR.Rendering
             asked = submitted = 0;
             cycleH.Clear();
             renderH.Clear();
+#if LINUX
+            cpuH.Clear();
+#endif
             waitH.Clear();
             outsideH.Clear();
             gpuH.Clear();

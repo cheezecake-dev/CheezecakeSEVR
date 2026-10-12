@@ -53,7 +53,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Updates the zoom has to hold still before its level is logged.</summary>
         private const int SteadyUpdates = 10;
 
-        /// <summary>Debug: no inset; the eyes ignore the zoom, as before (<see cref="RenderDebug"/> ZoomInset=0).</summary>
+        /// <summary>Debug: no inset; the eyes ignore the zoom (<see cref="RenderDebug"/> ZoomInset=0).</summary>
         public static bool Off { get; set; }
 
         /// <summary>Debug: the inset's picture is drawn every other frame (<see cref="RenderDebug"/> ZoomInsetHalfRate=1).</summary>

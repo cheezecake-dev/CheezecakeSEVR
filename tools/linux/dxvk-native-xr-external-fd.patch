@@ -1,0 +1,106 @@
+diff --git a/src/dxvk/dxvk_platform_exts.cpp b/src/dxvk/dxvk_platform_exts.cpp
+index 9f1ebbb..90e1891 100644
+--- a/src/dxvk/dxvk_platform_exts.cpp
++++ b/src/dxvk/dxvk_platform_exts.cpp
+@@ -1,3 +1,6 @@
++#include <cstring>
++
++#include "dxvk_instance.h"
+ #include "dxvk_platform_exts.h"
+ #include "../wsi/wsi_platform.h"
+ 
+@@ -17,12 +20,26 @@ namespace dxvk {
+     for (const char* name : extensionNames)
+       names.push_back(vk::makeExtension(name));
+ 
++#ifndef _WIN32
++    // Core since Vulkan 1.1, but an OpenXR runtime (Monado, WiVRn) asks for them
++    // and looks up their KHR-named entry points (vkGetPhysicalDeviceProperties2KHR
++    // and the like), which the loader only returns when the extension is enabled
++    // on the instance. Without them the runtime calls a null pointer.
++    names.push_back(vk::makeExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME));
++    names.push_back(vk::makeExtension(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME));
++    names.push_back(vk::makeExtension(VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME));
++    names.push_back(vk::makeExtension(VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME));
++#endif
++
+     return names;
+   }
+ 
+ 
+   DxvkExtensionList DxvkPlatformExts::getDeviceExtensions(
+           uint32_t      adapterId) {
++    if (adapterId < m_deviceExtensions.size())
++      return m_deviceExtensions[adapterId];
++
+     return DxvkExtensionList();
+   }
+ 
+@@ -34,7 +51,43 @@ namespace dxvk {
+ 
+   void DxvkPlatformExts::initDeviceExtensions(
+     const DxvkInstance* instance) {
+-
++#ifndef _WIN32
++    // An OpenXR runtime on Linux (WiVRn, Monado) shares swapchain
++    // images and their synchronization with the application through file
++    // descriptors, and requires these on the device. On Windows the OpenXR
++    // and OpenVR providers cover this through wineopenxr/wine's openvr, which
++    // native builds do not have. Each is enabled only where the device
++    // supports it, so nothing changes for a device that lacks them.
++    static const char* const s_xrExtensions[] = {
++      VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
++      VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
++      VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME,
++    };
++
++    auto vki = instance->vki();
++    m_deviceExtensions.clear();
++
++    for (uint32_t i = 0; auto adapter = instance->enumAdapters(i); i++) {
++      uint32_t count = 0;
++      vki->vkEnumerateDeviceExtensionProperties(adapter->handle(), nullptr, &count, nullptr);
++
++      std::vector<VkExtensionProperties> supported(count);
++      vki->vkEnumerateDeviceExtensionProperties(adapter->handle(), nullptr, &count, supported.data());
++
++      DxvkExtensionList enabled;
++
++      for (const char* name : s_xrExtensions) {
++        for (const auto& ext : supported) {
++          if (!std::strncmp(name, ext.extensionName, sizeof(ext.extensionName))) {
++            enabled.push_back(vk::makeExtension(name));
++            break;
++          }
++        }
++      }
++
++      m_deviceExtensions.push_back(std::move(enabled));
++    }
++#endif
+   }
+ 
+ }
+diff --git a/src/dxvk/dxvk_platform_exts.h b/src/dxvk/dxvk_platform_exts.h
+index 53065fc..4b3304b 100644
+--- a/src/dxvk/dxvk_platform_exts.h
++++ b/src/dxvk/dxvk_platform_exts.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <vector>
++
+ #include "dxvk_extension_provider.h"
+ 
+ namespace dxvk {
+@@ -21,6 +23,10 @@ namespace dxvk {
+       const DxvkInstance* instance);
+ 
+     static DxvkPlatformExts s_instance;
++
++  private:
++
++    std::vector<DxvkExtensionList> m_deviceExtensions;
+   };
+ 
+ }

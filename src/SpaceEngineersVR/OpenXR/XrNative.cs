@@ -6,6 +6,10 @@ namespace SpaceEngineersVR.OpenXR
 {
     // Bindings for the parts of OpenXR 1.1 this plugin uses, transcribed from the Khronos headers (openxr.h,
     // openxr_platform.h 1.1.63). Handles are 64-bit on x64, so every handle, XrPath and XrSystemId is a ulong.
+    //
+    // The structs below are mirror types of the specification's C structs, marshalled by layout: field order, field types
+    // and sequential packing must match the header exactly, and a field that nothing reads is still there to keep the
+    // offsets of those after it.
 
     internal static class XrResult
     {
@@ -68,11 +72,15 @@ namespace SpaceEngineersVR.OpenXR
         SessionActionSetsAttachInfo = 60,
         ActionsSyncInfo = 61,
         CompositionLayerCylinderKHR = 1000017000,
+        GraphicsBindingVulkanKHR = 1000025000,
+        SwapchainImageVulkanKHR = 1000025001,
+        GraphicsRequirementsVulkanKHR = 1000025002,
         GraphicsBindingD3D11KHR = 1000027000,
         SwapchainImageD3D11KHR = 1000027001,
         GraphicsRequirementsD3D11KHR = 1000027002,
         VisibilityMaskKHR = 1000031000,
         EventDataVisibilityMaskChangedKHR = 1000031001,
+        VulkanGraphicsDeviceGetInfoKHR = 1000090003,
     }
 
     internal enum XrSessionState
@@ -97,6 +105,9 @@ namespace SpaceEngineersVR.OpenXR
         public const ulong SwapchainUsageColorAttachment = 0x1;
         public const ulong SwapchainUsageTransferDst = 0x10;
         public const ulong SwapchainUsageSampled = 0x20;
+
+        /// <summary>The images can be viewed in other formats of their size: DXVK takes an sRGB image to be mutable (its UNORM twin).</summary>
+        public const ulong SwapchainUsageMutableFormat = 0x40;
         public const ulong LayerCorrectChromaticAberration = 0x1;
         public const ulong LayerBlendTextureSourceAlpha = 0x2;
         public const ulong SpaceLocationOrientationValid = 0x1;
@@ -109,6 +120,13 @@ namespace SpaceEngineersVR.OpenXR
         public const long MinHapticDuration = -1;
         public const float FrequencyUnspecified = 0f;
         public const string D3D11Extension = "XR_KHR_D3D11_enable";
+
+        /// <summary>
+        /// Vulkan with the application's own instance and device: the one DXVK made (<see cref="Rendering.DxvkInterop"/>). Preferred
+        /// over <see cref="Vulkan2Extension"/>, whose instance and device have to come from the runtime's own create calls.
+        /// </summary>
+        public const string VulkanExtension = "XR_KHR_vulkan_enable";
+        public const string Vulkan2Extension = "XR_KHR_vulkan_enable2";
         public const string VisibilityMaskExtension = "XR_KHR_visibility_mask";
 
         /// <summary>Curved layers: the HUD's pieces on the visor (<see cref="Rendering.HudVisor"/>) are drawn on cylinders round the head.</summary>
@@ -227,6 +245,37 @@ namespace SpaceEngineersVR.OpenXR
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct XrGraphicsRequirementsVulkanKHR
+    {
+        public XrStructureType Type;
+        public IntPtr Next;
+        public ulong MinApiVersionSupported;
+        public ulong MaxApiVersionSupported;
+    }
+
+    /// <summary>The Vulkan session's graphics: DXVK's own handles. Also XrGraphicsBindingVulkan2KHR (same type and layout).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct XrGraphicsBindingVulkanKHR
+    {
+        public XrStructureType Type;
+        public IntPtr Next;
+        public IntPtr Instance;
+        public IntPtr PhysicalDevice;
+        public IntPtr Device;
+        public uint QueueFamilyIndex;
+        public uint QueueIndex;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct XrVulkanGraphicsDeviceGetInfoKHR
+    {
+        public XrStructureType Type;
+        public IntPtr Next;
+        public ulong SystemId;
+        public IntPtr VulkanInstance;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct XrSessionCreateInfo
     {
         public XrStructureType Type;
@@ -287,6 +336,15 @@ namespace SpaceEngineersVR.OpenXR
         public XrStructureType Type;
         public IntPtr Next;
         public IntPtr Texture;
+    }
+
+    /// <summary>A swapchain image of a Vulkan session: the VkImage (a 64-bit handle).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct XrSwapchainImageVulkanKHR
+    {
+        public XrStructureType Type;
+        public IntPtr Next;
+        public ulong Image;
     }
 
     /// <summary>Shared shape of the info structs that carry nothing but type and next (acquire, release, frame wait/begin).</summary>
@@ -455,6 +513,17 @@ namespace SpaceEngineersVR.OpenXR
         public XrStructureType Type;
         public IntPtr Next;
         public ulong Session;
+    }
+
+    /// <summary>A view's visibility mask changed (XR_KHR_visibility_mask): it has to be read again.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct XrEventDataVisibilityMaskChangedKHR
+    {
+        public XrStructureType Type;
+        public IntPtr Next;
+        public ulong Session;
+        public int ViewConfigurationType;
+        public uint ViewIndex;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -633,7 +702,7 @@ namespace SpaceEngineersVR.OpenXR
     /// <summary>Core entry points, exported by the Khronos loader (openxr_loader.dll).</summary>
     internal static unsafe class Xr
     {
-        private const string Loader = "openxr_loader";
+        internal const string Loader = "openxr_loader";
 
         [DllImport(Loader)] public static extern int xrEnumerateInstanceExtensionProperties(IntPtr layerName, uint capacity, out uint count, XrExtensionProperties* properties);
         [DllImport(Loader)] public static extern int xrCreateInstance(ref XrInstanceCreateInfo createInfo, out ulong instance);
@@ -662,6 +731,7 @@ namespace SpaceEngineersVR.OpenXR
         [DllImport(Loader)] public static extern int xrCreateSwapchain(ulong session, ref XrSwapchainCreateInfo createInfo, out ulong swapchain);
         [DllImport(Loader)] public static extern int xrDestroySwapchain(ulong swapchain);
         [DllImport(Loader)] public static extern int xrEnumerateSwapchainImages(ulong swapchain, uint capacity, out uint count, XrSwapchainImageD3D11KHR* images);
+        [DllImport(Loader, EntryPoint = "xrEnumerateSwapchainImages")] public static extern int xrEnumerateSwapchainImagesVulkan(ulong swapchain, uint capacity, out uint count, XrSwapchainImageVulkanKHR* images);
         [DllImport(Loader)] public static extern int xrAcquireSwapchainImage(ulong swapchain, ref XrBaseInfo acquireInfo, out uint index);
         [DllImport(Loader)] public static extern int xrWaitSwapchainImage(ulong swapchain, ref XrSwapchainImageWaitInfo waitInfo);
         [DllImport(Loader)] public static extern int xrReleaseSwapchainImage(ulong swapchain, ref XrBaseInfo releaseInfo);
@@ -689,6 +759,20 @@ namespace SpaceEngineersVR.OpenXR
         // Extension entry points are not exported; they come from xrGetInstanceProcAddr.
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         public delegate int GetD3D11GraphicsRequirementsKHR(ulong instance, ulong systemId, ref XrGraphicsRequirementsD3D11KHR requirements);
+
+        /// <summary>xrGetVulkanGraphicsRequirementsKHR, and xrGetVulkanGraphicsRequirements2KHR (same signature).</summary>
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int GetVulkanGraphicsRequirementsKHR(ulong instance, ulong systemId, ref XrGraphicsRequirementsVulkanKHR requirements);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int GetVulkanGraphicsDeviceKHR(ulong instance, ulong systemId, IntPtr vkInstance, out IntPtr vkPhysicalDevice);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int GetVulkanGraphicsDevice2KHR(ulong instance, ref XrVulkanGraphicsDeviceGetInfoKHR getInfo, out IntPtr vkPhysicalDevice);
+
+        /// <summary>xrGetVulkanInstanceExtensionsKHR and xrGetVulkanDeviceExtensionsKHR: the names, space separated.</summary>
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        public delegate int GetVulkanExtensionsKHR(ulong instance, ulong systemId, uint capacity, out uint count, byte* buffer);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         public delegate int GetVisibilityMaskKHR(ulong session, int viewConfigurationType, uint viewIndex, XrVisibilityMaskType type, ref XrVisibilityMaskKHR mask);

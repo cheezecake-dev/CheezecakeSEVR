@@ -20,7 +20,7 @@ namespace SpaceEngineersVR.Rendering
     /// UpdateSound reads <c>form.IsActive</c> once (the game window, <see cref="IVRageWindow"/>); that one call is rewritten to
     /// <see cref="WindowActive"/>, which says "active" while the headset session runs. Everything else is the game's own code, so a
     /// game already muted gets its volumes back from its own restore branch (hasFocus is false, the window now reads active), and
-    /// flat play, or the mirror before the session starts, behaves as before. The window's IsActive itself is not changed: input,
+    /// flat play, or the mirror before the session starts, behave as they do without the plugin. The window's IsActive itself is not changed: input,
     /// the cursor and the focus hand-back read it too and mean the real window by it.
     /// </remarks>
     internal static class SoundFocus
@@ -42,7 +42,8 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                Log.Error(e, "Could not hook the game's sound mute; the game may go silent while its window is in the background");
+                PatchRegistry.Lost(e, "Could not hook the game's sound mute; the game may go silent while its window is in the background");
+                throw;
             }
         }
 

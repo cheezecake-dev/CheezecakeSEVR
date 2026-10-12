@@ -18,7 +18,7 @@ namespace SpaceEngineersVR.Rendering
         private static readonly AccessTools.FieldRef<MyObjectsPoolSimple<MyBillboard>, int> NextAllocateIndex =
             AccessTools.FieldRefAccess<MyObjectsPoolSimple<MyBillboard>, int>("m_nextAllocateIndex");
 
-        /// <summary>Debug: let the eyes share them, as before (<see cref="RenderDebug"/> SharedBillboards=1).</summary>
+        /// <summary>Debug: let the eyes share them (<see cref="RenderDebug"/> SharedBillboards=1).</summary>
         public static bool Shared { get; set; }
 
         /// <summary>Where the pool stands now, to <see cref="Rewind"/> to.</summary>

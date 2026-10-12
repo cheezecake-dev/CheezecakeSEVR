@@ -61,8 +61,11 @@ namespace SpaceEngineersVR
             try
             {
                 Harmony = new Harmony("SpaceEngineersVR");
-                StereoPatches.Apply(Harmony);
-                Log.Info("Patched: " + string.Join(", ", Harmony.GetPatchedMethods().Select(m => m.DeclaringType?.Name + "." + m.Name)));
+                if (PatchRegistry.Apply(nameof(StereoPatches), () => StereoPatches.Apply(Harmony)))
+                    Log.Info("Patched: " + string.Join(", ", Harmony.GetPatchedMethods().Select(m => m.DeclaringType?.Name + "." + m.Name)));
+                else
+                    // A core feature: VR is off for this run, and the main menu says why.
+                    PatchRegistry.Finish(null);
             }
             catch (Exception e)
             {
@@ -70,6 +73,51 @@ namespace SpaceEngineersVR
                 Log.Error(e, "VR setup failed; continuing without VR");
                 Harmony?.UnpatchAll(Harmony.Id);
             }
+        }
+
+#if LINUX
+        private const int RuntimeWaitMs = 15000;
+
+        // Who owns the result of the instance lookup: the lookup once the instance exists, or the game once it stopped
+        // waiting. Whichever claims it first wins, so VR never starts half way into a run.
+        private const int Waiting = 0, Found = 1, Abandoned = 2;
+        private static int lookup = Waiting;
+
+        /// <summary>
+        /// Runs <paramref name="work"/> on its own thread and rethrows what it throws. After <paramref name="timeoutMs"/>
+        /// asks <paramref name="giveUp"/>: true leaves the thread to end on its own and returns false; false means the work
+        /// is past the point of no return, so it is waited for.
+        /// </summary>
+        private static bool RunBounded(Action work, int timeoutMs, Func<bool> giveUp)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo failure = null;
+            var thread = new System.Threading.Thread(() =>
+            {
+                try { work(); }
+                catch (Exception e) { failure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e); }
+            }) { IsBackground = true, Name = "SEVR OpenXR instance" };
+            thread.Start();
+            if (!thread.Join(timeoutMs))
+            {
+                if (giveUp())
+                    return false;
+                thread.Join();
+            }
+            failure?.Throw();
+            return true;
+        }
+#endif
+
+        private static void FindHeadsetBlocking()
+        {
+            if (!XrRuntime.CreateInstance(NativeDir))
+                return;
+#if LINUX
+            if (System.Threading.Interlocked.CompareExchange(ref lookup, Found, Waiting) != Waiting)
+                return;
+#endif
+            if (!XrRuntime.TryGetSystem())
+                Log.Info("No headset connected (connect it before starting the game); both eyes go side by side in the window");
         }
 
         /// <summary>
@@ -80,8 +128,26 @@ namespace SpaceEngineersVR
         {
             try
             {
-                if (XrRuntime.CreateInstance(NativeDir) && !XrRuntime.TryGetSystem())
-                    Log.Info("No headset connected (connect it before starting the game); both eyes go side by side in the window");
+#if LINUX
+                // WiVRn's xrCreateInstance blocks until a headset connects, so it must not hold the game up for ever.
+                if (!RunBounded(FindHeadsetBlocking, RuntimeWaitMs,
+                        () => System.Threading.Interlocked.CompareExchange(ref lookup, Abandoned, Waiting) == Waiting))
+                {
+                    Log.Warn($"No OpenXR answer from the runtime after {RuntimeWaitMs / 1000} s (WiVRn waits for the headset to connect); " +
+                             "starting without VR, both eyes go side by side in the window. Connect the headset before starting the game");
+                }
+#else
+                FindHeadsetBlocking();
+#endif
+            }
+            catch (XrException e) when (e.Result == XrResult.ErrorRuntimeUnavailable)
+            {
+                // The runtime's loader is there but nothing answers it; a stack trace would only bury that.
+                Log.Warn("The OpenXR runtime is not running" +
+#if LINUX
+                         " (start the WiVRn server, connect the headset, then start the game)" +
+#endif
+                         "; both eyes go side by side in the window");
             }
             catch (Exception e)
             {

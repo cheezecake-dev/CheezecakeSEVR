@@ -25,11 +25,13 @@ namespace SpaceEngineersVR.Gui
         {
             (Display,   "Play position",  "playPosition"),
             (Display,   "Play position",  "heightOffset"),
+            (Display,   "Play position",  "armSpanScaling"),
             (Display,   "Play position",  "crouchWithHead"),
             (Display,   "External view",  "externalViewSize"),
             (Display,   "External view",  "externalViewHalfRate"),
             (Display,   "External view",  "moveViewByHand"),
             (Display,   "Headset",        "dynamicResolution"),
+            (Display,   "Headset",        "lensMask"),
             (Display,   "Headset",        "headsetAudio"),
             (Display,   "Headset",        "ipd"),
             (Display,   "Third person",   "thirdPerson"),

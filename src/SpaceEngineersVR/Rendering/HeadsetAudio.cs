@@ -2,11 +2,234 @@ using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using HarmonyLib;
+#if !LINUX
 using SharpDX.XAudio2;
+#else
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+#endif
 using SpaceEngineersVR.OpenXR;
 
 namespace SpaceEngineersVR.Rendering
 {
+#if LINUX
+    /// <summary>
+    /// Plays the game's sound through the headset while WiVRn is connected. WiVRn publishes the headset as a PipeWire audio
+    /// sink (and source) for as long as the headset is connected. linux-compat's audio shim opens OpenAL Soft's default device,
+    /// so the game's playback streams follow the desktop default; this moves them (found through its PipeWire client's process id in
+    /// <c>pw-dump</c>) to the WiVRn sink with the "target.object" metadata the session manager obeys (<c>pw-metadata</c>), the same
+    /// as pavucontrol's move. When the sink goes away, and when the game exits, the metadata is deleted so the stream goes back to
+    /// the default output. Nothing in the game is patched; if pw-dump or pw-metadata is missing the sound stays on the default.
+    /// No microphone: neither linux-compat's shim nor the Windows plugin opens a capture device, so there is nothing to route.
+    /// </summary>
+    internal static class HeadsetAudio
+    {
+        private const int PollMs = 3000;
+        private const int ToolTimeoutMs = 4000;
+
+        private static readonly List<uint> moved = new List<uint>();
+
+        public static void Patch(Harmony harmony)
+        {
+            if (!VRSettings.HeadsetAudio)
+            {
+                Log.Info("Sound: through the headset is off in the VR options");
+                return;
+            }
+            if (RenderDebug.Peek("HeadsetAudio") == 0)
+            {
+                Log.Info("Sound: HeadsetAudio=0 in the render debug file");
+                return;
+            }
+            if (!XrRuntime.HasSystem)
+            {
+                Log.Info("Sound: no headset was connected when the game started");
+                return;
+            }
+            new Thread(Run) { IsBackground = true, Name = "SEVR headset audio", Priority = ThreadPriority.BelowNormal }.Start();
+            AppDomain.CurrentDomain.ProcessExit += (_, __) => MoveBack();
+        }
+
+        private static void Run()
+        {
+            int pid = Process.GetCurrentProcess().Id;
+            string lastSink = null;
+            bool missingTools = false;
+            while (!missingTools)
+            {
+                try
+                {
+                    string dump = Tool("pw-dump", "", out bool started);
+                    if (!started)
+                    {
+                        Log.Info("Sound: pw-dump (PipeWire) is not installed; the game's sound stays on the default output");
+                        return;
+                    }
+                    FindNodes(dump, pid, out string sink, out List<uint> streams);
+                    if (sink != lastSink)
+                    {
+                        Log.Info(sink != null ? $"Sound: the headset's audio sink is {sink}" : "Sound: the headset's audio sink is gone; back on the default output");
+                        if (sink == null)
+                            MoveBack();
+                        lastSink = sink;
+                    }
+                    if (sink != null)
+                    {
+                        lock (moved)
+                            moved.RemoveAll(id => !streams.Contains(id));
+                        // A stream's target is lost while the game runs (seen when a world loads or unloads: the metadata is
+                        // removed and the stream is back on the default output), so what is set is read back, not remembered.
+                        Dictionary<uint, string> targets = streams.Count > 0 ? Targets() : null;
+                        foreach (uint id in streams)
+                        {
+                            if (targets != null && targets.TryGetValue(id, out string target) && target == sink)
+                                continue;
+                            Tool("pw-metadata", $"{id} target.object {sink} Spa:String", out bool metadataStarted);
+                            if (!metadataStarted)
+                            {
+                                missingTools = true;
+                                Log.Info("Sound: pw-metadata (PipeWire) is not installed; the game's sound stays on the default output");
+                                break;
+                            }
+                            bool again;
+                            lock (moved)
+                            {
+                                again = moved.Contains(id);
+                                if (!again)
+                                    moved.Add(id);
+                            }
+                            Log.Info(again ? $"Sound: the game's stream {id} had left {sink}; moved to the headset again"
+                                           : $"Sound: playing through {sink} (the game's stream {id} moved to the headset)");
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log.Error(e, "Sound: choosing the headset's audio sink failed");
+                    return;
+                }
+                Thread.Sleep(PollMs);
+            }
+        }
+
+        /// <summary>
+        /// The WiVRn sink's node name (null while none) and the ids of this process's playback streams. A stream node has
+        /// no process id of its own (SDL's does not); the client object it belongs to (<c>client.id</c>) does.
+        /// </summary>
+        private static void FindNodes(string dump, int pid, out string sink, out List<uint> streams)
+        {
+            sink = null;
+            streams = new List<uint>();
+            string ownPid = pid.ToString(CultureInfo.InvariantCulture);
+            var ownClients = new HashSet<string>();
+            var playback = new List<KeyValuePair<uint, string>>();
+            using (JsonDocument doc = JsonDocument.Parse(dump))
+            {
+                foreach (JsonElement obj in doc.RootElement.EnumerateArray())
+                {
+                    if (!obj.TryGetProperty("type", out JsonElement type) || !obj.TryGetProperty("info", out JsonElement info)
+                        || !info.TryGetProperty("props", out JsonElement props))
+                        continue;
+                    string kind = type.GetString();
+                    if (kind == "PipeWire:Interface:Client")
+                    {
+                        if (Prop(props, "application.process.id") == ownPid)
+                            ownClients.Add(obj.GetProperty("id").GetUInt32().ToString(CultureInfo.InvariantCulture));
+                        continue;
+                    }
+                    if (kind != "PipeWire:Interface:Node")
+                        continue;
+                    string cls = Prop(props, "media.class");
+                    if (cls == "Audio/Sink")
+                    {
+                        string name = Prop(props, "node.name");
+                        if (name != null && sink == null && (name.IndexOf("wivrn", StringComparison.OrdinalIgnoreCase) >= 0
+                                                          || (Prop(props, "node.description") ?? "").IndexOf("wivrn", StringComparison.OrdinalIgnoreCase) >= 0))
+                            sink = name;
+                    }
+                    else if (cls == "Stream/Output/Audio")
+                    {
+                        playback.Add(new KeyValuePair<uint, string>(obj.GetProperty("id").GetUInt32(), Prop(props, "client.id")));
+                    }
+                }
+            }
+            foreach (KeyValuePair<uint, string> stream in playback)
+                if (stream.Value != null && ownClients.Contains(stream.Value))
+                    streams.Add(stream.Key);
+        }
+
+        /// <summary>The "target.object" metadata now set, by stream node id (pw-metadata's listing, one line per key).</summary>
+        private static Dictionary<uint, string> Targets()
+        {
+            var targets = new Dictionary<uint, string>();
+            string text = Tool("pw-metadata", "-n default", out bool _);
+            foreach (Match m in Regex.Matches(text ?? "", @"update: id:(\d+) key:'target\.object' value:'([^']*)'"))
+                targets[uint.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)] = m.Groups[2].Value;
+            return targets;
+        }
+
+        private static string Prop(JsonElement props, string name)
+        {
+            if (!props.TryGetProperty(name, out JsonElement v))
+                return null;
+            return v.ValueKind == JsonValueKind.String ? v.GetString() : v.ToString();
+        }
+
+        /// <summary>Deletes the metadata that moved the streams, so the session manager puts them on the default output again.</summary>
+        private static void MoveBack()
+        {
+            uint[] ids;
+            lock (moved)
+            {
+                ids = moved.ToArray();
+                moved.Clear();
+            }
+            foreach (uint id in ids)
+            {
+                try
+                {
+                    Tool("pw-metadata", $"-d {id} target.object", out bool _);
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        /// <summary>Runs a PipeWire tool and returns its output; <paramref name="started"/> false when it is not installed.</summary>
+        private static string Tool(string file, string arguments, out bool started)
+        {
+            var start = new ProcessStartInfo(file, arguments) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+            Process p;
+            try
+            {
+                p = Process.Start(start);
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                started = false;
+                return null;
+            }
+            started = true;
+            using (p)
+            {
+                Task<string> err = p.StandardError.ReadToEndAsync();
+                Task<string> output = p.StandardOutput.ReadToEndAsync();
+                if (!p.WaitForExit(ToolTimeoutMs))
+                {
+                    try { p.Kill(); } catch (Exception) { }
+                    return "";
+                }
+                return output.Result;
+            }
+        }
+    }
+#else
     /// <summary>
     /// Plays the game's sound through the headset's audio device, the Windows endpoint the headset runtime names for VR
     /// (Meta's XR_OCULUS_audio_device_guid; with a Quest on Link, "Headphones (Oculus Virtual Audio Device)"), instead of
@@ -38,7 +261,8 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                Log.Error(e, "Sound through the headset is unavailable; the game's sound goes to the Windows default output");
+                PatchRegistry.Lost(e, "Sound through the headset is unavailable; the game's sound goes to the Windows default output");
+                throw;
             }
         }
 
@@ -206,4 +430,5 @@ namespace SpaceEngineersVR.Rendering
             }
         }
     }
+#endif
 }

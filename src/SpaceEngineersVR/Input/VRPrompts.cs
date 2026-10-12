@@ -217,21 +217,8 @@ namespace SpaceEngineersVR.Input
             WrapRegistered();
         }
 
-        private static void Hook(Harmony harmony, string what, System.Reflection.MethodBase target, string prefix = null, string postfix = null)
-        {
-            try
-            {
-                if (target == null)
-                    throw new MissingMethodException(what);
-                harmony.Patch(target,
-                    prefix: prefix == null ? null : new HarmonyMethod(typeof(VRPrompts), prefix),
-                    postfix: postfix == null ? null : new HarmonyMethod(typeof(VRPrompts), postfix));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, $"VR prompts ({what}) could not be hooked; those prompts keep the game's names");
-            }
-        }
+        private static void Hook(Harmony harmony, string what, System.Reflection.MethodBase target, string prefix = null, string postfix = null) =>
+            PatchRegistry.Hook(harmony, typeof(VRPrompts), "VR prompts", "those prompts keep the game's names", what, target, prefix, postfix);
 
         /// <summary>
         /// The seat's leave line without its "Press": the game's "Press {0} to leave {1}" reads "{0} to leave {1}", which with

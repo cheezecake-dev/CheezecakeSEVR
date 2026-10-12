@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Sandbox;
 using Sandbox.Game;
 using Sandbox.Game.Screens.Helpers;
-using Sandbox.Graphics;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Input;
 using SpaceEngineersVR.Rendering;
@@ -11,7 +10,6 @@ using VRage;
 using VRage.Audio;
 using VRage.Game;
 using VRage.Game.ObjectBuilders;
-using VRage.Input;
 using VRage.Utils;
 using VRageMath;
 
@@ -20,7 +18,10 @@ namespace SpaceEngineersVR.Gui
     /// <summary>
     /// The toolbar's slots as a wheel: the game's own radial menu screen (<see cref="MyGuiControlRadialMenuBase"/>, the
     /// screen the system menu and the block palette are made from) filled with the current toolbar instead of menu
-    /// actions. It has the game's background, rings, tabs, highlight, tooltips and sounds; what it changes is
+    /// actions. It has the game's background, rings, tabs, highlight, tooltips and sounds.
+    /// </summary>
+    /// <remarks>
+    /// What it changes:
     /// <list type="bullet">
     /// <item>The items: a section for each page of the toolbar, nine items for a page's nine slots, each reading the
     /// toolbar's item live (<see cref="SlotWheelItem"/>). The tabs along the top are the pages.</item>
@@ -46,12 +47,12 @@ namespace SpaceEngineersVR.Gui
     /// <c>ActivateItemAtSlot</c> (the empty hand with the holster slot's) and closes the screen with the game's CANCEL.
     /// <see cref="SlotWheelItem.Activate"/> does the same call for a gamepad's confirm, which the base screen turns into an
     /// item activation (at the middle it is the base's own <c>Cancel</c>, MyGuiControlRadialMenuBase.cs:263).
-    /// </summary>
+    /// </remarks>
     internal sealed class SlotWheelScreen : MyGuiControlRadialMenuBase
     {
-        private const string SectorTexture = "Textures\\GUI\\Controls\\RadialSectorUnSelected.dds";
-        private const string CentreTexture = "Textures\\GUI\\Controls\\RadialCentralCircle.dds";
-        private const string CentreSelectedTexture = "Textures\\GUI\\Controls\\RadialCentralCircleSelected.dds";
+        private const string SectorTexture = GuiTextures.RadialSector;
+        private const string CentreTexture = GuiTextures.RadialCentre;
+        private const string CentreSelectedTexture = GuiTextures.RadialCentreSelected;
         private const string HolsterIcon = "Textures\\GUI\\Icons\\HideWeapon.dds";
 
         /// <summary>The empty hand's icon while a slot is chosen instead (the centre circle is dim then too).</summary>
@@ -62,7 +63,7 @@ namespace SpaceEngineersVR.Gui
 
         // The external view switch: the actions wheel's External view icon on the plate the bottom line's hints sit on, lit
         // with the plate the base gives its tabs.
-        private const string ViewIcon = "Textures\\GUI\\Icons\\HUD 2017\\CameraSpectator.png";
+        private const string ViewIcon = GuiTextures.Spectator;
         private const string PlateTexture = "Textures\\GUI\\Controls\\button_default_outlineless.dds";
         private const string PlateLitTexture = "Textures\\GUI\\Controls\\button_default_outlineless_active.dds";
         private const string ViewOn = "External view: On", ViewOff = "External view: Off";
@@ -186,7 +187,7 @@ namespace SpaceEngineersVR.Gui
                 AddControl(numbers[i]);
             }
             highlight = new MyGuiControlImageRotatable { Size = size, Visible = false };
-            highlight.SetTexture("Textures\\GUI\\Controls\\RadialSectorSelected.dds");
+            highlight.SetTexture(GuiTextures.RadialSectorSelected);
             AddControl(highlight);
         }
 

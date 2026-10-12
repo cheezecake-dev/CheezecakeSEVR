@@ -36,7 +36,7 @@ namespace SpaceEngineersVR.Rendering
     /// indicator by the corner their definition aligns them to, the notifications, and the voice chat, objective line and
     /// performance warning. Before the renderer draws the GUI (<see cref="EyeRenderer"/>, MyRender11.RenderMainSprites),
     /// <see cref="Split"/> takes the messages between each pair of tags out of the main sprite queue, in their order;
-    /// the rest is drawn into the panel as before. Each part is drawn by the game's sprite renderer, exactly where the GUI
+    /// the rest is drawn into the panel. Each part is drawn by the game's sprite renderer, exactly where the GUI
     /// has it, into its own area of one visor image, which goes to the headset as one composition layer a part: a piece
     /// of a cylinder round the head (XR_KHR_composition_layer_cylinder) or, without it, a flat quad facing the eyes;
     /// head-locked in the VIEW space at <see cref="VRSettings.HudDistance"/>, in the GUI's own pixels, sampled once by the
@@ -48,8 +48,8 @@ namespace SpaceEngineersVR.Rendering
     /// where it moved it. It fails safe: tags that do not pair, or a part with no layer or no room in the visor image,
     /// leave that frame's HUD on the flat panel as without the visor; after <see cref="FaultsToStop"/> such frames, or
     /// any error, or a frame the runtime refuses, the whole HUD stays on the flat panel for the rest of the run. The
-    /// desktop window shows the whole HUD flat, as before. The setting "HUD on the visor" off, or RenderDebug HudVisor=0:
-    /// all of it on the flat panel, exactly as before.
+    /// desktop window shows the whole HUD flat. The setting "HUD on the visor" off, or RenderDebug HudVisor=0:
+    /// all of it on the flat panel.
     /// </para>
     /// </summary>
     internal static class HudVisor
@@ -265,6 +265,8 @@ namespace SpaceEngineersVR.Rendering
                 var controlDraws = new HarmonyMethod(typeof(HudVisor), nameof(TagControlDraws));
                 harmony.Patch(AccessTools.Method(typeof(MyGuiScreenBase), "DrawElements"), transpiler: controlDraws);
                 harmony.Patch(AccessTools.Method(typeof(MyGuiScreenBase), "DrawControls"), transpiler: controlDraws);
+                if (tagged == 0)
+                    throw new MissingMethodException("MyGuiScreenBase.DrawElements and DrawControls draw no controls any more; the HUD's parts cannot be told apart");
                 hooked = true;
                 Log.Info("HUD on the visor: hooked (MyGuiScreenHudSpace.Draw and DrawAsync, MyStatControls.Draw, MyHudControlGravityIndicator.Draw, " +
                          $"MyHudNotifications.Draw, the voice chat, objective line and performance warning; {tagged} control draws in MyGuiScreenBase.DrawElements and DrawControls)");
@@ -272,7 +274,8 @@ namespace SpaceEngineersVR.Rendering
             catch (Exception e)
             {
                 failed = true;
-                Log.Error(e, "HUD on the visor: could not hook the HUD; the whole HUD stays on the flat panel");
+                PatchRegistry.Lost(e, "HUD on the visor: could not hook the HUD; the whole HUD stays on the flat panel");
+                throw;
             }
         }
 
@@ -1100,13 +1103,13 @@ namespace SpaceEngineersVR.Rendering
                 throw new MissingFieldException("MySpritesManager.m_drawQueue or MySpriteMessageData.Messages is not what it was");
 
             // MyManagers.SpritesManager.GetSpritesRenderer() and Return(renderer).
-            ILGenerator il = Begin("HudVisor.GetSpritesRenderer", typeof(object), Type.EmptyTypes, sprites, out DynamicMethod method);
+            ILGenerator il = ReflectionUtil.Begin("HudVisor.GetSpritesRenderer", typeof(object), Type.EmptyTypes, sprites, out DynamicMethod method);
             il.Emit(OpCodes.Ldsfld, spritesManager);
             il.Emit(OpCodes.Callvirt, AccessTools.Method(spritesManager.FieldType, "GetSpritesRenderer"));
             il.Emit(OpCodes.Ret);
             getRenderer = (Func<object>)method.CreateDelegate(typeof(Func<object>));
 
-            il = Begin("HudVisor.ReturnSpritesRenderer", null, new[] { typeof(object) }, sprites, out method);
+            il = ReflectionUtil.Begin("HudVisor.ReturnSpritesRenderer", null, new[] { typeof(object) }, sprites, out method);
             il.Emit(OpCodes.Ldsfld, spritesManager);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Castclass, sprites);
@@ -1115,7 +1118,7 @@ namespace SpaceEngineersVR.Rendering
             returnRenderer = (Action<object>)method.CreateDelegate(typeof(Action<object>));
 
             // renderer.ProcessDrawMessage(message, touchTextures: true, ignoreBounds: null), as the GUI's own pass adds its sprites.
-            il = Begin("HudVisor.Process", null, new[] { typeof(object), typeof(MyRenderMessageBase) }, sprites, out method);
+            il = ReflectionUtil.Begin("HudVisor.Process", null, new[] { typeof(object), typeof(MyRenderMessageBase) }, sprites, out method);
             LocalBuilder noOverride = il.DeclareLocal(typeof(bool?));
             il.Emit(OpCodes.Ldloca_S, noOverride);
             il.Emit(OpCodes.Initobj, typeof(bool?));
@@ -1129,7 +1132,7 @@ namespace SpaceEngineersVR.Rendering
             process = (Action<object, MyRenderMessageBase>)method.CreateDelegate(typeof(Action<object, MyRenderMessageBase>));
 
             // renderer.ScissorStackPush(rectangle) and ScissorStackPop().
-            il = Begin("HudVisor.ScissorPush", null, new[] { typeof(object), typeof(Rectangle) }, sprites, out method);
+            il = ReflectionUtil.Begin("HudVisor.ScissorPush", null, new[] { typeof(object), typeof(Rectangle) }, sprites, out method);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Castclass, sprites);
             il.Emit(OpCodes.Ldarg_1);
@@ -1137,7 +1140,7 @@ namespace SpaceEngineersVR.Rendering
             il.Emit(OpCodes.Ret);
             scissorPush = (Action<object, Rectangle>)method.CreateDelegate(typeof(Action<object, Rectangle>));
 
-            il = Begin("HudVisor.ScissorPop", null, new[] { typeof(object) }, sprites, out method);
+            il = ReflectionUtil.Begin("HudVisor.ScissorPop", null, new[] { typeof(object) }, sprites, out method);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Castclass, sprites);
             il.Emit(OpCodes.Callvirt, AccessTools.Method(sprites, "ScissorStackPop", Type.EmptyTypes));
@@ -1146,7 +1149,7 @@ namespace SpaceEngineersVR.Rendering
 
             // renderer.Draw(MyRender11.RC, target, ref bound, ref full, ref size, null, null): the default blend, premultiplied
             // alpha, and no depth test, as the GUI is drawn.
-            il = Begin("HudVisor.DrawSprites", null, new[] { typeof(object), typeof(object), typeof(MyViewport), typeof(MyViewport), typeof(Vector2) }, sprites, out method);
+            il = ReflectionUtil.Begin("HudVisor.DrawSprites", null, new[] { typeof(object), typeof(object), typeof(MyViewport), typeof(MyViewport), typeof(Vector2) }, sprites, out method);
             LocalBuilder noRegion = il.DeclareLocal(typeof(MyViewport?));
             il.Emit(OpCodes.Ldloca_S, noRegion);
             il.Emit(OpCodes.Initobj, typeof(MyViewport?));
@@ -1166,7 +1169,7 @@ namespace SpaceEngineersVR.Rendering
             drawSprites = (DrawSpritesCall)method.CreateDelegate(typeof(DrawSpritesCall));
 
             // MyRender11.GetFont(id).MeasureString(text, scale, useMyRenderGuiConstants: true): a text's size as it is drawn.
-            il = Begin("HudVisor.MeasureString", typeof(Vector2), new[] { typeof(int), typeof(string), typeof(float) }, sprites, out method);
+            il = ReflectionUtil.Begin("HudVisor.MeasureString", typeof(Vector2), new[] { typeof(int), typeof(string), typeof(float) }, sprites, out method);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Call, AccessTools.Method(render, "GetFont", new[] { typeof(int) }));
             il.Emit(OpCodes.Ldarg_1);
@@ -1175,12 +1178,6 @@ namespace SpaceEngineersVR.Rendering
             il.Emit(OpCodes.Callvirt, AccessTools.Method(renderFont, "MeasureString", new[] { typeof(string), typeof(float), typeof(bool) }));
             il.Emit(OpCodes.Ret);
             measure = (Func<int, string, float, Vector2>)method.CreateDelegate(typeof(Func<int, string, float, Vector2>));
-        }
-
-        private static ILGenerator Begin(string name, Type returns, Type[] parameters, Type owner, out DynamicMethod method)
-        {
-            method = new DynamicMethod(name, returns, parameters, owner, skipVisibility: true);
-            return method.GetILGenerator();
         }
     }
 }

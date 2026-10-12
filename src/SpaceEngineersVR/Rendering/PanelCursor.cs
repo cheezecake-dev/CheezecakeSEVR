@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+using System.Reflection;
 using HarmonyLib;
 using SpaceEngineersVR.Input;
 using VRage.Input;
@@ -42,7 +45,28 @@ namespace SpaceEngineersVR.Rendering
                 postfix: new HarmonyMethod(typeof(PanelCursor), nameof(Position)));
             harmony.Patch(AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.SetMousePosition)),
                 prefix: new HarmonyMethod(typeof(PanelCursor), nameof(SetPosition)));
+#if LINUX
+            // linux-compat's CursorRenderRatePatch moves the cursor sprite to the SDL mouse as the render thread draws it
+            // (SdlGameWindow.TryGetFreshInWindowMousePosition), over the laser's position. While the laser holds the cursor
+            // that SDL position is declared stale, so the sprite stays where the game queued it: on the laser.
+            Type window = AppDomain.CurrentDomain.GetAssemblies()
+                .Select(a => a.GetType("ClientPlugin.Compatibility.SdlGameWindow", false))
+                .FirstOrDefault(t => t != null);
+            MethodBase fresh = window == null ? null : AccessTools.Method(window, "TryGetFreshInWindowMousePosition");
+            if (fresh != null)
+                harmony.Patch(fresh, postfix: new HarmonyMethod(typeof(PanelCursor), nameof(NotFresh)));
+            else
+                Log.Info("PanelCursor: linux-compat's SDL cursor position was not found; the cursor sprite may follow the real mouse");
+#endif
         }
+
+#if LINUX
+        private static void NotFresh(ref bool __result)
+        {
+            if (Laser.HoldsCursor)
+                __result = false;
+        }
+#endif
 
         /// <summary>
         /// Render thread, each frame the panel is shown: the parts of the window it can show in (an eye's part, or all
@@ -90,7 +114,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>A point in the window (a pixel of the mirror's back buffer) to the GUI pixel the real mouse there would point at.</summary>
         internal static Vector2 WindowToGui(Vector2 window) => ToGui(window);
 
-        /// <summary>A GUI pixel to the window pixel (of the drive's shot) that points at it: the other way from <see cref="WindowToGui"/>.</summary>
+        /// <summary>A GUI pixel to the window pixel (of a test screenshot) that points at it: the other way from <see cref="WindowToGui"/>.</summary>
         internal static Vector2 GuiToWindow(Vector2 onGui) => ToWindow(onGui);
 
         /// <summary>A point on the GUI to where it shows in the window, in the part the cursor was last in.</summary>

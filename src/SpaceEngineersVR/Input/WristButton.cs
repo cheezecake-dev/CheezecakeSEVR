@@ -10,7 +10,6 @@ using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Gui;
-using SpaceEngineersVR.Tracking;
 using VRage.Game.Entity.UseObject;
 using VRage.Game.Models;
 using VRage.Input;
@@ -83,6 +82,7 @@ namespace SpaceEngineersVR.Input
         private static long until;
         private static volatile bool inPass;
         private static bool served;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(WristButton));
         private static int errors;
 
         /// <summary>The Terminal and Inventory tiles' target may be this far from where the character was when the panel opened.</summary>
@@ -130,40 +130,28 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         public static void Patch(Harmony harmony)
         {
-            try
+            PatchRegistry.Apply("input pass", () =>
             {
                 // The gameplay screen's input pass (it reads every on-foot control, and the cube builder's, from here).
                 harmony.Patch(AccessTools.Method(typeof(MyGuiScreenGamePlay), nameof(MyGuiScreenGamePlay.HandleInput), new[] { typeof(bool) }),
                     prefix: new HarmonyMethod(typeof(WristButton), nameof(BeforeGameplayInput)),
                     finalizer: new HarmonyMethod(typeof(WristButton), nameof(AfterGameplayInput)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Wrist panel (input pass) could not be hooked; its buttons will not reach the game");
-            }
+            }, "Wrist panel (input pass) could not be hooked; its buttons will not reach the game");
 
-            try
+            PatchRegistry.Apply("new pressed", () =>
             {
                 harmony.Patch(AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.IsNewGameControlPressed)),
                     postfix: new HarmonyMethod(typeof(WristButton), nameof(NewPressed)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Wrist panel (new pressed) could not be hooked; its buttons will not reach the game");
-            }
+            }, "Wrist panel (new pressed) could not be hooked; its buttons will not reach the game");
 
-            try
+            PatchRegistry.Apply("controls", () =>
             {
                 // The helper asks the input above unless a gamepad was used last; this answers in that case too.
                 harmony.Patch(AccessTools.Method(typeof(MyControllerHelper), nameof(MyControllerHelper.IsControl)),
                     postfix: new HarmonyMethod(typeof(WristButton), nameof(Control)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Wrist panel (controls) could not be hooked; its buttons may not reach the game");
-            }
+            }, "Wrist panel (controls) could not be hooked; its buttons may not reach the game");
 
-            try
+            PatchRegistry.Apply("Terminal and Inventory target", () =>
             {
                 // The Terminal and Inventory tiles: the game opens what the detector's use object is when the key is read.
                 // Both detector classes answer through UseObject (the closest one overrides it), as for FingerPress.
@@ -184,13 +172,9 @@ namespace SpaceEngineersVR.Input
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.ShowInventory), Type.EmptyTypes),
                     prefix: new HarmonyMethod(typeof(WristButton), nameof(BeforeShowInventory)),
                     finalizer: new HarmonyMethod(typeof(WristButton), nameof(AfterShow)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Wrist panel (Terminal and Inventory target) could not be hooked; those tiles open what the hand points at as the panel closes");
-            }
+            }, "Wrist panel (Terminal and Inventory target) could not be hooked; those tiles open what the hand points at as the panel closes");
 
-            try
+            PatchRegistry.Apply("Relative target", () =>
             {
                 // The Relative tile: the game's pick (MyPlayerCollection.SetDampeningEntity) asks the controlled entity for its
                 // head matrix through the mod interface (IMyControllableEntity.GetHeadMatrix(true, true, false, false)), which
@@ -202,11 +186,7 @@ namespace SpaceEngineersVR.Input
                         ?? throw new MissingMethodException("MyPlayerCollection", "SetDampeningEntity"),
                     prefix: new HarmonyMethod(typeof(WristButton), nameof(BeforeSetDampening)),
                     finalizer: new HarmonyMethod(typeof(WristButton), nameof(AfterSetDampening)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Wrist panel (Relative target) could not be hooked; the Relative tile matches what the head looks at as the panel closes");
-            }
+            }, "Wrist panel (Relative target) could not be hooked; the Relative tile matches what the head looks at as the panel closes");
         }
 
         /// <summary>MyCharacter's explicit VRage.Game.ModAPI.Interfaces.IMyControllableEntity.GetHeadMatrix, which the game's pick calls.</summary>
@@ -247,14 +227,15 @@ namespace SpaceEngineersVR.Input
         /// <summary>Game thread, once per frame after the hands were read (InputPatches.FrameStart).</summary>
         public static void Update()
         {
+            if (!guard.On)
+                return;
             try
             {
                 Frame();
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Wrist panel failed this frame");
+                guard.Failed(e, "Wrist panel failed this frame");
             }
         }
 

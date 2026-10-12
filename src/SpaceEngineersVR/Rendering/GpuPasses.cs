@@ -108,7 +108,8 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                Log.Error(e, "GPU passes: hooking failed; the Perf lines give the frame's GPU time without the breakdown");
+                PatchRegistry.Lost(e, "GPU passes: hooking failed; the Perf lines give the frame's GPU time without the breakdown");
+                throw;
             }
         }
 

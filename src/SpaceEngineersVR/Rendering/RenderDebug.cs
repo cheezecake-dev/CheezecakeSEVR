@@ -123,6 +123,8 @@ namespace SpaceEngineersVR.Rendering
     /// MenuHoldRecentre=0 makes the left Menu button what it was before the hold: the game menu or Back from the press, and no recentre (<see cref="Input.VRControls.MenuHoldOff"/>).
     /// SharedShadows=1 fits one set of sun shadow cascades for both eyes (<see cref="SharedShadows"/>; off until checked in game);
     /// SharedSpotShadows=1 draws the spot light shadow maps once, in the first eye, ProbeOnce=1 steps the environment probe once a frame (<see cref="SceneOnce"/>; both off until checked in game);
+    /// ParticlesEachPass=1 steps the GPU particles in every pass again, as the renderer does, instead of once a frame in the first eye (<see cref="ParticlesOnce"/>);
+    /// FlaresPerEye=1 places light flares' ghosts and streaks from each eye's own view again, instead of from the middle of the eyes (<see cref="CentredFlares"/>);
     /// DynamicResolution=0/1 turns dynamic resolution off or on whatever the setting says, RenderScale=n (percent) holds the eyes at n% each way
     /// (<see cref="Rendering.DynamicResolution"/>); MotionExtrapolation=0 draws the view and its carrier where the game frame put them, in 60 Hz steps,
     /// instead of moved on by how much older the game frame is than usual (<see cref="Rendering.MotionExtrapolation"/>); LaserRide=0 gives the lasers
@@ -230,6 +232,8 @@ namespace SpaceEngineersVR.Rendering
             SharedShadows.Off = true;
             SceneOnce.SpotShadowsEachEye = true;
             SceneOnce.ProbeEachPass = true;
+            ParticlesOnce.EachPass = false;
+            CentredFlares.PerEye = false;
             Rendering.DynamicResolution.Debug = null;
             Rendering.DynamicResolution.FixedScale = null;
             Rendering.MotionExtrapolation.On = true;
@@ -1006,6 +1010,18 @@ namespace SpaceEngineersVR.Rendering
                     {
                         SceneOnce.ProbeEachPass = setting == 0;
                         applied.Add($"ProbeOnce={!SceneOnce.ProbeEachPass}");
+                        continue;
+                    }
+                    if (pair[0].Equals("FlaresPerEye", StringComparison.OrdinalIgnoreCase))
+                    {
+                        CentredFlares.PerEye = setting != 0;
+                        applied.Add($"FlaresPerEye={CentredFlares.PerEye}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ParticlesEachPass", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ParticlesOnce.EachPass = setting != 0;
+                        applied.Add($"ParticlesEachPass={ParticlesOnce.EachPass}");
                         continue;
                     }
                     if (pair[0].Equals("DynamicResolution", StringComparison.OrdinalIgnoreCase))

@@ -40,7 +40,7 @@ namespace SpaceEngineersVR.Rendering
     /// </remarks>
     internal static class MainMenu
     {
-        /// <summary>Debug: the main menu is the flat panel over the window, as before (<see cref="RenderDebug"/> MainMenuVR=0).</summary>
+        /// <summary>Debug: the main menu is the flat panel over the window (the game's own) (<see cref="RenderDebug"/> MainMenuVR=0).</summary>
         public static bool Off { get; set; }
 
         /// <summary>Closer to an eye than this (metres, along its view) the beam is cut off.</summary>
@@ -71,7 +71,8 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                Log.Error(e, "The main menu in VR could not be hooked; it stays a flat panel over the window");
+                PatchRegistry.Lost(e, "The main menu in VR could not be hooked; it stays a flat panel over the window");
+                throw;
             }
         }
 

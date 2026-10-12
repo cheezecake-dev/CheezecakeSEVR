@@ -18,6 +18,7 @@ namespace SpaceEngineersVR.Rendering
     /// </summary>
     internal static class StereoPatches
     {
+        /// <summary>The plugin's Harmony instance, kept by <see cref="Apply"/> for the second phase (<see cref="PatchRenderer"/>). Written once at startup, before any other thread reads it.</summary>
         private static Harmony harmony;
 
         /// <summary>
@@ -27,6 +28,9 @@ namespace SpaceEngineersVR.Rendering
         public static void Apply(Harmony harmony)
         {
             StereoPatches.harmony = harmony;
+            // Patches: MyVideoSettingsManager.Initialize (postfix, starts phase two and switches to the VR device settings),
+            // .Apply (prefix, stops the game replacing them) and .WriteCurrentSettingsToConfig (postfix, restores the player's
+            // own video config on disk).
             harmony.Patch(AccessTools.Method(typeof(MyVideoSettingsManager), nameof(MyVideoSettingsManager.Initialize)),
                 postfix: new HarmonyMethod(typeof(StereoPatches), nameof(UseVRDeviceSettings)));
             harmony.Patch(AccessTools.Method(typeof(MyVideoSettingsManager), nameof(MyVideoSettingsManager.Apply), new[] { typeof(MyRenderDeviceSettings) }),
@@ -35,69 +39,78 @@ namespace SpaceEngineersVR.Rendering
                 postfix: new HarmonyMethod(typeof(StereoPatches), nameof(KeepUserVideoConfig)));
         }
 
-        /// <summary>Second phase: the file system is up and the render device does not exist yet.</summary>
+        /// <summary>
+        /// Second phase: the file system is up and the render device does not exist yet. Each feature patches through
+        /// <see cref="PatchRegistry"/> (which says which are core): one that fails is off and the rest go on, and a core
+        /// one failing stops here with VR off.
+        /// </summary>
         private static void PatchRenderer()
         {
-            HeadsetGpu.Patch(harmony);
-            PerfMeter.Patch(harmony);
-            EyeRenderer.Patch(harmony);
-            EyeOffset.Patch(harmony);
-            SharedShadows.Patch(harmony);
-            SceneOnce.Patch(harmony);
-            GpuPasses.Patch(harmony);
-            SoundFocus.Patch(harmony);
-            HeadsetAudio.Patch(harmony);
-            ExternalView.Patch(harmony);
-            GuiLayout.Patch(harmony);
-            HudCamera.Patch(harmony);
-            HudToolbar.Patch(harmony);
-            WristStatus.Patch(harmony);
-            HudVisor.Patch(harmony);
-            WorldMenu.Patch(harmony);
-            MainMenu.Patch(harmony);
-            PanelCursor.Patch(harmony);
-            SoftwareCursor.Apply();
-            FullView.Patch(harmony);
-            BloodPulse.Patch(harmony);
-            CharacterHead.Patch(harmony);
-            CockpitHead.Patch(harmony);
-            BodyFollow.Patch(harmony);
-            ZeroGPivot.Patch(harmony);
-            MagBootsSmoothing.Patch(harmony);
-            BodyGuard.Patch(harmony);
-            BodyShift.Patch(harmony);
-            CameraHeadLink.Patch(harmony);
-            CameraShake.Patch(harmony);
-            ExitUpright.Patch(harmony);
-            SuitLight.Patch(harmony);
-            ChaseCamera.Patch(harmony);
-            ThirdPersonGate.Patch(harmony);
-            InputPatches.Patch(harmony);
-            Laser.Patch(harmony);
-            HandIK.Patch(harmony);
-            HandResidual.Patch(harmony);
-            Hands.Haptics.Patch(harmony);
-            Hands.HandTools.Patch(harmony);
-            Hands.FingerPress.Patch(harmony);
-            Hands.ScreenTouch.Patch(harmony);
-            Gui.TouchToolbar.Patch(harmony);
-            Hands.GrabUse.Patch(harmony);
-            Hands.QuickInventory.Patch(harmony);
-            Hands.HeadGestures.Patch(harmony);
-            Hands.VoiceTalk.Register();
-            Hands.ItemGrab.Patch(harmony);
-            Hands.HullGrab.Patch(harmony);
-            Hands.TwoHand.Patch(harmony);
-            Hands.SurfaceStop.Patch(harmony);
-            Hands.Kickback.Patch(harmony);
-            Hands.Reload.Patch(harmony);
-            WristButton.Patch(harmony);
-            VROptionsEntry.Patch(harmony);
-            VRKeyboardHook.Patch(harmony);
-            Input.VRPrompts.Patch(harmony);
-            Gui.VRRadialMenus.Patch(harmony);
-            Gui.ActionsWheel.Patch(harmony);
+            Feature(nameof(HeadsetGpu), HeadsetGpu.Patch);
+            Feature(nameof(PerfMeter), PerfMeter.Patch);
+            Feature(nameof(EyeRenderer), EyeRenderer.Patch);
+            Feature(nameof(EyeOffset), EyeOffset.Patch);
+            Feature(nameof(SharedShadows), SharedShadows.Patch);
+            Feature(nameof(SceneOnce), SceneOnce.Patch);
+            Feature(nameof(ParticlesOnce), ParticlesOnce.Patch);
+            Feature(nameof(CentredFlares), CentredFlares.Patch);
+            Feature(nameof(GpuPasses), GpuPasses.Patch);
+            Feature(nameof(LensMask), LensMask.Patch);
+            Feature(nameof(SoundFocus), SoundFocus.Patch);
+            Feature(nameof(HeadsetAudio), HeadsetAudio.Patch);
+            Feature(nameof(ExternalView), ExternalView.Patch);
+            Feature(nameof(GuiLayout), GuiLayout.Patch);
+            Feature(nameof(HudCamera), HudCamera.Patch);
+            Feature(nameof(HudToolbar), HudToolbar.Patch);
+            Feature(nameof(WristStatus), WristStatus.Patch);
+            Feature(nameof(HudVisor), HudVisor.Patch);
+            Feature(nameof(WorldMenu), WorldMenu.Patch);
+            Feature(nameof(MainMenu), MainMenu.Patch);
+            Feature(nameof(PanelCursor), PanelCursor.Patch);
+            PatchRegistry.Apply(nameof(SoftwareCursor), SoftwareCursor.Apply);
+            Feature(nameof(FullView), FullView.Patch);
+            Feature(nameof(BloodPulse), BloodPulse.Patch);
+            Feature(nameof(CharacterHead), CharacterHead.Patch);
+            Feature(nameof(CockpitHead), CockpitHead.Patch);
+            Feature(nameof(BodyFollow), BodyFollow.Patch);
+            Feature(nameof(ZeroGPivot), ZeroGPivot.Patch);
+            Feature(nameof(MagBootsSmoothing), MagBootsSmoothing.Patch);
+            Feature(nameof(BodyGuard), BodyGuard.Patch);
+            Feature(nameof(BodyShift), BodyShift.Patch);
+            Feature(nameof(CameraHeadLink), CameraHeadLink.Patch);
+            Feature(nameof(CameraShake), CameraShake.Patch);
+            Feature(nameof(ExitUpright), ExitUpright.Patch);
+            Feature(nameof(SuitLight), SuitLight.Patch);
+            Feature(nameof(ChaseCamera), ChaseCamera.Patch);
+            Feature(nameof(ThirdPersonGate), ThirdPersonGate.Patch);
+            Feature(nameof(InputPatches), InputPatches.Patch);
+            Feature(nameof(Laser), Laser.Patch);
+            Feature(nameof(HandIK), HandIK.Patch);
+            Feature(nameof(HandResidual), HandResidual.Patch);
+            Feature(nameof(Hands.Haptics), Hands.Haptics.Patch);
+            Feature(nameof(Hands.HandTools), Hands.HandTools.Patch);
+            Feature(nameof(Hands.FingerPress), Hands.FingerPress.Patch);
+            Feature(nameof(Hands.ScreenTouch), Hands.ScreenTouch.Patch);
+            Feature(nameof(Gui.TouchToolbar), Gui.TouchToolbar.Patch);
+            Feature(nameof(Hands.GrabUse), Hands.GrabUse.Patch);
+            Feature(nameof(Hands.QuickInventory), Hands.QuickInventory.Patch);
+            Feature(nameof(Hands.HeadGestures), Hands.HeadGestures.Patch);
+            PatchRegistry.Apply(nameof(Hands.VoiceTalk), Hands.VoiceTalk.Register);
+            Feature(nameof(Hands.ItemGrab), Hands.ItemGrab.Patch);
+            Feature(nameof(Hands.HullGrab), Hands.HullGrab.Patch);
+            Feature(nameof(Hands.TwoHand), Hands.TwoHand.Patch);
+            Feature(nameof(Hands.SurfaceStop), Hands.SurfaceStop.Patch);
+            Feature(nameof(Hands.Kickback), Hands.Kickback.Patch);
+            Feature(nameof(Hands.Reload), Hands.Reload.Patch);
+            Feature(nameof(WristButton), WristButton.Patch);
+            Feature(nameof(VROptionsEntry), VROptionsEntry.Patch);
+            Feature(nameof(VRKeyboardHook), VRKeyboardHook.Patch);
+            Feature(nameof(Input.VRPrompts), Input.VRPrompts.Patch);
+            Feature(nameof(Gui.VRRadialMenus), Gui.VRRadialMenus.Patch);
+            Feature(nameof(Gui.ActionsWheel), Gui.ActionsWheel.Patch);
         }
+
+        private static void Feature(string name, Action<Harmony> patch) => PatchRegistry.Apply(name, () => patch(harmony));
 
         /// <summary>
         /// The game builds its device settings here, on the main thread, just before it starts the render thread
@@ -105,15 +118,21 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         private static void UseVRDeviceSettings(ref MyRenderDeviceSettings? __result)
         {
+            if (PatchRegistry.VROff)
+                return;
             try
             {
                 PatchRenderer();
+                // Our own patch is running in MyVideoSettingsManager.Initialize: the registry leaves that one for the first frame.
+                PatchRegistry.Finish(AccessTools.Method(typeof(MyVideoSettingsManager), nameof(MyVideoSettingsManager.Initialize)));
             }
             catch (Exception e)
             {
                 Log.Error(e, "Patching the renderer failed; continuing without VR");
                 return;
             }
+            if (PatchRegistry.VROff)
+                return;
 
             if (!__result.HasValue)
             {

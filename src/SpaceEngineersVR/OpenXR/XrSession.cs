@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using SharpDX.Direct3D11;
 using SharpDX.DXGI;
 using Device = SharpDX.Direct3D11.Device;
@@ -11,7 +10,7 @@ namespace SpaceEngineersVR.OpenXR
     /// The headset session on the game's render device: one swapchain per eye and the frame loop. Everything here
     /// runs on the render thread, which owns the device's immediate context the runtime also uses.
     /// </summary>
-    internal static unsafe class XrSession
+    internal static unsafe partial class XrSession
     {
         private static ulong session;
         private static ulong space;
@@ -22,6 +21,19 @@ namespace SpaceEngineersVR.OpenXR
         private static readonly ulong[] swapchains = new ulong[2];
         private static readonly Texture2D[][] images = new Texture2D[2][];
         private static Format swapchainFormat;
+
+        /// <summary>
+        /// DXVK's interop when the session is on its Vulkan device (<see cref="Rendering.DxvkInterop"/>); null for a Direct3D 11
+        /// session. Then the swapchain images are VkImages made into D3D11 textures, and the runtime's calls that use the queue
+        /// are made with DXVK kept off it.
+        /// </summary>
+        private static Rendering.DxvkInterop dxvk;
+
+        /// <summary>The swapchain format as the runtime names it: <see cref="swapchainFormat"/>, or its VkFormat in a Vulkan session.</summary>
+        private static long runtimeFormat;
+
+        /// <summary>The runtime refused a mutable-format swapchain once; the rest are asked for without it.</summary>
+        private static bool mutableRefused;
         private static ulong panelSwapchain;
         private static Texture2D[] panelImages;
         private static int panelWidth, panelHeight;
@@ -130,13 +142,68 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>The eye poses (in the LOCAL space: origin at the head when tracking started) and FOVs of the current frame.</summary>
         public static XrView View(int eye) => views[eye];
 
+        /// <summary>
+        /// Goes up whenever the eyes' visibility masks may have changed (session created, session started, the runtime's
+        /// event): whoever keeps a copy of them reads them again (<see cref="HiddenMesh"/>) when it differs. Render thread.
+        /// </summary>
+        public static int VisibilityMaskChanges { get; private set; }
+
+        /// <summary>
+        /// The part of an eye's view the lenses never show, from the runtime (XR_KHR_visibility_mask): triangles, three
+        /// indices each, on the plane one metre ahead of the eye (x right, y up, z = -1). False without the extension or a
+        /// session; true with no vertices when the runtime hides nothing. Throws when the runtime refuses.
+        /// </summary>
+        public static bool HiddenMesh(int eye, out XrVector2f[] vertices, out uint[] indices)
+        {
+            vertices = null;
+            indices = null;
+            if (session == 0 || XrRuntime.GetVisibilityMask == null)
+                return false;
+
+            var mask = new XrVisibilityMaskKHR { Type = XrStructureType.VisibilityMaskKHR };
+            Xr.Check(XrRuntime.GetVisibilityMask(session, XrConst.ViewConfigurationPrimaryStereo, (uint)eye, XrVisibilityMaskType.HiddenTriangleMesh, ref mask),
+                "xrGetVisibilityMaskKHR", XrRuntime.Instance);
+            vertices = new XrVector2f[mask.VertexCountOutput];
+            indices = new uint[mask.IndexCountOutput];
+            if (vertices.Length == 0 || indices.Length == 0)
+                return true;
+
+            fixed (XrVector2f* v = vertices)
+            fixed (uint* i = indices)
+            {
+                mask.VertexCapacityInput = (uint)vertices.Length;
+                mask.Vertices = (IntPtr)v;
+                mask.IndexCapacityInput = (uint)indices.Length;
+                mask.Indices = (IntPtr)i;
+                Xr.Check(XrRuntime.GetVisibilityMask(session, XrConst.ViewConfigurationPrimaryStereo, (uint)eye, XrVisibilityMaskType.HiddenTriangleMesh, ref mask),
+                    "xrGetVisibilityMaskKHR", XrRuntime.Instance);
+            }
+            if (mask.VertexCountOutput < vertices.Length)
+                Array.Resize(ref vertices, (int)mask.VertexCountOutput);
+            if (mask.IndexCountOutput < indices.Length)
+                Array.Resize(ref indices, (int)mask.IndexCountOutput);
+            return true;
+        }
+
         /// <param name="device">The game's D3D11 device; it has to be on the GPU the runtime asked for.</param>
         /// <param name="eyeFormat">Format the eyes are drawn in. The swapchain is the same bits in its sRGB flavour.</param>
-        public static void Create(Device device, Format eyeFormat)
+        /// <param name="vulkan">
+        /// DXVK's interop on the game's device, for a session on DXVK's Vulkan device (<see cref="XrRuntime.HasVulkan"/>); null
+        /// for a Direct3D 11 session. The session keeps it and disposes it in <see cref="Destroy"/>, also when this throws.
+        /// </param>
+        public static void Create(Device device, Format eyeFormat, Rendering.DxvkInterop vulkan = null)
         {
-            var binding = new XrGraphicsBindingD3D11KHR { Type = XrStructureType.GraphicsBindingD3D11KHR, Device = device.NativePointer };
-            var info = new XrSessionCreateInfo { Type = XrStructureType.SessionCreateInfo, Next = (IntPtr)(&binding), SystemId = XrRuntime.SystemId };
-            Xr.Check(Xr.xrCreateSession(XrRuntime.Instance, ref info, out session), "xrCreateSession", XrRuntime.Instance);
+            dxvk = vulkan;
+            if (dxvk != null)
+            {
+                CreateVulkanSession();
+            }
+            else
+            {
+                var binding = new XrGraphicsBindingD3D11KHR { Type = XrStructureType.GraphicsBindingD3D11KHR, Device = device.NativePointer };
+                var info = new XrSessionCreateInfo { Type = XrStructureType.SessionCreateInfo, Next = (IntPtr)(&binding), SystemId = XrRuntime.SystemId };
+                Xr.Check(Xr.xrCreateSession(XrRuntime.Instance, ref info, out session), "xrCreateSession", XrRuntime.Instance);
+            }
 
             // Seated: LOCAL keeps the origin where the head was at start (or at the last recentre).
             var spaceInfo = new XrReferenceSpaceCreateInfo
@@ -153,6 +220,7 @@ namespace SpaceEngineersVR.OpenXR
             EyeWidth = (int)XrRuntime.EyeWidth;
             EyeHeight = (int)XrRuntime.EyeHeight;
             Format format = swapchainFormat = ChooseFormat(eyeFormat);
+            runtimeFormat = dxvk != null ? VulkanFormat(format) : (long)format;
             for (int eye = 0; eye < 2; eye++)
                 swapchains[eye] = CreateSwapchain(EyeWidth, EyeHeight, out images[eye]);
 
@@ -160,142 +228,8 @@ namespace SpaceEngineersVR.OpenXR
                 views[eye] = new XrView { Type = XrStructureType.View, Pose = XrPosef.Identity };
 
             XrInput.Create(session, space); // never throws: without controllers the display still works
-            Log.Info($"OpenXR session created: eyes {EyeWidth}x{EyeHeight} {format}");
-        }
-
-        /// <summary>
-        /// The STAGE space, whose origin is on the floor, when the runtime offers one: the floor for height calibration.
-        /// Never throws; without it the floor is simply not known.
-        /// </summary>
-        private static void CreateStageSpace()
-        {
-            stageSpace = 0;
-            try
-            {
-                Xr.Check(Xr.xrEnumerateReferenceSpaces(session, 0, out uint count, null), "xrEnumerateReferenceSpaces", XrRuntime.Instance);
-                int[] types = new int[count];
-                if (count > 0)
-                    fixed (int* ptr = types)
-                        Xr.Check(Xr.xrEnumerateReferenceSpaces(session, count, out count, ptr), "xrEnumerateReferenceSpaces", XrRuntime.Instance);
-                if (Array.IndexOf(types, (int)XrReferenceSpaceType.Stage) < 0)
-                {
-                    Log.Info("OpenXR STAGE space: not offered by the runtime; the floor is not known, so height cannot be calibrated " +
-                             $"(it offers {string.Join(", ", types)})");
-                    return;
-                }
-                var info = new XrReferenceSpaceCreateInfo
-                {
-                    Type = XrStructureType.ReferenceSpaceCreateInfo,
-                    ReferenceSpaceType = XrReferenceSpaceType.Stage,
-                    PoseInReferenceSpace = XrPosef.Identity,
-                };
-                Xr.Check(Xr.xrCreateReferenceSpace(session, ref info, out stageSpace), "xrCreateReferenceSpace (STAGE)", XrRuntime.Instance);
-                Log.Info("OpenXR STAGE space: available; its origin is the floor for height calibration");
-            }
-            catch (Exception e)
-            {
-                stageSpace = 0;
-                Log.Error(e, "OpenXR STAGE space could not be set up; the floor is not known");
-            }
-        }
-
-        /// <summary>
-        /// Where the LOCAL space's origin is above the floor, at the display time the eyes were located for. A failure to
-        /// locate it makes the floor unknown, never the headset fail.
-        /// </summary>
-        private static void LocateFloor()
-        {
-            if (stageSpace == 0)
-                return;
-            var location = new XrSpaceLocation { Type = XrStructureType.SpaceLocation };
-            int result = Xr.xrLocateSpace(space, stageSpace, frame.PredictedDisplayTime, ref location);
-            long now = Stopwatch.GetTimestamp();
-            if (result >= 0 && (location.LocationFlags & XrConst.SpaceLocationPositionValid) != 0)
-            {
-                // LOCAL's position in STAGE: STAGE's up is the vertical and its origin is on the floor, so Y is the height.
-                OriginAboveFloor = location.Pose.Position.Y;
-                floorSeenAt = now;
-                if (!floorLogged)
-                {
-                    floorLogged = true;
-                    Log.Info($"OpenXR floor located: the LOCAL origin is {location.Pose.Position.Y:0.00} m above it");
-                }
-            }
-            else if (OriginAboveFloor.HasValue && now - floorSeenAt > Stopwatch.Frequency)
-            {
-                OriginAboveFloor = null;
-                floorLogged = false;
-                Log.Warn($"OpenXR floor lost (xrLocateSpace {result}, flags {location.LocationFlags:X}); height cannot be corrected until it is back");
-            }
-        }
-
-        /// <summary>
-        /// The game writes display-ready (gamma-encoded) values. Copied bit for bit into an sRGB swapchain they are
-        /// read the way they were meant; in a UNORM swapchain the compositor would encode them a second time.
-        /// </summary>
-        private static Format ChooseFormat(Format eyeFormat)
-        {
-            Xr.Check(Xr.xrEnumerateSwapchainFormats(session, 0, out uint count, null), "xrEnumerateSwapchainFormats", XrRuntime.Instance);
-            long[] formats = new long[count];
-            fixed (long* ptr = formats)
-                Xr.Check(Xr.xrEnumerateSwapchainFormats(session, count, out count, ptr), "xrEnumerateSwapchainFormats", XrRuntime.Instance);
-
-            Format srgb = eyeFormat == Format.R8G8B8A8_UNorm ? Format.R8G8B8A8_UNorm_SRgb
-                : eyeFormat == Format.B8G8R8A8_UNorm ? Format.B8G8R8A8_UNorm_SRgb
-                : eyeFormat;
-            if (Array.IndexOf(formats, (long)srgb) >= 0)
-                return srgb;
-            if (Array.IndexOf(formats, (long)eyeFormat) >= 0)
-            {
-                Log.Warn($"The runtime has no {srgb} swapchain; using {eyeFormat}, the headset image will look washed out");
-                return eyeFormat;
-            }
-            throw new InvalidOperationException($"The runtime offers no swapchain format the eyes ({eyeFormat}) can be copied into: " +
-                                                string.Join(", ", formats));
-        }
-
-        private static ulong CreateSwapchain(int width, int height, out Texture2D[] textures)
-        {
-            var info = new XrSwapchainCreateInfo
-            {
-                Type = XrStructureType.SwapchainCreateInfo,
-                UsageFlags = XrConst.SwapchainUsageColorAttachment | XrConst.SwapchainUsageTransferDst,
-                Format = (long)swapchainFormat,
-                SampleCount = 1,
-                Width = (uint)width,
-                Height = (uint)height,
-                FaceCount = 1,
-                ArraySize = 1,
-                MipCount = 1,
-            };
-            Xr.Check(Xr.xrCreateSwapchain(session, ref info, out ulong swapchain), "xrCreateSwapchain", XrRuntime.Instance);
-
-            Xr.Check(Xr.xrEnumerateSwapchainImages(swapchain, 0, out uint count, null), "xrEnumerateSwapchainImages", XrRuntime.Instance);
-            var native = new XrSwapchainImageD3D11KHR[count];
-            for (int i = 0; i < native.Length; i++)
-                native[i].Type = XrStructureType.SwapchainImageD3D11KHR;
-            fixed (XrSwapchainImageD3D11KHR* ptr = native)
-                Xr.Check(Xr.xrEnumerateSwapchainImages(swapchain, count, out count, ptr), "xrEnumerateSwapchainImages", XrRuntime.Instance);
-
-            // The runtime owns the textures; each wrapper holds a reference of its own so disposing it is balanced.
-            textures = new Texture2D[count];
-            for (int i = 0; i < count; i++)
-            {
-                Marshal.AddRef(native[i].Texture);
-                textures[i] = new Texture2D(native[i].Texture);
-            }
-            return swapchain;
-        }
-
-        private static void DestroySwapchain(ref ulong swapchain, ref Texture2D[] textures)
-        {
-            if (textures != null)
-                foreach (Texture2D texture in textures)
-                    texture.Dispose();
-            textures = null;
-            if (swapchain != 0)
-                Xr.xrDestroySwapchain(swapchain);
-            swapchain = 0;
+            VisibilityMaskChanges++;
+            Log.Info($"OpenXR session created: eyes {EyeWidth}x{EyeHeight} {format}" + (dxvk != null ? $" (VkFormat {runtimeFormat}), on Vulkan through DXVK" : ""));
         }
 
         /// <summary>Handles the runtime's events: starts and stops the session as the headset comes and goes.</summary>
@@ -321,6 +255,12 @@ namespace SpaceEngineersVR.OpenXR
                     Destroy();
                     return;
                 }
+                else if (buffer.Type == XrStructureType.EventDataVisibilityMaskChangedKHR)
+                {
+                    XrEventDataVisibilityMaskChangedKHR changed = *(XrEventDataVisibilityMaskChangedKHR*)&buffer;
+                    VisibilityMaskChanges++;
+                    Log.Info($"OpenXR visibility mask of view {changed.ViewIndex} changed; the lens mask reads it again");
+                }
                 else
                 {
                     XrInput.OnEvent(&buffer); // recentre, controllers changing
@@ -339,6 +279,7 @@ namespace SpaceEngineersVR.OpenXR
                     var begin = new XrSessionBeginInfo { Type = XrStructureType.SessionBeginInfo, PrimaryViewConfigurationType = XrConst.ViewConfigurationPrimaryStereo };
                     Xr.Check(Xr.xrBeginSession(session, ref begin), "xrBeginSession", XrRuntime.Instance);
                     Running = true;
+                    VisibilityMaskChanges++; // a runtime may only have the masks once the session runs
                     break;
                 case XrSessionState.Stopping:
                     XrInput.SessionStopping();
@@ -367,7 +308,15 @@ namespace SpaceEngineersVR.OpenXR
             Xr.Check(Xr.xrWaitFrame(session, ref waitInfo, ref frame), "xrWaitFrame", XrRuntime.Instance);
             Rendering.PerfMeter.Waited(waitStart, frame.PredictedDisplayTime, frame.PredictedDisplayPeriod);
             var beginInfo = new XrBaseInfo(XrStructureType.FrameBeginInfo);
-            Xr.Check(Xr.xrBeginFrame(session, ref beginInfo), "xrBeginFrame", XrRuntime.Instance);
+            dxvk?.LockQueue();
+            try
+            {
+                Xr.Check(Xr.xrBeginFrame(session, ref beginInfo), "xrBeginFrame", XrRuntime.Instance);
+            }
+            finally
+            {
+                dxvk?.ReleaseQueue();
+            }
             InFrame = true;
             ShouldRender = frame.ShouldRender != 0;
             // The controllers at the time the eyes are located for (ReadNow), and for the game at the time the frame it draws
@@ -406,77 +355,6 @@ namespace SpaceEngineersVR.OpenXR
             return true;
         }
 
-        /// <summary>The swapchain image to copy this eye into. Pair with <see cref="ReleaseImage"/>.</summary>
-        public static Texture2D AcquireImage(int eye) => images[eye][Acquire(swapchains[eye])];
-
-        public static void ReleaseImage(int eye) => Release(swapchains[eye]);
-
-        /// <summary>
-        /// The panel swapchain image to copy the GUI into, at the GUI's size (the swapchain is made again when it
-        /// changes). Pair with <see cref="ReleasePanelImage"/>.
-        /// </summary>
-        public static Texture2D AcquirePanelImage(int width, int height)
-        {
-            if (width != panelWidth || height != panelHeight)
-            {
-                DestroySwapchain(ref panelSwapchain, ref panelImages);
-                panelSwapchain = CreateSwapchain(width, height, out panelImages);
-                panelWidth = width;
-                panelHeight = height;
-                Log.Info($"OpenXR panel swapchain {width}x{height}");
-            }
-            return panelImages[Acquire(panelSwapchain)];
-        }
-
-        public static void ReleasePanelImage() => Release(panelSwapchain);
-
-        /// <summary>The external view's swapchain image to copy the picture into (made again when the size changes). Pair with <see cref="ReleaseScreenImage"/>.</summary>
-        public static Texture2D AcquireScreenImage(int width, int height)
-        {
-            if (width != screenWidth || height != screenHeight)
-            {
-                DestroySwapchain(ref screenSwapchain, ref screenImages);
-                screenSwapchain = CreateSwapchain(width, height, out screenImages);
-                screenWidth = width;
-                screenHeight = height;
-                Log.Info($"OpenXR external view swapchain {width}x{height}");
-            }
-            return screenImages[Acquire(screenSwapchain)];
-        }
-
-        public static void ReleaseScreenImage() => Release(screenSwapchain);
-
-        /// <summary>The visor swapchain image to copy the HUD's pieces into (made again when the size changes). Pair with <see cref="ReleaseVisorImage"/>.</summary>
-        public static Texture2D AcquireVisorImage(int width, int height)
-        {
-            if (width != visorWidth || height != visorHeight)
-            {
-                DestroySwapchain(ref visorSwapchain, ref visorImages);
-                visorSwapchain = CreateSwapchain(width, height, out visorImages);
-                visorWidth = width;
-                visorHeight = height;
-                Log.Info($"OpenXR visor swapchain {width}x{height}");
-            }
-            return visorImages[Acquire(visorSwapchain)];
-        }
-
-        public static void ReleaseVisorImage() => Release(visorSwapchain);
-
-        private static uint Acquire(ulong swapchain)
-        {
-            var acquire = new XrBaseInfo(XrStructureType.SwapchainImageAcquireInfo);
-            Xr.Check(Xr.xrAcquireSwapchainImage(swapchain, ref acquire, out uint index), "xrAcquireSwapchainImage", XrRuntime.Instance);
-            var wait = new XrSwapchainImageWaitInfo { Type = XrStructureType.SwapchainImageWaitInfo, Timeout = XrConst.InfiniteDuration };
-            Xr.Check(Xr.xrWaitSwapchainImage(swapchain, ref wait), "xrWaitSwapchainImage", XrRuntime.Instance);
-            return index;
-        }
-
-        private static void Release(ulong swapchain)
-        {
-            var release = new XrBaseInfo(XrStructureType.SwapchainImageReleaseInfo);
-            Xr.Check(Xr.xrReleaseSwapchainImage(swapchain, ref release), "xrReleaseSwapchainImage", XrRuntime.Instance);
-        }
-
         private static int eyeRectWidth, eyeRectHeight;
 
         /// <summary>
@@ -489,168 +367,20 @@ namespace SpaceEngineersVR.OpenXR
             eyeRectHeight = height;
         }
 
-        /// <param name="eyesDrawn">Both eye images were filled this frame.</param>
-        /// <param name="panel">The panel image was filled this frame; it is shown ahead of the eyes, or where a menu put it.</param>
-        /// <param name="screen">The external view's image was filled this frame; it is shown between the eyes and the panel.</param>
-        public static void EndFrame(bool eyesDrawn, Panel? panel, Screen? screen = null)
-        {
-            if (!InFrame)
-                return;
-            InFrame = false;
-            uint layerCount = 0;
-            IntPtr* layers = stackalloc IntPtr[MostLayers];
-
-            XrCompositionLayerProjectionView* projectionViews = stackalloc XrCompositionLayerProjectionView[2];
-            for (int eye = 0; eye < 2; eye++)
-            {
-                projectionViews[eye] = new XrCompositionLayerProjectionView
-                {
-                    Type = XrStructureType.CompositionLayerProjectionView,
-                    Pose = views[eye].Pose,
-                    Fov = views[eye].Fov,
-                    SubImage = new XrSwapchainSubImage
-                    {
-                        Swapchain = swapchains[eye],
-                        ImageRect = new XrRect2Di
-                        {
-                            Width = eyeRectWidth > 0 ? Math.Min(eyeRectWidth, EyeWidth) : EyeWidth,
-                            Height = eyeRectHeight > 0 ? Math.Min(eyeRectHeight, EyeHeight) : EyeHeight,
-                        },
-                    },
-                };
-            }
-            eyeRectWidth = eyeRectHeight = 0;
-            var layer = new XrCompositionLayerProjection
-            {
-                Type = XrStructureType.CompositionLayerProjection,
-                Space = space,
-                ViewCount = 2,
-                Views = (IntPtr)projectionViews,
-            };
-            if (eyesDrawn)
-                layers[layerCount++] = (IntPtr)(&layer);
-
-            // The external view: an opaque screen in the tracking space, over the scene and under the panel.
-            Screen standing = screen ?? default;
-            var screenQuad = new XrCompositionLayerQuad
-            {
-                Type = XrStructureType.CompositionLayerQuad,
-                LayerFlags = 0,
-                Space = space,
-                EyeVisibility = XrEyeVisibility.Both,
-                SubImage = new XrSwapchainSubImage
-                {
-                    Swapchain = screenSwapchain,
-                    ImageRect = new XrRect2Di { Width = screenWidth, Height = screenHeight },
-                },
-                Pose = standing.Pose,
-                Size = new XrExtent2Df { Width = standing.Width, Height = standing.Height },
-            };
-            if (eyesDrawn && screen.HasValue && screenSwapchain != 0)
-                layers[layerCount++] = (IntPtr)(&screenQuad);
-
-            // Premultiplied alpha, as the game's sprites are drawn. In the VIEW space it stays ahead of the head; a menu's
-            // panel is in the LOCAL space, where it was put.
-            Panel shown = panel ?? default;
-            var quad = new XrCompositionLayerQuad
-            {
-                Type = XrStructureType.CompositionLayerQuad,
-                LayerFlags = XrConst.LayerBlendTextureSourceAlpha,
-                Space = shown.WorldLocked ? space : viewSpace,
-                EyeVisibility = XrEyeVisibility.Both,
-                SubImage = new XrSwapchainSubImage
-                {
-                    Swapchain = panelSwapchain,
-                    ImageRect = new XrRect2Di { Width = panelWidth, Height = panelHeight },
-                },
-                Pose = shown.WorldLocked ? shown.Pose : new XrPosef
-                {
-                    Orientation = new XrQuaternionf { W = 1f },
-                    Position = new XrVector3f { Z = -shown.Distance },
-                },
-                Size = new XrExtent2Df { Width = shown.Width, Height = shown.Height },
-            };
-            if (panel.HasValue && panelSwapchain != 0)
-                layers[layerCount++] = (IntPtr)(&quad);
-
-            // The HUD's pieces on the visor, over the panel: head-locked in the VIEW space like it, premultiplied alpha, each a
-            // part of the one visor image. No more than the runtime takes (its maxLayerCount) with the layers above.
-            int limit = Math.Min(XrRuntime.MaxLayerCount > 0 ? XrRuntime.MaxLayerCount : 16, MostLayers);
-            int pieces = panel.HasValue && !shown.WorldLocked && shown.Visor != null && visorSwapchain != 0
-                ? Math.Max(0, Math.Min(Math.Min(shown.VisorCount, shown.Visor.Length), limit - (int)layerCount))
-                : 0;
-            XrCompositionLayerCylinderKHR* cylinders = stackalloc XrCompositionLayerCylinderKHR[Math.Max(pieces, 1)];
-            XrCompositionLayerQuad* flats = stackalloc XrCompositionLayerQuad[Math.Max(pieces, 1)];
-            for (int i = 0; i < pieces; i++)
-            {
-                VisorPiece piece = shown.Visor[i];
-                var subImage = new XrSwapchainSubImage { Swapchain = visorSwapchain, ImageRect = piece.Rect };
-                if (shown.VisorCylinder)
-                {
-                    // The cylinder's middle is the head; the piece is the part of it straight ahead of Orientation.
-                    cylinders[i] = new XrCompositionLayerCylinderKHR
-                    {
-                        Type = XrStructureType.CompositionLayerCylinderKHR,
-                        LayerFlags = XrConst.LayerBlendTextureSourceAlpha,
-                        Space = viewSpace,
-                        EyeVisibility = XrEyeVisibility.Both,
-                        SubImage = subImage,
-                        Pose = new XrPosef { Orientation = piece.Orientation },
-                        Radius = piece.Radius,
-                        CentralAngle = piece.Width / piece.Radius,
-                        AspectRatio = piece.Width / piece.Height,
-                    };
-                    layers[layerCount++] = (IntPtr)(&cylinders[i]);
-                }
-                else
-                {
-                    flats[i] = new XrCompositionLayerQuad
-                    {
-                        Type = XrStructureType.CompositionLayerQuad,
-                        LayerFlags = XrConst.LayerBlendTextureSourceAlpha,
-                        Space = viewSpace,
-                        EyeVisibility = XrEyeVisibility.Both,
-                        SubImage = subImage,
-                        Pose = new XrPosef { Orientation = piece.Orientation, Position = piece.Middle },
-                        Size = new XrExtent2Df { Width = piece.Width, Height = piece.Height },
-                    };
-                    layers[layerCount++] = (IntPtr)(&flats[i]);
-                }
-            }
-
-            var endInfo = new XrFrameEndInfo
-            {
-                Type = XrStructureType.FrameEndInfo,
-                DisplayTime = frame.PredictedDisplayTime,
-                EnvironmentBlendMode = XrConst.EnvironmentBlendOpaque,
-                LayerCount = layerCount,
-                Layers = (IntPtr)layers,
-            };
-            int result = Xr.xrEndFrame(session, ref endInfo);
-            if (result < 0 && pieces > 0)
-            {
-                // Refused with the visor's pieces in it (they are the last layers): sent again without them, so the headset
-                // keeps its picture; taken without them, the HUD goes back on the panel from the next frame (HudVisor).
-                int refused = result;
-                endInfo.LayerCount = layerCount - (uint)pieces;
-                result = Xr.xrEndFrame(session, ref endInfo);
-                if (result >= 0)
-                    VisorRefused = Xr.ResultName(XrRuntime.Instance, refused);
-            }
-            Xr.Check(result, "xrEndFrame", XrRuntime.Instance);
-            Rendering.PerfMeter.Submitted();
-        }
-
         public static void Destroy()
         {
             if (session == 0)
+            {
+                ReleaseDxvk(); // a Vulkan session that failed to be created
                 return;
+            }
             Rendering.PerfMeter.OnSessionChange("session destroyed");
             Running = false;
             InFrame = false;
             for (int eye = 0; eye < 2; eye++)
                 DestroySwapchain(ref swapchains[eye], ref images[eye]);
             DestroySwapchain(ref panelSwapchain, ref panelImages);
+            DestroySwapchain(ref beamSwapchain, ref beamImages);
             panelWidth = panelHeight = 0;
             DestroySwapchain(ref screenSwapchain, ref screenImages);
             screenWidth = screenHeight = 0;
@@ -670,7 +400,15 @@ namespace SpaceEngineersVR.OpenXR
             space = 0;
             Xr.xrDestroySession(session);
             session = 0;
+            ReleaseDxvk();
             Log.Info("OpenXR session destroyed");
+        }
+
+        private static void ReleaseDxvk()
+        {
+            dxvk?.Dispose();
+            dxvk = null;
+            mutableRefused = false;
         }
     }
 }

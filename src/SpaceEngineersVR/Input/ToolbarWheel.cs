@@ -22,7 +22,9 @@ namespace SpaceEngineersVR.Input
     /// The game's radial screens read the selection from the pad's stick (MyInput.GetJoystickPositionForGameplay),
     /// activate it on GUI SHIFT_RIGHT, close on GUI CANCEL, turn their pages on SWITCH_GUI_LEFT/RIGHT, and close by
     /// themselves the moment the pad is not the last device used. This class opens, steers and closes them from the
-    /// controllers, through those same questions:
+    /// controllers, through those same questions.
+    /// </summary>
+    /// <remarks>
     /// <list type="bullet">
     /// <item>On foot and on the jetpack: hold the left grip; push the left stick at a slot; either trigger, or letting
     /// go of the grip, activates it (<c>ActivateItemAtSlot</c>, as its number key does). The middle is chosen when the wheel
@@ -46,7 +48,7 @@ namespace SpaceEngineersVR.Input
     /// does not reach the game either. The toolbar bar of the HUD
     /// is not drawn on foot (<see cref="Rendering.HudToolbar"/>, the setting "Toolbar on the HUD" brings it back); seated
     /// it stays on screen (the slot screen does not hide the HUD).
-    /// </summary>
+    /// </remarks>
     internal static class ToolbarWheel
     {
         /// <summary>Debug, <see cref="Rendering.RenderDebug"/> ToolbarWheel=0: no wheel, the grip and Y do what they did.</summary>
@@ -55,7 +57,7 @@ namespace SpaceEngineersVR.Input
         /// <summary>ToolbarWheel=1, the default: the toolbar's slots, with the system radial a stick click away.</summary>
         public const int ModeSlots = 1;
 
-        /// <summary>ToolbarWheel=2: the game's system radial only, as the wheel was before the slots (a fallback if the slot screen misbehaves in the game).</summary>
+        /// <summary>ToolbarWheel=2: the game's system radial only, without the slot wheel (a fallback if the slot screen misbehaves in the game).</summary>
         public const int ModeSystem = 2;
 
         /// <summary>ToolbarWheel=3: the game's block palette (TOOLBAR_RADIAL_MENU) instead of the system radial; to look at.</summary>
@@ -116,9 +118,9 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>
         /// A left stick that had been out this long when the grip (or the Y tap) opened the wheel is the walk, or the thrust,
-        /// the thumb was in the middle of, not a choice: letting go of the grip with it still pushed forward used to
-        /// activate slot 1 (the welder, on the character's usual toolbar). One that came out within this long of the open
-        /// is a flick that began with the grip, and counts at once.
+        /// the thumb was in the middle of, not a choice: letting go of the grip with it still pushed forward must not
+        /// activate slot 1. One that came out within this long of the open is a flick that began with the grip, and counts
+        /// at once.
         /// </summary>
         public const double HeldStickSeconds = 0.25;
 
@@ -681,6 +683,7 @@ namespace SpaceEngineersVR.Input
                 ?? throw new MissingMemberException("MyRadialMenuComponent");
             MethodInfo show = AccessTools.Method(type, "ShowSystemRadialMenu", new[] { typeof(MyStringId), typeof(Func<bool>) })
                 ?? throw new MissingMethodException("MyRadialMenuComponent.ShowSystemRadialMenu");
+            // MySession.GetComponent<T> needs the component type at compile time, which is internal; close it over the type found above.
             MethodInfo get = AccessTools.Method(typeof(MySession), nameof(MySession.GetComponent)).MakeGenericMethod(type);
             MyStringId context = MySession.Static.ControlledEntity?.ControlContext ?? MyStringId.NullOrEmpty;
             show.Invoke(get.Invoke(MySession.Static, null), new object[] { context, null });
@@ -699,19 +702,8 @@ namespace SpaceEngineersVR.Input
                 nameof(Position));
         }
 
-        private static void Hook(Harmony harmony, string what, MethodBase target, string postfix)
-        {
-            try
-            {
-                if (target == null)
-                    throw new MissingMethodException(what);
-                harmony.Patch(target, postfix: new HarmonyMethod(typeof(ToolbarWheel), postfix));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, $"Toolbar wheel ({what}) could not be hooked; the radial menu will not follow the hands");
-            }
-        }
+        private static void Hook(Harmony harmony, string what, MethodBase target, string postfix) =>
+            PatchRegistry.Hook(harmony, typeof(ToolbarWheel), "Toolbar wheel", "the radial menu will not follow the hands", what, target, postfix: postfix);
 
         private static void LastUsed(ref bool __result)
         {

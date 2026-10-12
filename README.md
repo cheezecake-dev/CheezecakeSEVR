@@ -47,6 +47,46 @@ It is a plugin for [Pulsar](https://github.com/SpaceGT/Pulsar), installed from t
 
 To play flat again, disable the plugin in Pulsar's Plugins menu, or start with `-novr`.
 
+## Linux (early, one tested setup)
+
+Native Linux, no Proton: Pulsar runs the game on .NET 10, SDL3 and DXVK Native, which turns Direct3D 11 into Vulkan.
+Tested: Meta Quest 3 through WiVRn over USB, two RTX 3060s, Ubuntu 26.04.
+How it works and what it took: [docs/LINUX.md](docs/LINUX.md).
+
+You need Space Engineers (Steam), [Pulsar for Linux](https://github.com/SpaceGT/Pulsar/releases) (the linux-x64 build,
+started once so it installs CometWorks' linux-compat), and a headset with [WiVRn](https://github.com/WiVRn/WiVRn). Then:
+
+```sh
+git clone https://github.com/cheezecake-dev/CheezecakeSEVR.git
+cd CheezecakeSEVR
+tools/linux/setup.sh --install-deps --launcher
+```
+
+The script finds Pulsar and the game, and does what is missing:
+- **OpenXR loader** from your distribution (`libopenxr-loader1`, `openxr-libs` or `openxr`). `--install-deps` installs it.
+- **DXVK Native with a patch.** WiVRn and Monado need Vulkan extensions that DXVK Native does not enable, so the game
+  crashes when the headset session starts. Until CometWorks ships the fix
+  ([patch](tools/linux/dxvk-native-xr-external-fd.patch)), the script builds DXVK with it (one to several minutes) and copies it
+  into linux-compat, keeping the originals. **Run the script again after a linux-compat update**, which replaces the files.
+  It skips the build when linux-compat already has the fix.
+- **The plugin**, registered in Pulsar as a development folder, so it appears enabled in the plugin list.
+- **WiVRn**: checks for the server and `adb`, and prints how to install them.
+- `--launcher` adds a menu entry that starts the WiVRn server, runs `adb reverse` if a cable is attached, and starts Pulsar.
+
+`tools/linux/setup.sh --check` only reports what is installed. `--help` lists the other options (`--pulsar`, `--se-bin64`,
+`--no-dxvk`). Close Pulsar before running it.
+
+**Headset settings that work.** In the WiVRn app, disconnect first, turn on Extended configuration, and set Foveated
+encoding to 30% or lower, Render resolution 120%, Refresh rate 90, Bitrate 200 Mbit/s. For a cable, run
+`adb reverse tcp:9757 tcp:9757`, pick the USB option in the WiVRn dashboard and switch the headset's Wi-Fi off.
+
+**Play.** Start the WiVRn server, open the WiVRn app in the headset and connect, then start the game from the launcher (or
+`cd <Pulsar folder> && ./Interim.bin -bin64 <Space Engineers>/Bin64`). Pulsar compiles the plugin on that start.
+
+You need not set an OpenXR runtime. If none is active the plugin picks the first installed of WiVRn (Flatpak, then
+system), Monado and SteamVR, and logs which in `SpaceEngineersVR.log`. To use another, make it the active runtime or start
+the game with `XR_RUNTIME_JSON` set to its `.json` file; your choice always wins.
+
 ## First run
 
 - **Recentre:** sit or stand the way you will play and look straight ahead. **Hold the left Menu button for just over
@@ -56,7 +96,9 @@ To play flat again, disable the plugin in Pulsar's Plugins menu, or start with `
   - Standing: your real height drives your view, and a real crouch crouches your astronaut.
   - Seated: your head becomes your astronaut's eyes, standing tall, wherever it is when you recentre.
 - **Height (Standing):** set up the headset's play area first, so it knows where the floor is. Then go to Options > VR
-  > **Calibrate height**, stand straight and click. Your eye height is measured after 3 seconds and saved.
+  > **Calibrate height**, stand straight and click. Your eye height is measured after 3 seconds and saved. Then hold both
+  arms straight out to the sides for 2 seconds: the span between your hands is saved too, and your astronaut's arms stretch
+  far enough to reach where yours do (Options > VR > **Scale arms to arm span** turns that off).
 - **Comfort:** turning is a 30 degree snap turn by default. On magnetic boots the view is steadied against the bumps of
   the hull or asteroid underfoot; your own turning is not slowed. Options > VR > **Comfort** also has:
   - smooth turn;

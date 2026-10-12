@@ -43,8 +43,8 @@ namespace SpaceEngineersVR.Rendering
     /// <para>
     /// A billboard given in a render object's space is placed by that object's matrix as the eyes are drawn
     /// (MyBillboardRenderer.GatherInternal reads its parent's WorldMatrix), so one given in the local character's space
-    /// moves with the roots: the lasers (<see cref="AddLine"/>, <see cref="AddPoint"/>), and the game's own jetpack flames.
-    /// Not moved: billboards given in the world (the hand rays, the controls' rings and the wrist screen this plugin draws,
+    /// moves with the roots: the lasers and the hand ray (<see cref="AddLine"/>, <see cref="AddPoint"/>), and the game's own jetpack flames.
+    /// Not moved: billboards given in the world (the controls' rings and the wrist screen this plugin draws,
     /// thruster flames), lights that are not parented to a grid cell, and loose objects riding the vehicle: they keep the
     /// game frame's place and so show the v x 7 ms judder against the carrier instead of against the world. Rotation is
     /// not extrapolated: a turning vehicle still turns in 60 Hz steps. RenderDebug MotionExtrapolation=0 turns it off.

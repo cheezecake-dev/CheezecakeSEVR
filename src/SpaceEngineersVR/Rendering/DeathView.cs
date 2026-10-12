@@ -35,7 +35,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>How far behind a menu standing ahead the screen is put, metres.</summary>
         private const float BehindMenu = 0.25f;
 
-        /// <summary>Debug: the game's death camera and the respawn screen's camera are the view again, as before (<see cref="RenderDebug"/> DeathView=0).</summary>
+        /// <summary>Debug: the game's death camera and the respawn screen's camera are the view again (<see cref="RenderDebug"/> DeathView=0).</summary>
         public static bool Off { get; set; }
 
         // ---- game thread ----

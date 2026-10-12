@@ -2,434 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Text;
 
 namespace SpaceEngineersVR
 {
     /// <summary>
-    /// One setting. Declared once, in <see cref="VRSettings"/>; the settings file and the options screen
-    /// (Gui/VROptionsScreen.cs) are both generated from the list, so a new setting is one declaration there, and one line
-    /// in Gui/VROptionsTabs.cs for the tab it is shown on.
-    /// A setting has two values. The effective one is what the rest of the plugin reads. The pending one is what is
-    /// shown, edited and saved. For a setting that applies live they are always the same. A setting that applies on
-    /// restart (<see cref="Restart"/>) keeps its effective value as it was at start-up, so changing it in the menu
-    /// cannot disturb the run in progress (the mirror window's size, for one, is compared against all the time).
-    /// </summary>
-    internal abstract class Setting
-    {
-        protected Setting(string key, string label, string section, string tooltip, bool restart, bool hidden)
-        {
-            Key = key;
-            Label = label;
-            Section = section;
-            Tooltip = tooltip ?? string.Empty;
-            Restart = restart;
-            Hidden = hidden;
-        }
-
-        /// <summary>The name in the settings file.</summary>
-        public string Key { get; }
-
-        /// <summary>The name in the options screen.</summary>
-        public string Label { get; }
-
-        /// <summary>
-        /// The settings file groups settings under this caption, in the order the sections first appear. The options screen
-        /// places them by Gui/VROptionsTabs.cs, and uses this only for one that has no line there.
-        /// </summary>
-        public string Section { get; }
-
-        public string Tooltip { get; }
-
-        /// <summary>The change only takes effect the next time the game starts.</summary>
-        public bool Restart { get; }
-
-        /// <summary>Kept in the file but not shown in the options screen (the height calibration sets it).</summary>
-        public bool Hidden { get; }
-
-        /// <summary>Sets the pending value (and the effective one, unless <see cref="Restart"/>) to the default.</summary>
-        public abstract void ResetToDefault();
-
-        /// <summary>The pending value, to hand back to <see cref="Restore"/>.</summary>
-        public abstract object Snapshot();
-
-        public abstract void Restore(object snapshot);
-
-        /// <summary>Both values back to the default. Used when the settings are loaded.</summary>
-        internal abstract void Clear();
-
-        /// <summary>The pending value as it is written to the file; empty for none.</summary>
-        internal abstract string Serialize();
-
-        /// <summary>Reads a value from the file into both values. False, with the reason, when the text is not a valid value.</summary>
-        internal abstract bool TryLoad(string text, out string problem);
-
-        /// <summary>One line for the comment above the setting in the file.</summary>
-        internal abstract string Describe();
-    }
-
-    /// <summary>A number, in a range, moved in steps. Stored as a float; <see cref="Integer"/> ones are whole.</summary>
-    internal sealed class NumberSetting : Setting
-    {
-        private float effective, pending;
-        private bool effectiveSet, pendingSet;
-
-        /// <param name="optional">May be unset (null): <see cref="DefaultValue"/> is then null too.</param>
-        /// <param name="displayScale">What the options screen multiplies the value by to show it (metres as millimetres).</param>
-        public NumberSetting(string key, string label, string section, float? defaultValue, float min, float max, float step,
-            string unit = "", int decimals = 2, float displayScale = 1f, string tooltip = null,
-            bool restart = false, bool hidden = false, bool optional = false, bool integer = false)
-            : base(key, label, section, tooltip, restart, hidden)
-        {
-            DefaultValue = defaultValue;
-            Min = min;
-            Max = max;
-            Step = step;
-            Unit = unit ?? string.Empty;
-            Decimals = decimals;
-            DisplayScale = displayScale;
-            Optional = optional;
-            Integer = integer;
-            Clear();
-        }
-
-        public float? DefaultValue { get; }
-
-        public float Min { get; }
-
-        public float Max { get; }
-
-        public float Step { get; }
-
-        /// <summary>Shown after the value in the options screen ("m", "deg", "px").</summary>
-        public string Unit { get; }
-
-        public int Decimals { get; }
-
-        public float DisplayScale { get; }
-
-        public bool Optional { get; }
-
-        public bool Integer { get; }
-
-        /// <summary>What the plugin uses. For a setting that is <see cref="Optional"/> and unset: the default, or the minimum.</summary>
-        public float Value => effectiveSet ? effective : DefaultValue ?? Min;
-
-        /// <summary>What the plugin uses; null when unset.</summary>
-        public float? Effective => effectiveSet ? effective : (float?)null;
-
-        /// <summary>What the options screen shows and the file holds; null when unset.</summary>
-        public float? Pending => pendingSet ? pending : (float?)null;
-
-        /// <summary>
-        /// The new value, from the options screen or from code: not range-checked (the screen's slider keeps within
-        /// the range, and code knows what it measured). Null unsets an optional setting; a number that is not a
-        /// number is ignored.
-        /// </summary>
-        public void Set(float? value)
-        {
-            if (!Accept(ref value))
-                return;
-            Assign(ref pending, ref pendingSet, value);
-            if (!Restart)
-                Assign(ref effective, ref effectiveSet, value);
-        }
-
-        /// <summary>Sets both values, for the command line.</summary>
-        public void Force(float? value)
-        {
-            if (!Accept(ref value))
-                return;
-            Assign(ref pending, ref pendingSet, value);
-            Assign(ref effective, ref effectiveSet, value);
-        }
-
-        private bool Accept(ref float? value)
-        {
-            if (!value.HasValue)
-                return Optional;
-            if (float.IsNaN(value.Value) || float.IsInfinity(value.Value))
-                return false;
-            if (Integer)
-                value = (float)Math.Round(value.Value);
-            return true;
-        }
-
-        private static void Assign(ref float target, ref bool targetSet, float? value)
-        {
-            // The value first, then whether there is one: another thread that sees "set" sees a value that goes with it.
-            if (value.HasValue)
-                target = value.Value;
-            targetSet = value.HasValue;
-        }
-
-        public override void ResetToDefault() => Set(DefaultValue);
-
-        public override object Snapshot() => Pending;
-
-        public override void Restore(object snapshot) => Set((float?)snapshot);
-
-        internal override void Clear() => Force(DefaultValue);
-
-        internal override string Serialize()
-        {
-            if (!pendingSet)
-                return string.Empty;
-            return Integer
-                ? ((long)Math.Round(pending)).ToString(CultureInfo.InvariantCulture)
-                : pending.ToString("R", CultureInfo.InvariantCulture);
-        }
-
-        internal override bool TryLoad(string text, out string problem)
-        {
-            problem = null;
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                if (Optional)
-                {
-                    Force(null);
-                    return true;
-                }
-                problem = "no value";
-                return false;
-            }
-            if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || float.IsNaN(value) || float.IsInfinity(value))
-            {
-                problem = $"'{text}' is not a number";
-                return false;
-            }
-            if (value < Min || value > Max)
-            {
-                problem = $"{Format(value)} is outside {Format(Min)} to {Format(Max)}";
-                return false;
-            }
-            if (Integer && value != Math.Round(value))
-            {
-                problem = $"'{text}' is not a whole number";
-                return false;
-            }
-            Force(value);
-            return true;
-        }
-
-        internal override string Describe()
-        {
-            string unit = Unit.Length > 0 ? " (" + Unit + ")" : string.Empty;
-            string restart = Restart ? ", takes effect on restart" : string.Empty;
-            string def = DefaultValue.HasValue ? Format(DefaultValue.Value) : "none";
-            return $"{Label}{unit}: {Format(Min)} to {Format(Max)}, default {def}{restart}";
-        }
-
-        private static string Format(float value) => value.ToString("0.####", CultureInfo.InvariantCulture);
-    }
-
-    /// <summary>An on/off switch.</summary>
-    internal sealed class FlagSetting : Setting
-    {
-        private volatile bool effective, pending;
-
-        public FlagSetting(string key, string label, string section, bool defaultValue, string tooltip = null, bool restart = false, bool hidden = false)
-            : base(key, label, section, tooltip, restart, hidden)
-        {
-            DefaultValue = defaultValue;
-            Clear();
-        }
-
-        public bool DefaultValue { get; }
-
-        /// <summary>What the plugin uses.</summary>
-        public bool Value => effective;
-
-        /// <summary>What the options screen shows and the file holds.</summary>
-        public bool Pending => pending;
-
-        public void Set(bool value)
-        {
-            pending = value;
-            if (!Restart)
-                effective = value;
-        }
-
-        /// <summary>Sets both values, for the command line.</summary>
-        public void Force(bool value)
-        {
-            pending = value;
-            effective = value;
-        }
-
-        public override void ResetToDefault() => Set(DefaultValue);
-
-        public override object Snapshot() => pending;
-
-        public override void Restore(object snapshot) => Set((bool)snapshot);
-
-        internal override void Clear() => Force(DefaultValue);
-
-        internal override string Serialize() => pending ? "true" : "false";
-
-        internal override bool TryLoad(string text, out string problem)
-        {
-            problem = null;
-            switch ((text ?? string.Empty).Trim().ToLowerInvariant())
-            {
-                case "true":
-                case "1":
-                case "yes":
-                case "on":
-                    Force(true);
-                    return true;
-                case "false":
-                case "0":
-                case "no":
-                case "off":
-                    Force(false);
-                    return true;
-                default:
-                    problem = $"'{text}' is not true or false";
-                    return false;
-            }
-        }
-
-        internal override string Describe() =>
-            $"{Label}: true or false, default {(DefaultValue ? "true" : "false")}{(Restart ? ", takes effect on restart" : string.Empty)}";
-    }
-
-    /// <summary>One of a few named choices, stored in the file by its name.</summary>
-    internal sealed class ChoiceSetting : Setting
-    {
-        private readonly string[] choices;
-        private volatile int effective, pending;
-
-        public ChoiceSetting(string key, string label, string section, string[] choices, int defaultValue, string tooltip = null,
-            bool restart = false, bool hidden = false)
-            : base(key, label, section, tooltip, restart, hidden)
-        {
-            this.choices = (string[])choices.Clone();
-            DefaultValue = defaultValue;
-            Clear();
-        }
-
-        /// <summary>The choices' names, in the order the options screen lists them; a value is an index into it.</summary>
-        public string[] Choices => (string[])choices.Clone();
-
-        public int DefaultValue { get; }
-
-        /// <summary>What the plugin uses.</summary>
-        public int Value => effective;
-
-        /// <summary>What the options screen shows and the file holds.</summary>
-        public int Pending => pending;
-
-        /// <summary>The new choice; one that is not in the list is ignored.</summary>
-        public void Set(int value)
-        {
-            if (value < 0 || value >= choices.Length)
-                return;
-            pending = value;
-            if (!Restart)
-                effective = value;
-        }
-
-        private void Force(int value)
-        {
-            pending = value;
-            effective = value;
-        }
-
-        public override void ResetToDefault() => Set(DefaultValue);
-
-        public override object Snapshot() => pending;
-
-        public override void Restore(object snapshot) => Set((int)snapshot);
-
-        internal override void Clear() => Force(DefaultValue);
-
-        internal override string Serialize() => choices[pending];
-
-        internal override bool TryLoad(string text, out string problem)
-        {
-            problem = null;
-            string name = (text ?? string.Empty).Trim();
-            for (int i = 0; i < choices.Length; i++)
-            {
-                if (string.Equals(choices[i], name, StringComparison.OrdinalIgnoreCase))
-                {
-                    Force(i);
-                    return true;
-                }
-            }
-            problem = $"'{text}' is not one of {string.Join(", ", choices)}";
-            return false;
-        }
-
-        internal override string Describe() =>
-            $"{Label}: {string.Join(" or ", choices)}, default {choices[DefaultValue]}{(Restart ? ", takes effect on restart" : string.Empty)}";
-    }
-
-    /// <summary>
-    /// A line of text. Written to the file with the characters that would break a line or start a comment escaped
-    /// (<c>%</c>, <c>#</c>, line breaks), so any name survives the round trip.
-    /// </summary>
-    internal sealed class TextSetting : Setting
-    {
-        private volatile string effective = string.Empty, pending = string.Empty;
-
-        public TextSetting(string key, string label, string section, string tooltip = null, bool restart = false, bool hidden = false)
-            : base(key, label, section, tooltip, restart, hidden)
-        {
-            Clear();
-        }
-
-        /// <summary>What the plugin uses; never null.</summary>
-        public string Value => effective;
-
-        /// <summary>What the options screen shows and the file holds; never null.</summary>
-        public string Pending => pending;
-
-        public void Set(string value)
-        {
-            pending = value ?? string.Empty;
-            if (!Restart)
-                effective = pending;
-        }
-
-        public override void ResetToDefault() => Set(string.Empty);
-
-        public override object Snapshot() => pending;
-
-        public override void Restore(object snapshot) => Set((string)snapshot);
-
-        internal override void Clear()
-        {
-            pending = string.Empty;
-            effective = string.Empty;
-        }
-
-        internal override string Serialize() => Escape(pending);
-
-        internal override bool TryLoad(string text, out string problem)
-        {
-            problem = null;
-            string value = Unescape(text ?? string.Empty);
-            pending = value;
-            effective = value;
-            return true;
-        }
-
-        internal override string Describe() => $"{Label}: text, default none{(Restart ? ", takes effect on restart" : string.Empty)}";
-
-        internal static string Escape(string text) =>
-            text.Replace("%", "%25").Replace("#", "%23").Replace("\r", "%0D").Replace("\n", "%0A");
-
-        internal static string Unescape(string text) =>
-            text.Replace("%0A", "\n").Replace("%0D", "\r").Replace("%23", "#").Replace("%25", "%");
-    }
-
-    /// <summary>
     /// The plugin's settings: declared below, read from the settings file at start-up (then the command line, which wins
     /// for that run) and written back by <see cref="Save"/>. The options screen edits them live.
     /// </summary>
-    internal static class VRSettings
+    internal static partial class VRSettings
     {
         private static readonly object Gate = new object();
         private static readonly List<Setting> all = new List<Setting>();
@@ -448,6 +28,9 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting dynamicResolution = Add(new FlagSetting("dynamicResolution", "Dynamic resolution", "Display", true,
             tooltip: "Draw the eyes at a lower resolution, down to 70% each way, while the GPU cannot keep up with the headset; back up when it can. A frame the GPU misses is shown again, which can feel like judder."));
+
+        private static readonly FlagSetting lensMask = Add(new FlagSetting("lensMask", "Lens mask", "Display", true,
+            tooltip: "Skip lighting and shading the corners of each eye the headset's lenses never show (their shape comes from the headset's runtime), which saves GPU time. Those corners show black in the desktop window. Off draws every pixel."));
 
         private static readonly NumberSetting comfortVignette = Add(new NumberSetting("comfortVignette", "Comfort vignette", "Display",
             0f, 0f, 1f, 0.05f, decimals: 2,
@@ -532,6 +115,13 @@ namespace SpaceEngineersVR
             0f, -0.5f, 0.5f, 0.01f, unit: "m", decimals: 2,
             tooltip: "Raises (+) or lowers (-) your view on top of the calibration."));
 
+        private static readonly FlagSetting armSpanScaling = Add(new FlagSetting("armSpanScaling", "Scale arms to arm span", "Height", true,
+            tooltip: "Calibrate height also measures your arm span (your arms straight out to the sides for a few seconds), and your character's arms stretch as far as your own reach needs, so its hands stay on your controllers with your arms fully out. Off: the arms stretch as far as they always have, and Calibrate height only measures your height."));
+
+        private static readonly NumberSetting armSpan = Add(new NumberSetting("armSpan", "Arm span", "Height",
+            null, 1f, 3f, 0.01f, unit: "m", decimals: 2, hidden: true, optional: true,
+            tooltip: "The distance between your hands with your arms straight out to the sides, set by height calibration."));
+
         private static readonly FlagSetting bodyClearance = Add(new FlagSetting("bodyClearance", "Keep eyes out of the body", "Height", true,
             tooltip: "On foot, lean or step so your head would be inside your character's chest, shoulders or backpack and the view stops at the surface instead. Off: the view goes where your head goes, through the body."));
 
@@ -598,6 +188,9 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting leftHanded = Add(new FlagSetting("leftHanded", "Left-handed", "Controls", false,
             tooltip: "Point the menu laser with your left hand: its trigger clicks, its grip right-clicks, its thumbstick scrolls. Off: the right hand."));
+
+        private static readonly TextSetting gripFit = Add(new TextSetting("gripFit", "Grip fit", "Controls", hidden: true,
+            tooltip: "How your character's hand sits on each kind of controller, one entry per OpenXR interaction profile, separated by semicolons: profile:pitch,roll,yaw,x,y,z (degrees, then millimetres), as the RenderDebug keys HandIKPitch, HandIKRoll, HandIKYaw, HandIKX, HandIKY and HandIKZ set them for the controllers in use. A controller with no entry gets the plugin's own placement."));
 
         private static readonly NumberSetting hapticStrength = Add(new NumberSetting("hapticStrength", "Haptic strength", "Controls",
             1f, 0f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
@@ -825,6 +418,9 @@ namespace SpaceEngineersVR
         /// <summary>The eyes are drawn smaller while the GPU is over its time (<see cref="Rendering.DynamicResolution"/>).</summary>
         public static bool DynamicResolution => dynamicResolution.Value;
 
+        /// <summary>The parts of the eyes the lenses never show are left out of the costly passes (<see cref="Rendering.LensMask"/>).</summary>
+        public static bool LensMask => lensMask.Value;
+
         /// <summary>The external view is drawn every other frame.</summary>
         public static bool ExternalViewHalfRate => externalViewHalfRate.Value;
         /// <summary>Third person in a ship: the camera keeps the horizon level (<see cref="Tracking.ChaseCamera"/>) instead of rolling with the ship.</summary>
@@ -872,6 +468,26 @@ namespace SpaceEngineersVR
         {
             get => heightOffset.Value;
             set => heightOffset.Set(value);
+        }
+
+        /// <summary>The character's arms stretch as far as the player's arm span needs (<see cref="Tracking.ArmSpan"/>); off: as they always have.</summary>
+        public static bool ArmSpanScaling => armSpanScaling.Value;
+
+        /// <summary>
+        /// The distance between the player's hands with the arms straight out to the sides, metres, from height calibration
+        /// (<see cref="Tracking.HeightCalibration"/>). Null: not measured.
+        /// </summary>
+        public static float? ArmSpan
+        {
+            get => armSpan.Effective;
+            set => armSpan.Set(value);
+        }
+
+        /// <summary>The grip fit per controller profile, as the settings file holds it (<see cref="Tracking.GripFit"/>).</summary>
+        public static string GripFit
+        {
+            get => gripFit.Value;
+            set => gripFit.Set(value);
         }
 
         /// <summary>On foot, the eye is kept out of the character's own body (<see cref="Tracking.BodyGuard"/>).</summary>
@@ -1001,7 +617,10 @@ namespace SpaceEngineersVR
         /// <summary>How many times <see cref="Save"/> has written the file. The options screen uses it to see whether anything saved while it was open.</summary>
         public static int SaveCount { get; private set; }
 
-        /// <summary>The settings file: %APPDATA%\SpaceEngineers\SpaceEngineersVR.cfg.</summary>
+        /// <summary>
+        /// The settings file, SpaceEngineers/SpaceEngineersVR.cfg under the per-user application data folder: %APPDATA% on
+        /// Windows, where .NET puts <see cref="Environment.SpecialFolder.ApplicationData"/> on Linux (~/.config).
+        /// </summary>
         public static string FilePath { get; set; } =
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpaceEngineers", "SpaceEngineersVR.cfg");
 
@@ -1016,180 +635,6 @@ namespace SpaceEngineersVR
             all.Add(setting);
             byKey.Add(setting.Key, setting);
             return setting;
-        }
-
-        /// <summary>Writes every setting to <see cref="FilePath"/>: to a temporary file first, then swapped in, so a crash cannot leave half a file. Never throws.</summary>
-        public static void Save()
-        {
-            lock (Gate)
-            {
-                string path = FilePath;
-                string temp = path + ".tmp";
-                try
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(path));
-                    File.WriteAllText(temp, Render(), new UTF8Encoding(false));
-                    if (File.Exists(path))
-                        File.Replace(temp, path, null);
-                    else
-                        File.Move(temp, path);
-                    SaveCount++;
-                    Log.Info("Settings saved to " + path);
-                }
-                catch (Exception e)
-                {
-                    Log.Error(e, "Could not save the settings to " + path);
-                    try
-                    {
-                        if (File.Exists(temp))
-                            File.Delete(temp);
-                    }
-                    catch (Exception)
-                    {
-                        // The failure is already logged; a stray temporary file is harmless.
-                    }
-                }
-            }
-        }
-
-        private static string Render()
-        {
-            var text = new StringBuilder();
-            text.AppendLine("# Space Engineers VR settings. One key=value per line; lines starting with # are comments.");
-            text.AppendLine("# Options > VR in the game rewrites this file. Edit it only while the game is closed.");
-            text.AppendLine("# Command-line arguments (for example -hudDistance 2) override these for that run.");
-            string section = null;
-            foreach (Setting setting in all)
-            {
-                if (setting.Section != section)
-                {
-                    section = setting.Section;
-                    text.AppendLine();
-                    text.AppendLine("# " + section);
-                }
-                text.AppendLine("# " + setting.Describe());
-                text.AppendLine(setting.Key + "=" + setting.Serialize());
-            }
-            return text.ToString();
-        }
-
-        /// <summary>Everything to its default, then the settings file, then the command line.</summary>
-        public static void Load(string[] args)
-        {
-            lock (Gate)
-            {
-                foreach (Setting setting in all)
-                    setting.Clear();
-                LoadFile();
-                if (args != null)
-                    LoadArguments(args);
-            }
-        }
-
-        private static void LoadFile()
-        {
-            string path = FilePath;
-            string[] lines;
-            try
-            {
-                if (!File.Exists(path))
-                {
-                    Log.Info("No settings file at " + path + "; using the defaults");
-                    return;
-                }
-                lines = File.ReadAllLines(path, Encoding.UTF8);
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Could not read the settings file " + path + "; using the defaults");
-                return;
-            }
-
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                string line = lines[i].Trim();
-                if (line.Length == 0 || line[0] == '#')
-                    continue;
-                string where = $"Settings file line {i + 1}";
-                int equals = line.IndexOf('=');
-                if (equals <= 0)
-                {
-                    Log.Warn($"{where}: expected key=value, got '{line}'; skipped");
-                    continue;
-                }
-                string key = line.Substring(0, equals).Trim();
-                string value = line.Substring(equals + 1);
-                int comment = value.IndexOf('#');
-                if (comment >= 0)
-                    value = value.Substring(0, comment);
-                value = value.Trim();
-
-                if (!byKey.TryGetValue(key, out Setting setting))
-                {
-                    Log.Warn($"{where}: unknown setting '{key}'; skipped");
-                    continue;
-                }
-                if (!seen.Add(setting.Key))
-                    Log.Warn($"{where}: '{setting.Key}' is set again; this one wins if it is valid");
-                if (!setting.TryLoad(value, out string problem))
-                    Log.Warn($"{where}: {setting.Key}: {problem}; keeping '{setting.Serialize()}'");
-            }
-            Log.Info("Settings read from " + path);
-        }
-
-        /// <summary>
-        /// Sets one setting for this run only, as the file would have it (the drive's "setting key=value", for tests): the
-        /// file is not written.
-        /// </summary>
-        internal static bool TrySetForRun(string key, string value, out string detail)
-        {
-            if (string.IsNullOrWhiteSpace(key) || !byKey.TryGetValue(key.Trim(), out Setting setting))
-            {
-                detail = $"unknown setting '{key}'";
-                return false;
-            }
-            if (!setting.TryLoad(value ?? string.Empty, out string problem))
-            {
-                detail = $"{setting.Key}: {problem}";
-                return false;
-            }
-            detail = $"{setting.Key}={setting.Serialize()} for this run, not saved";
-            return true;
-        }
-
-        private static void LoadArguments(string[] args)
-        {
-            for (int i = 0; i < args.Length; i++)
-            {
-                string arg = args[i];
-                if (arg.Equals("-novr", StringComparison.OrdinalIgnoreCase))
-                    enabled.Force(false);
-                else if (arg.Equals("-vrmirror", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
-                {
-                    string[] size = args[i + 1].Split('x', 'X');
-                    if (size.Length == 2 && int.TryParse(size[0], out int w) && int.TryParse(size[1], out int h) && w > 0 && h > 0)
-                    {
-                        mirrorWidth.Force(w);
-                        mirrorHeight.Force(h);
-                    }
-                }
-                else if (arg.Equals("-ipd", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float ipdValue))
-                    ipd.Force(ipdValue);
-                else if (arg.Equals("-hudDistance", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float distance) && distance > 0f)
-                    hudDistance.Force(distance);
-                else if (arg.Equals("-hudWidth", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float width) && width > 0f && width < 170f)
-                    hudWidth.Force(width);
-                else if (arg.Equals("-menuDistance", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float menuDistanceValue) && menuDistanceValue > 0f)
-                    menuDistance.Force(menuDistanceValue);
-                else if (arg.Equals("-menuWidth", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float menuWidthValue) && menuWidthValue > 0f && menuWidthValue < 170f)
-                    menuWidth.Force(menuWidthValue);
-            }
         }
     }
 }

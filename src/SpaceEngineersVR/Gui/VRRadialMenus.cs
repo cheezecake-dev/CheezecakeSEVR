@@ -231,14 +231,9 @@ namespace SpaceEngineersVR.Gui
             Hook(harmony, "the actions wheel's labels", made, postfix: nameof(Made));
             Hook(harmony, "the actions wheel's shortcuts", system == null ? null : AccessTools.DeclaredMethod(system, "UpdateTooltip"), postfix: nameof(Shortcut));
 
-            try
-            {
-                setStat = AccessTools.MethodDelegate<Action<MyStatBase, float>>(AccessTools.PropertySetter(typeof(MyStatBase), nameof(MyStatBase.CurrentValue)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "VR radial menus: the HUD's stats cannot be set; the HUD's gamepad layout (the D-pad) shows while a wheel is up");
-            }
+            PatchRegistry.Apply("the HUD's stats", () =>
+                setStat = AccessTools.MethodDelegate<Action<MyStatBase, float>>(AccessTools.PropertySetter(typeof(MyStatBase), nameof(MyStatBase.CurrentValue))),
+                "VR radial menus: the HUD's stats cannot be set; the HUD's gamepad layout (the D-pad) shows while a wheel is up");
             if (setStat != null)
                 Hook(harmony, "the HUD's gamepad layout", AccessTools.DeclaredMethod(typeof(MyStatControllerMode), nameof(MyStatControllerMode.Update)), prefix: nameof(ControllerMode));
         }
@@ -263,21 +258,8 @@ namespace SpaceEngineersVR.Gui
             }
         }
 
-        private static void Hook(Harmony harmony, string what, MethodBase target, string prefix = null, string postfix = null)
-        {
-            try
-            {
-                if (target == null)
-                    throw new MissingMethodException(what);
-                harmony.Patch(target,
-                    prefix: prefix == null ? null : new HarmonyMethod(typeof(VRRadialMenus), prefix),
-                    postfix: postfix == null ? null : new HarmonyMethod(typeof(VRRadialMenus), postfix));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, $"VR radial menus ({what}) could not be hooked; that part stays the gamepad's");
-            }
-        }
+        private static void Hook(Harmony harmony, string what, MethodBase target, string prefix = null, string postfix = null) =>
+            PatchRegistry.Hook(harmony, typeof(VRRadialMenus), "VR radial menus", "that part stays the gamepad's", what, target, prefix, postfix);
 
         /// <summary>Prefix of the actions wheel's constructor: the wheel is made from a copy without the entries the hands have no use for.</summary>
         private static void Filter(ref MyRadialMenu data)

@@ -21,13 +21,13 @@ namespace SpaceEngineersVR.Gui
     /// </summary>
     internal static class ExternalViewEntries
     {
-        private const string PageIcon = "Textures\\GUI\\Icons\\HUD 2017\\CameraSpectator.png";
+        private const string PageIcon = GuiTextures.Spectator;
         private const string OffIcon = "Textures\\GUI\\Icons\\HUD 2017\\ToggleHud.png";
         private const string CameraIcon = "Textures\\GUI\\Icons\\Camera.dds";
 
         /// <summary>The game's camera block picture, not its "Toggle Camera Mode" icon (HUD 2017\SwitchCamera.png), which the wheel's first ring already has.</summary>
         private const string NextIcon = CameraIcon;
-        private const string BackIcon = "Textures\\GUI\\Icons\\HUD 2017\\RotateCounterClockWise.png";
+        private const string BackIcon = GuiTextures.Back;
 
         /// <summary>The game's block-turning picture (a cube with an arrow round it): the camera going round what it follows.</summary>
         private const string AdjustIcon = "Textures\\GUI\\Icons\\HUD 2017\\Autorotate.png";

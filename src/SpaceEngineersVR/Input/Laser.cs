@@ -107,7 +107,8 @@ namespace SpaceEngineersVR.Input
         private static Vector2 lastReal, anchor;
         private static float scrollCarry;
         private static long lastFrame, lastNote;
-        private static int suppressed, errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(Laser));
+        private static int suppressed;
 
         // A press on a grid (GridPress): the cursor is held at pressAt while pressHeld; the last press that began a pair, for
         // the double click, at pairAt when pairTime (Stopwatch ticks) is not 0.
@@ -124,29 +125,21 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         public static void Patch(Harmony harmony)
         {
-            try
+            PatchRegistry.Apply("mouse input", () =>
             {
                 // After the hands were read for this frame (InputPatches.FrameStart is a postfix on the same method) and the
                 // game updated its mouse state: so last, whatever order they were patched in.
                 harmony.Patch(AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.Update), new[] { typeof(bool) }),
                     postfix: new HarmonyMethod(typeof(Laser), nameof(AfterInput)) { priority = Priority.Last });
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Laser pointer (mouse input) could not be hooked; it will not reach the game");
-            }
+            }, "Laser pointer (mouse input) could not be hooked; it will not reach the game");
 
-            try
+            PatchRegistry.Apply("visible line", () =>
             {
                 // The gameplay screen's draw: only when there is a scene, never on the main menu. Billboards added up to the
                 // end of the game's frame are drawn in it (MyRenderProxy.AfterUpdate swaps them to the renderer).
                 harmony.Patch(AccessTools.Method(typeof(MySession), nameof(MySession.DrawSync)),
                     postfix: new HarmonyMethod(typeof(Laser), nameof(DrawLine)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Laser pointer (visible line) could not be hooked; the cursor still works");
-            }
+            }, "Laser pointer (visible line) could not be hooked; the cursor still works");
         }
 
         /// <summary>The laser has the cursor: it is where the hand's ray hits the panel.</summary>
@@ -186,6 +179,8 @@ namespace SpaceEngineersVR.Input
 
         private static void AfterInput(MyVRageInput __instance, bool gameFocused)
         {
+            if (!guard.On)
+                return;
             try
             {
                 Frame(__instance, gameFocused);
@@ -193,8 +188,7 @@ namespace SpaceEngineersVR.Input
             catch (Exception e)
             {
                 Release();
-                if (errors++ < 3)
-                    Log.Error(e, "Laser pointer failed this frame");
+                guard.Failed(e, "Laser pointer failed this frame");
             }
         }
 
@@ -499,6 +493,8 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         private static void DrawLine()
         {
+            if (!guard.On)
+                return;
             try
             {
                 Vector3 from, to;
@@ -522,8 +518,7 @@ namespace SpaceEngineersVR.Input
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Laser pointer could not draw its line");
+                guard.Failed(e, "Laser pointer could not draw its line");
             }
         }
     }

@@ -158,18 +158,10 @@ namespace SpaceEngineersVR.Rendering
 
         private static void Hook(Harmony harmony, string what, MethodBase target, string prefix = null, string postfix = null)
         {
-            try
-            {
-                if (target == null)
-                    throw new MissingMethodException(what);
-                harmony.Patch(target,
+            PatchRegistry.Apply(what, () => harmony.Patch(target ?? throw new MissingMethodException(what),
                     prefix: prefix == null ? null : new HarmonyMethod(typeof(HudToolbar), prefix),
-                    postfix: postfix == null ? null : new HarmonyMethod(typeof(HudToolbar), postfix));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, $"HUD toolbar ({what}) could not be hooked; the game's toolbar stays as it is there");
-            }
+                    postfix: postfix == null ? null : new HarmonyMethod(typeof(HudToolbar), postfix)),
+                $"HUD toolbar ({what}) could not be hooked; the game's toolbar stays as it is there");
         }
 
         // ---- the state ----

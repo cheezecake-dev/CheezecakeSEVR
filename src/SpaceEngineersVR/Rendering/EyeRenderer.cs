@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 using SharpDX.DXGI;
+using SpaceEngineersVR.Input;
 using SpaceEngineersVR.OpenXR;
 using SpaceEngineersVR.Tracking;
 using VRageMath;
@@ -28,7 +29,6 @@ namespace SpaceEngineersVR.Rendering
         private static readonly Assembly Render11 = typeof(MyDX11Render).Assembly;
         private static readonly Type Render = Render11.GetType("VRageRender.MyRender11", throwOnError: true);
         private static readonly Type RtvBindable = Render11.GetType("VRage.Render11.Resources.IRtvBindable", throwOnError: true);
-        private static readonly Type SrvBindable = Render11.GetType("VRage.Render11.Resources.ISrvBindable", throwOnError: true);
         private static readonly Type BorrowedTexture = Render11.GetType("VRage.Render11.Resources.IBorrowedSrvTexture", throwOnError: true);
         private static readonly Type Managers = Render11.GetType("VRage.Render11.Common.MyManagers", throwOnError: true);
         private static readonly Type CopyToRT = Render11.GetType("VRageRender.MyCopyToRT", throwOnError: true);
@@ -112,7 +112,12 @@ namespace SpaceEngineersVR.Rendering
             harmony.Patch(AccessTools.Method(Render, "DrawScene"),
                 prefix: new HarmonyMethod(typeof(EyeRenderer), nameof(DrawEyes)));
             harmony.Patch(AccessTools.Method(Render, "RenderMainSprites", Type.EmptyTypes),
+#if LINUX
+                // linux-compat prefixes RenderMainSprites too and skips the rest; ours has to run first
+                prefix: new HarmonyMethod(typeof(EyeRenderer), nameof(RenderSpritesToPanel)) { priority = Priority.First });
+#else
                 prefix: new HarmonyMethod(typeof(EyeRenderer), nameof(RenderSpritesToPanel)));
+#endif
             harmony.Patch(AccessTools.Method(Render, "ConsumeMainSprites"),
                 postfix: new HarmonyMethod(typeof(EyeRenderer), nameof(ShowPanel)));
             harmony.Patch(AccessTools.PropertyGetter(typeof(MyDX11Render), nameof(MyDX11Render.BackBufferResolution)),
@@ -184,6 +189,26 @@ namespace SpaceEngineersVR.Rendering
             try
             {
                 var dx = (SharpDX.Direct3D11.Device)device.GetValue(null);
+
+                // DXVK's D3D11 (Linux, or its DLLs beside the game): the session runs on DXVK's Vulkan device, on the GPU
+                // HeadsetGpu chose from the runtime's Vulkan physical device, which the session checks; there is no LUID to compare.
+                DxvkInterop dxvk = DxvkInterop.FromDevice(dx.NativePointer);
+                if (dxvk != null && XrRuntime.HasVulkan)
+                {
+                    Log.Info($"OpenXR graphics: Vulkan through DXVK (the game's D3D11 device is DXVK's, and the runtime offers {XrRuntime.VulkanExtension})");
+                    XrSession.Create(dx, windowFormat, dxvk);
+                    return;
+                }
+                if (dxvk != null)
+                {
+                    dxvk.Dispose();
+                    Log.Warn("OpenXR graphics: Direct3D 11 on DXVK's device, as no Vulkan extension of the runtime is enabled; a runtime cannot normally use it");
+                }
+                else
+                {
+                    Log.Info("OpenXR graphics: Direct3D 11 (the game's device is not DXVK's)");
+                }
+
                 using (var dxgiDevice = dx.QueryInterface<SharpDX.DXGI.Device>())
                 using (Adapter adapter = dxgiDevice.Adapter)
                 {
@@ -212,6 +237,7 @@ namespace SpaceEngineersVR.Rendering
             PerfMeter.FrameBegin();
             DynamicResolution.Apply();
             bool headset = BeginHeadsetFrame();
+            DriveEyes.FrameBegin(headset);
             PerfMeter.GpuStart();
             object window = backbuffer.GetValue(null);
             Vector2I eye = RenderResolution, image = EyeResolution;
@@ -275,6 +301,8 @@ namespace SpaceEngineersVR.Rendering
                 }
                 SharedShadows.Fit(environmentMatrices, head, eyeFromHead, eyeFov);
                 SceneOnce.BeginFrame();
+                ParticlesOnce.BeginFrame();
+                CentredFlares.BeginFrame(environmentMatrices, head, eyeFromHead, eyeFov);
                 if (headset && partial)
                     XrSession.SetEyeRect(eye.X, eye.Y);
 
@@ -293,12 +321,14 @@ namespace SpaceEngineersVR.Rendering
                     object[] args = { eyeTargets[i], null };
                     SharedShadows.BeginEye(n);
                     ScenePass.Current = n == 0 ? ScenePass.FirstEye : ScenePass.SecondEye;
+                    LensMask.BeginEye(i, Eyes[i].Projection, headset);
                     try
                     {
                         drawGameScene.Invoke(null, args);
                     }
                     finally
                     {
+                        LensMask.EndEye();
                         ScenePass.Current = ScenePass.None;
                     }
                     SharedShadows.EndEye();
@@ -315,6 +345,7 @@ namespace SpaceEngineersVR.Rendering
 
                     if (headset)
                     {
+                        DriveEyes.Capture(eyeTargets[i], i, eye, drawCalls); // test capture: this eye as submitted
                         SharpDX.Direct3D11.Texture2D xrImage = XrSession.AcquireImage(i);
                         try
                         {
@@ -371,6 +402,7 @@ namespace SpaceEngineersVR.Rendering
             }
             finally
             {
+                CentredFlares.EndFrame();
                 MotionExtrapolation.End();
                 SharedShadows.EndEye();
                 EnvMatrices.Restore(environmentMatrices, head);
@@ -491,12 +523,15 @@ namespace SpaceEngineersVR.Rendering
         /// comes from these two, via MyRenderProxy. The renderer reports m_resolution, now the eye size; the game should
         /// keep the camera's aspect to the window.
         /// </summary>
+        // Patches: MyDX11Render.BackBufferResolution (postfix). Callable from any thread that asks the renderer for its size;
+        // it only reads windowSize.
         private static void ReportWindowResolution(ref Vector2I __result)
         {
             if (windowSize.X != 0)
                 __result = windowSize;
         }
 
+        // Patches: MyDX11Render.MainViewport (postfix); same threading as ReportWindowResolution.
         private static void ReportWindowViewport(ref MyViewport __result)
         {
             if (windowSize.X != 0)

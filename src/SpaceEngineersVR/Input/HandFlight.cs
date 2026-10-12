@@ -108,7 +108,8 @@ namespace SpaceEngineersVR.Input
             }
             catch (Exception e)
             {
-                Log.Error(e, "Hand flying (the ghost stick and throttle) could not be hooked; flying by hand still works");
+                PatchRegistry.Lost(e, "Hand flying (the ghost stick and throttle) could not be hooked; flying by hand still works");
+                throw;
             }
         }
 

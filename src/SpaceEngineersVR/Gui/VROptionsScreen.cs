@@ -235,9 +235,9 @@ namespace SpaceEngineersVR.Gui
             status = AddText(statusShown, left, stripY, "White", 0.8f, StatusWidth);
             float x1 = left + StatusWidth + ButtonGap;
             AddButton("Calibrate height",
-                $"Stand the way you will play and look straight ahead, then click. After {HeightCalibration.CountdownSeconds:0} seconds your eye height is measured and saved. Used in Standing play; Seated play takes your height when you recentre.",
+                $"Stand the way you will play and look straight ahead, then click. After {HeightCalibration.CountdownSeconds:0} seconds your eye height is measured and saved. Used in Standing play; Seated play takes your height when you recentre. Then, with Scale arms to arm span on, hold both arms straight out to the sides when the status says so: your arm span is measured over {HeightCalibration.ArmMeasureSeconds:0} seconds, and your character's arms stretch as far as yours need.",
                 new Vector2(x1, stripY), MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER, OnCalibrate);
-            AddButton("Clear", "Forgets the calibration, so your view's height is the headset's own again.",
+            AddButton("Clear", "Forgets the calibration, so your view's height is the headset's own again and your arms stretch as far as they always have.",
                 new Vector2(x1 + ButtonWidth + ButtonGap, stripY), MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER, OnClearHeight);
 
             float buttonsY = size.Y / 2f - 0.052f;
@@ -569,16 +569,6 @@ namespace SpaceEngineersVR.Gui
         }
 
         /// <summary>A mistake in one control's handler must not take the game's menu loop down with it.</summary>
-        private static void Guard(string what, Action action)
-        {
-            try
-            {
-                action();
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "VR options: " + what);
-            }
-        }
+        private static void Guard(string what, Action action) => Log.Guard("VR options", what, action);
     }
 }

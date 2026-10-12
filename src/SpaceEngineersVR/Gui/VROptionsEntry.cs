@@ -36,10 +36,7 @@ namespace SpaceEngineersVR.Gui
                 Type screen = typeof(SpaceEngineersGame).Assembly.GetType(ScreenTypeName);
                 MethodInfo recreate = screen == null ? null : AccessTools.DeclaredMethod(screen, RecreateName, new[] { typeof(bool) });
                 if (recreate == null)
-                {
-                    Log.Warn($"The Options screen ({ScreenTypeName}.{RecreateName}) was not found; there is no VR button (the game changed?)");
-                    return;
-                }
+                    throw new MissingMethodException($"The Options screen ({ScreenTypeName}.{RecreateName}) was not found; there is no VR button (the game changed?)");
                 harmony.Patch(recreate,
                     prefix: new HarmonyMethod(typeof(VROptionsEntry), nameof(MakeRoom)),
                     postfix: new HarmonyMethod(typeof(VROptionsEntry), nameof(AddButton)));
@@ -47,7 +44,8 @@ namespace SpaceEngineersVR.Gui
             }
             catch (Exception e)
             {
-                Log.Error(e, "Could not add the VR button to the Options screen; continuing without it");
+                PatchRegistry.Lost(e, "Could not add the VR button to the Options screen; continuing without it");
+                throw;
             }
         }
 

@@ -18,7 +18,7 @@ namespace SpaceEngineersVR.Gui
     /// </remarks>
     internal static class ExternalViewPage
     {
-        private const string Hud = "Textures\\GUI\\Icons\\HUD 2017\\";
+        private const string Hud = GuiTextures.Hud;
 
         /// <summary>The game's white chevron (it points right), turned for each way the camera goes.</summary>
         private const string Chevron = "Textures\\GUI\\Icons\\buttons\\ArrowSingle.dds";

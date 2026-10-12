@@ -22,9 +22,9 @@ namespace SpaceEngineersVR.Input
         public static void Patch(Harmony harmony)
         {
             VRInput.Desktop = desktop;
-            ControlGrip.Patch(harmony);
-            HandFlight.Patch(harmony);
-            Drive.Patch(harmony);
+            PatchRegistry.Apply(nameof(ControlGrip), () => ControlGrip.Patch(harmony));
+            PatchRegistry.Apply(nameof(HandFlight), () => HandFlight.Patch(harmony));
+            PatchRegistry.Apply(nameof(Drive), () => Drive.Patch(harmony));
 
             // The game's input update, once per frame on the game thread, just before the screens read the controls.
             // The keys' "new pressed" is decided there too, so the hands' edges advance in step with them.
@@ -50,20 +50,11 @@ namespace SpaceEngineersVR.Input
             Hook(harmony, "released", AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.IsGameControlReleased)), nameof(Released));
 
             // The game's radial menu, opened and steered from the hands.
-            ToolbarWheel.Patch(harmony);
+            PatchRegistry.Apply(nameof(ToolbarWheel), () => ToolbarWheel.Patch(harmony));
         }
 
-        private static void Hook(Harmony harmony, string what, System.Reflection.MethodBase target, string postfix)
-        {
-            try
-            {
-                harmony.Patch(target, postfix: new HarmonyMethod(typeof(InputPatches), postfix));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, $"Hand input ({what}) could not be hooked; it will not reach the game");
-            }
-        }
+        private static void Hook(Harmony harmony, string what, System.Reflection.MethodBase target, string postfix) =>
+            PatchRegistry.Hook(harmony, typeof(InputPatches), "Hand input", "it will not reach the game", what, target, postfix: postfix);
 
         private static void FrameStart(MyVRageInput __instance, bool gameFocused)
         {

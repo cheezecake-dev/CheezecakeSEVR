@@ -56,7 +56,7 @@ namespace SpaceEngineersVR.Gui
         public const float PointDistance = 0.035f;
 
         private const string InventoryIcon = "Textures\\GUI\\Icons\\HUD 2017\\OpenInventory.png";
-        private const string BackIcon = "Textures\\GUI\\Icons\\HUD 2017\\RotateCounterClockWise.png";
+        private const string BackIcon = GuiTextures.Back;
 
         /// <summary>The game's radial-menu glyph: marks an entry that opens a ring of its own.</summary>
         internal const string PageBadge = "Textures\\GUI\\Icons\\HUD 2017\\RadialMenu.png";
@@ -135,21 +135,17 @@ namespace SpaceEngineersVR.Gui
 
         public static void Patch(Harmony harmony)
         {
-            systemAction = AccessTools.Field(AccessTools.TypeByName(SystemItemType), "m_systemAction");
-            if (systemAction == null)
-                Log.Warn("Actions wheel: the game's system items could not be read; nothing is left out of the wheel");
-            try
+            PatchRegistry.Apply("system items", () =>
+                systemAction = AccessTools.Field(AccessTools.TypeByName(SystemItemType), "m_systemAction") ?? throw new MissingFieldException(SystemItemType, "m_systemAction"),
+                "Actions wheel: the game's system items could not be read; nothing is left out of the wheel");
+            PatchRegistry.Apply("HUD", () =>
             {
                 // The HUD draws whether it has the focus or not, onto the same GUI panel: while the panel is a wheel in the
                 // hand it would shrink onto it beside the ring (the readouts, the markers' distances, the game's notifications
                 // and the toolbar's lines behind the ring and its labels).
                 harmony.Patch(AccessTools.Method(typeof(MyGuiScreenHudSpace), nameof(MyGuiScreenHudSpace.Draw)),
                     prefix: new HarmonyMethod(typeof(ActionsWheel), nameof(HudDraw)));
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Actions wheel: the HUD could not be kept off the wheel");
-            }
+            }, "Actions wheel: the HUD could not be kept off the wheel");
         }
 
         private static bool HudDraw(ref bool __result)

@@ -1,6 +1,5 @@
 using System;
 using System.Text;
-using Sandbox;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Blocks;
@@ -55,7 +54,7 @@ namespace SpaceEngineersVR.Gui
     /// that is not the main one). Y does not reach the panel there, so the actions wheel has a "Quick actions" entry for it (<see cref="AddTo"/>).
     /// </para>
     /// </remarks>
-    internal sealed class QuickActionsScreen : MyGuiScreenBase
+    internal sealed partial class QuickActionsScreen : MyGuiScreenBase
     {
         /// <summary>One button: what it says, what it does (the game's control), its icon, and its switch state if it is one.</summary>
         internal sealed class QuickAction
@@ -146,7 +145,7 @@ namespace SpaceEngineersVR.Gui
             public Func<bool?> State { get; }
         }
 
-        private const string Hud = "Textures\\GUI\\Icons\\HUD 2017\\";
+        private const string Hud = GuiTextures.Hud;
 
         /// <summary>The game has no terminal icon; this is the G menu's two-windows glyph.</summary>
         private const string TerminalIcon = "Textures\\GUI\\Icons\\buttons\\hud.dds";
@@ -439,7 +438,7 @@ namespace SpaceEngineersVR.Gui
         /// <summary>The game's button frames are drawn this many times their size: 3 GUI pixels is about 1.5 headset pixels on the wrist.</summary>
         internal const float BorderScale = 3f;
 
-        private const string BlankTexture = "Textures\\GUI\\Blank.dds";
+        private const string BlankTexture = GuiTextures.Blank;
         private static readonly Vector4 PanelColor = new Vector4(0.035f, 0.06f, 0.085f, 1f);
 
         /// <summary>The HUD icons' own light blue (192, 237, 249), for the white glyphs.</summary>
@@ -792,17 +791,7 @@ namespace SpaceEngineersVR.Gui
         }
 
         /// <summary>A mistake in one control's handler must not take the game's menu loop down with it.</summary>
-        private static void Guard(string what, Action action)
-        {
-            try
-            {
-                action();
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Quick actions: " + what);
-            }
-        }
+        private static void Guard(string what, Action action) => Log.Guard("Quick actions", what, action);
 
         /// <summary>
         /// What a button says under its name now: its own words if it has some to say, else On or Off for a switch; and the
@@ -845,156 +834,6 @@ namespace SpaceEngineersVR.Gui
             catch (Exception)
             {
                 return false;
-            }
-        }
-
-        // ---- The drive's "quickmenu" command (test aid) ----
-
-        private static QuickAction testAction;
-        private static string testBefore;
-
-        /// <summary>The panel that is up (not closing), or null.</summary>
-        private static QuickActionsScreen Up()
-        {
-            QuickActionsScreen found = null;
-            foreach (MyGuiScreenBase screen in MyScreenManager.Screens)
-            {
-                if (screen is QuickActionsScreen panel && panel.State != MyGuiScreenState.CLOSING && panel.State != MyGuiScreenState.CLOSED)
-                    found = panel;
-            }
-            return found;
-        }
-
-        private static string Reading(QuickAction action) =>
-            $"{action.Label}={Words(action, out _) ?? "-"}{(Usable(action) ? string.Empty : " (greyed)")}";
-
-        /// <summary>The panel's buttons as they read now, in order.</summary>
-        private string Describe()
-        {
-            var parts = new System.Collections.Generic.List<string>();
-            foreach (MyGuiControlBase control in Controls)
-            {
-                if (control is Tile tile)
-                    parts.Add(Reading(tile.Entry));
-            }
-            return $"{(seatedLayout ? "seated" : page == Page.ExternalView ? "External view page" : "on foot")}, {TileCount} tiles: {string.Join(", ", parts)}";
-        }
-
-        /// <summary>The seat and every seated button's state, read from the game whether the panel is up or not.</summary>
-        private static string SeatState()
-        {
-            MyShipController seat = Seat;
-            if (seat == null)
-                return $"not in a seat (controlling {MySession.Static?.ControlledEntity?.GetType().Name ?? "nothing"})";
-            var parts = new System.Collections.Generic.List<string>();
-            foreach (QuickAction[] set in new[] { ShipActions, PilotActions, new[] { Camera } })
-            {
-                foreach (QuickAction action in set)
-                    parts.Add(Reading(action));
-            }
-            return $"{seat.GetType().Name} '{seat.DisplayNameText}' on '{seat.CubeGrid?.DisplayName}', ship control {seat.EnableShipControl}, main cockpit "
-                + $"{(seat.CubeGrid?.MainCockpit == null ? "none" : seat.IsMainCockpit ? "this" : "another")}, pilot {(seat.Pilot != null ? "yes" : "no")}; "
-                + $"spotlights {Spotlights?.ToString() ?? "-"}, antennas {Antennas?.ToString() ?? "-"}; {string.Join(", ", parts)}";
-        }
-
-        /// <summary>
-        /// Game thread, once a frame for the drive's "quickmenu" command; true when it has ended. "open": opens the panel as the
-        /// actions wheel's entry does in a seat (as Y does on foot) and waits for it to have the focus; "state": the seat and every
-        /// seated button's state, read from the game; "press &lt;label&gt;": presses that button as a trigger pull does (its own
-        /// click), waits for the game to take the control, and reports its state before and after; "close": closes the panel.
-        /// </summary>
-        internal static bool Test(string args, int frames, out bool ok, out string detail)
-        {
-            ok = false;
-            detail = null;
-            string text = (args ?? string.Empty).Trim();
-            int space = text.IndexOf(' ');
-            string verb = (space < 0 ? text : text.Substring(0, space)).ToLowerInvariant();
-            string rest = space < 0 ? string.Empty : text.Substring(space + 1).Trim();
-            QuickActionsScreen up = Up();
-            switch (verb)
-            {
-                case "open":
-                    if (frames == 0)
-                    {
-                        if (up != null)
-                        {
-                            ok = true;
-                            detail = "already up; " + up.Describe();
-                            return true;
-                        }
-                        if (Seat != null)
-                            OpenSeated();
-                        else
-                            MyGuiSandbox.AddScreen(new QuickActionsScreen());
-                        return false;
-                    }
-                    if (up != null && MyScreenManager.GetScreenWithFocus() == up)
-                    {
-                        ok = true;
-                        detail = up.Describe();
-                        return true;
-                    }
-                    if (frames < 120)
-                        return false;
-                    detail = "the panel did not get the focus in 120 frames";
-                    return true;
-
-                case "state":
-                    ok = true;
-                    detail = SeatState();
-                    return true;
-
-                case "press":
-                    if (frames == 0)
-                    {
-                        if (up == null)
-                        {
-                            detail = "the panel is not up";
-                            return true;
-                        }
-                        Tile tile = null;
-                        var labels = new System.Collections.Generic.List<string>();
-                        foreach (MyGuiControlBase control in up.Controls)
-                        {
-                            if (!(control is Tile t))
-                                continue;
-                            labels.Add(t.Entry.Label);
-                            if (string.Equals(t.Entry.Label, rest, StringComparison.OrdinalIgnoreCase))
-                                tile = t;
-                        }
-                        if (tile == null)
-                        {
-                            detail = $"no button '{rest}' ({string.Join(", ", labels)})";
-                            return true;
-                        }
-                        testAction = tile.Entry;
-                        testBefore = Reading(tile.Entry);
-                        WristButton.LastOutcome = null;
-                        tile.PressButton();
-                        return false;
-                    }
-                    if (frames < 12 || (WristButton.Busy && frames < 240))
-                        return false;
-                    ok = true;
-                    detail = $"{testBefore} -> {Reading(testAction)}; {(testAction.Run != null ? "ran" : WristButton.LastOutcome ?? "not pressed")}; panel {(up != null ? "still up" : "closed")}";
-                    return true;
-
-                case "close":
-                    if (frames == 0 && up != null)
-                    {
-                        up.CloseScreen();
-                        return false;
-                    }
-                    if (up != null && frames < 60)
-                        return false;
-                    ok = up == null;
-                    detail = ok ? "closed" : "still up after 60 frames";
-                    return true;
-
-                default:
-                    detail = $"quickmenu: unknown '{verb}' (open, state, press <label>, close)";
-                    return true;
             }
         }
 
