@@ -197,8 +197,9 @@ namespace SpaceEngineersVR.Hands
             origin = forward = up = Vector3D.Zero;
             try
             {
-                // The detectors run for the controlled character only (UpdateAfterSimulation10 returns otherwise).
-                if (!HandTools.IsLocalOnFoot(character) || !HandTools.TryGetHand(out _, out MatrixD aim) || !HandTools.ReachRay(character, aim, out origin, out forward))
+                // The detectors run for the controlled character only (UpdateAfterSimulation10 returns otherwise). Once the hands'
+                // line checks have given up (Reach.GivenUp) the detectors keep the head's own pose, and use is what the game allows from it.
+                if (Reach.GivenUp || !HandTools.IsLocalOnFoot(character) || !HandTools.TryGetHand(out _, out MatrixD aim) || !HandTools.ReachRay(character, aim, out origin, out forward))
                     return false;
                 up = aim.Up;
                 return true;

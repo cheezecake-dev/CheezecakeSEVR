@@ -32,8 +32,10 @@ namespace SpaceEngineersVR.Hands
     /// the game's multiplier for stance and aiming; off with the world's EnableRecoil), scaled up. The game applies that recoil
     /// to the character instead, turning the head on foot and spinning the body in zero g; in a headset that turns the view.
     /// For the local character, while the headset session has the focus, it is left out for a shot only when this kick
-    /// reaches that shot and is at least as strong (<see cref="Judge"/>); otherwise the game's recoil applies as usual
-    /// (<see cref="KeepsRecoil"/>, <see cref="BeforeGameRecoil"/>, <see cref="AfterGunUpdate"/>).</para>
+    /// reaches that shot and is at least as strong (<see cref="Judge"/>); otherwise the game's recoil applies
+    /// (<see cref="KeepsRecoil"/>, <see cref="BeforeGameRecoil"/>, <see cref="AfterGunUpdate"/>): on the jetpack's spin as the
+    /// game does it, and where the game would turn the head, which the tracked head overwrites, to the aim that fires the
+    /// shots instead (the hand's, or the head's with the hand not tracked), never the view (<see cref="RecoilOnAim"/>).</para>
     /// <para>The grinder and drill fight the hand whenever they run (less in the air, <see cref="AirShare"/>): a yank on
     /// spin-up, a climb and a sideways pull while the trigger stays down, and jerks. Amounts are in units of the tool's own
     /// camera shake, so the drill, which the game shakes harder, kicks harder. The drill also twists the hand about its bit.</para>
@@ -186,7 +188,8 @@ namespace SpaceEngineersVR.Hands
                 harmony.Patch(AccessTools.Method(typeof(MyAutomaticRifleGun), nameof(MyAutomaticRifleGun.UpdateAfterSimulation)),
                     prefix: new HarmonyMethod(typeof(Kickback), nameof(BeforeGunUpdate)),
                     postfix: new HarmonyMethod(typeof(Kickback), nameof(AfterGunUpdate)));
-                Log.Info("Kickback: while the headset has the focus, the game's own gun recoil is left out of a shot the wrist kick replaces at least as strongly; otherwise it applies as usual");
+                Log.Info("Kickback: while the headset has the focus, the game's own gun recoil is left out of a shot the wrist kick replaces at least as strongly; " +
+                         "otherwise it applies, turning the aim that fires the shot where the game would turn the head (never the view), and on the jetpack's spin as usual");
             }, "Kickback: the game's own gun recoil could not be hooked; each shot turns the head (or spins the body on the jetpack), and the view with it");
         }
 
@@ -198,16 +201,22 @@ namespace SpaceEngineersVR.Hands
         /// <summary>
         /// Turns the tool hand's grip and aim poses (as <see cref="HandTools.TryGetHand"/> gives them, after
         /// <see cref="TwoHand.Apply"/>) by this frame's kick: twisted about the aim, up and to the side about the tool hand's
-        /// grip (a pistol's wrist), then back along the aim. Nothing while there is no kick.
+        /// grip (a pistol's wrist), then back along the aim. Then by the game's own recoil where it applies to the aim
+        /// (<see cref="RecoilOnAim"/>), up and to the side about the grip. Nothing while there is neither.
         /// </summary>
         internal static void Apply(MyCharacter character, ref MatrixD grip, ref MatrixD aim)
         {
             double up = outUp, side = outSide, twist = outTwist, back = outBack;
-            if ((up == 0.0 && side == 0.0 && twist == 0.0 && back == 0.0) || character == null || current == null || !ReferenceEquals(character.CurrentWeapon, current))
+            bool kick = (up != 0.0 || side != 0.0 || twist != 0.0 || back != 0.0) && character != null && current != null && ReferenceEquals(character.CurrentWeapon, current);
+            bool recoil = GameRecoilOnAim(character, out double recoilUp, out double recoilRight);
+            if (!kick && !recoil)
                 return;
             try
             {
-                Turn(ref grip, ref aim, up, side, twist, back, PivotBehindGrip);
+                if (kick)
+                    Turn(ref grip, ref aim, up, side, twist, back, PivotBehindGrip);
+                if (recoil)
+                    Turn(ref grip, ref aim, recoilUp, recoilRight, 0.0, 0.0, 0.0);
             }
             catch (Exception e)
             {
@@ -378,8 +387,9 @@ namespace SpaceEngineersVR.Hands
         /// (RecoilGroundVertical times the movement multiplier, animated over the next frames by AnimateRecoil) and turns
         /// the head sideways at once (RecoilGroundHorizontal times its draw, AddHorizontalRecoil). For the local character in
         /// VR (<see cref="KeepsRecoil"/>) none of it runs when the shot's verdict says the wrist kick replaces it: the gun is
-        /// then never recoiling, so the jetpack's own damping (MyCharacter, IsRecoiling) stops any spin as usual. Any other
-        /// verdict, or an error here, lets it run.
+        /// then never recoiling, so the jetpack's own damping (MyCharacter, IsRecoiling) stops any spin as usual. With any
+        /// other verdict the jetpack's spin runs as the game's, and a turn of the head goes to the aim instead
+        /// (<see cref="RecoilOnAim"/>), the head angles left alone. An error here lets it all run.
         /// </summary>
         private static bool BeforeGameRecoil(MyAutomaticRifleGun __instance)
         {
@@ -411,6 +421,9 @@ namespace SpaceEngineersVR.Hands
                 if (!verdict.Replaces)
                 {
                     recoilLet++;
+                    // Off the jetpack's spin the game would turn the head, which the tracked head overwrites: the aim takes it instead.
+                    if (!(owner.ShouldRecoilRotate && owner.JetpackRunning) && RecoilOnAim(__instance, owner, vertical, side))
+                        return false;
                     gameRecoilGun = __instance;
                     return true;
                 }
@@ -436,7 +449,7 @@ namespace SpaceEngineersVR.Hands
             bool alone = Sandbox.Game.Multiplayer.Sync.IsServer
                          && (!Sandbox.Game.Multiplayer.Sync.MultiplayerActive || (MySession.Static?.Players?.GetOnlineHumanPlayerCount() ?? 2) <= 1);
             bool off = VRSettings.GameRecoilOff && alone;
-            string mode = off ? "Off (single player): the game's view recoil is always left out"
+            string mode = off ? "Off (single player): the game's recoil is always left out"
                 : VRSettings.GameRecoilOff ? "Auto (set to Off, but others are in the session)" : "Auto";
             if (mode != recoilMode)
             {
@@ -630,10 +643,22 @@ namespace SpaceEngineersVR.Hands
         /// <summary>
         /// After the gun's update: whatever its recoil animation did to the local character's head angles (AnimateRecoil,
         /// AnimateRecoilHorizontal; with no recoil started there is normally nothing, but a stale return angle would turn
-        /// the game's head) is put back.
+        /// the game's head) is put back, and the recoil on the aim moves on a frame as the game's would
+        /// (<see cref="AnimateAimRecoil"/>).
         /// </summary>
-        private static void AfterGunUpdate(HeadAngles __state)
+        private static void AfterGunUpdate(MyAutomaticRifleGun __instance, HeadAngles __state)
         {
+            try
+            {
+                if (ReferenceEquals(__instance, aimGun))
+                    AnimateAimRecoil(__instance);
+            }
+            catch (Exception e)
+            {
+                AimStill();
+                if (shotErrors++ < 3)
+                    Log.Error(e, "Kickback could not move the game's recoil on the aim");
+            }
             MyCharacter owner = __state.Owner;
             if (owner == null)
                 return;

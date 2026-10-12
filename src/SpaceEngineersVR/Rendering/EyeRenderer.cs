@@ -451,6 +451,14 @@ namespace SpaceEngineersVR.Rendering
             // along it, the head's turn and move taken out, as the game gives that view no look-around.
             if (CameraHeadLink.FixedInCamera)
                 fromCamera = Matrix.Invert(headset ? ToMatrix(XrSession.Head) : desktopHead);
+            else if (!headInCamera.HasValue && WallFade.EyeHeld)
+                // A camera the game did not build from the head (third person), with the wall fade failed for good: the eyes keep
+                // the head's turn round it and not its move, so nothing carries the view through a wall.
+                fromCamera = Matrix.CreateTranslation(-(headset ? ToMatrix(XrSession.Head) : desktopHead).Translation);
+            else
+                // The wall fade's level is from the game frame the camera came from; when that frame is stale the head's move since
+                // is held back, so a stalled game thread cannot let the head lean through a wall the level does not know of.
+                fromCamera = WallFade.StallCap(headset ? ToMatrix(XrSession.Head) : desktopHead) * fromCamera;
             object fullView = null;
 
             try

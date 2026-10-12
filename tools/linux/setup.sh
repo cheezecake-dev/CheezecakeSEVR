@@ -295,8 +295,12 @@ def insert_child(text, parent, child):
 root = ET.parse(path).getroot()
 if kind == "sources":
     candidates = root.findall("./LocalPluginSources/LocalPlugin")
-    matches = [c for c in candidates if c.findtext("File") in data_files]
-    # This folder's own entry first, whichever data file it has.
+    # This folder's own entry for the plugin, whichever data file it was registered with, or an entry with one of
+    # our data files (the repository was moved).
+    matches = [c for c in candidates
+               if c.findtext("File") in data_files
+               or (same_folder(c.findtext("Folder")) and c.findtext("Name") == plugin_id)]
+    # This folder's own entry first.
     matches.sort(key=lambda c: not same_folder(c.findtext("Folder")))
 else:
     candidates = root.findall("./DevFolder/LocalFolderConfig")

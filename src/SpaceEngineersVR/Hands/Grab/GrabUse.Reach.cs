@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using Havok;
 using Sandbox.Engine.Physics;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
@@ -80,7 +79,7 @@ namespace SpaceEngineersVR.Hands
         /// nearest (inside beats near, then the one whose middle is closest) the arm reaches without going through something
         /// solid (<see cref="LineOfReach"/>). With <paramref name="trace"/>, one log line of what was checked and why.
         /// </summary>
-        private static bool BestReachable(Hand hand, MyCharacter character, MyEntity seat, Vector3D palm, in MatrixD trackingToModel,
+        private static bool BestReachable(Hand hand, MyCharacter character, Vector3D palm, in MatrixD trackingToModel,
             in MatrixD modelToWorld, bool trace, out Candidate best)
         {
             best = default;
@@ -133,17 +132,17 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// Whether nothing solid lies on the line from <paramref name="origin"/> (the shoulder, or the eyes) to the palm other
-        /// than the target's own block, and, in a closed cockpit, the line stays in its cells (<see cref="Reach.Sweep"/>). The
+        /// than the target's own block, and, in a closed cockpit, the line stays in its cells (<see cref="Reach.Sweep(Vector3D, Vector3D, MySlimBlock, MySlimBlock, StringBuilder, out float, out object)"/>). The
         /// seat's own block blocks like any other: only the collision shape the line starts in is passed. A line that could
-        /// not be checked (physics busy, or a failed cast) counts as clear, so this never takes away a grab it could not check.
+        /// not be checked (physics busy, or a failed cast) counts as blocked, so nothing is taken through a line nobody looked at.
         /// </summary>
         private static bool LineOfReach(Vector3D origin, Vector3D palm, IMyUseObject use, MySlimBlock closedSeat, bool note, out string verdict)
         {
             StringBuilder passed = note ? new StringBuilder() : null;
             if (!Reach.Sweep(origin, palm, Reach.BlockOf(use?.Owner as MyEntity), closedSeat, passed, out float first, out object blocker))
             {
-                verdict = "not checked (physics busy or failed)";
-                return true;
+                verdict = "not checked (physics busy or failed), taken as blocked";
+                return false;
             }
             string alsoPassed = passed != null && passed.Length > 0 ? $"; passed {passed}" : string.Empty;
             if (blocker == null)

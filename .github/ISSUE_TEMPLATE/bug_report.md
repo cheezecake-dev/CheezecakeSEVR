@@ -20,15 +20,15 @@ Does it happen every time, sometimes, or once so far?
 
 **Headset and connection**
 - Headset: <!-- e.g. Quest 3, Quest 2, Index, Pico 4 -->
-- Connection: <!-- Link cable / Air Link / Virtual Desktop / SteamVR / other -->
-- Active OpenXR runtime, if you know it: <!-- e.g. Meta Horizon Link, SteamVR, VDXR -->
+- Connection: <!-- Link cable / Air Link / Virtual Desktop / SteamVR / WiVRn (Linux) / other -->
+- Active OpenXR runtime, if you know it: <!-- e.g. Meta Horizon Link, SteamVR, VDXR, WiVRn -->
 
 **PC**
 - Graphics card: <!-- e.g. RTX 3060 -->
 - Graphics driver version: <!-- e.g. NVIDIA 591.86 -->
 
 **Logs (both, please)**
-In `%APPDATA%\SpaceEngineers\` (paste that into Explorer's address bar):
+In `%APPDATA%\SpaceEngineers\` (paste that into Explorer's address bar), or `~/.config/SpaceEngineers/` on Linux:
 - `SpaceEngineersVR.log`: the last run
 - `SpaceEngineersVR.prev.log`: the run before it. Starting the game again moves the log here, so if you restarted
   after the problem, this is the one that has it.

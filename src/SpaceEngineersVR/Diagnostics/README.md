@@ -6,6 +6,3 @@ its switch is set.
 | File | What it is |
 | --- | --- |
 | `HeldTrace.cs` | The held tool's trace log (renderdebug `HeldTrace=1`). |
-
-The tools that drive or fake the game (the drive, the fake hands and head) are not part of the plugin and are never
-compiled into it.

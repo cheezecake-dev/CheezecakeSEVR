@@ -444,7 +444,7 @@ namespace SpaceEngineersVR.Hands
             if (!TryPalm(hand, character, trackingToModel, modelToWorld, out Vector3D palm))
                 return false;
             Gather(character, seat, place, palm);
-            if (!BestReachable(hand, character, seat, palm, trackingToModel, modelToWorld, Trace, out Candidate best))
+            if (!BestReachable(hand, character, palm, trackingToModel, modelToWorld, Trace, out Candidate best))
                 return false;
 
             var grab = new Held
@@ -612,7 +612,7 @@ namespace SpaceEngineersVR.Hands
 
             Gather(character, seat, place, palm);
             LogNear(hand, palm, now, trackingToModel, modelToWorld);
-            if (BestReachable(hand, character, seat, palm, trackingToModel, modelToWorld, false, out Candidate best))
+            if (BestReachable(hand, character, palm, trackingToModel, modelToWorld, false, out Candidate best))
             {
                 if (!ReferenceEquals(hover[i], best.Use))
                 {

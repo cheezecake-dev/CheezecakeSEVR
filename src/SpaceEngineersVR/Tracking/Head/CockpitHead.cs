@@ -116,7 +116,9 @@ namespace SpaceEngineersVR.Tracking
                 LastFromHead = fromHead;
                 bool unclamped = false;
                 TestAidsSeatUnclamped(ref unclamped);
-                if (!unclamped && VRSettings.SeatReach > 0f)
+                if (Rendering.WallFade.EyeHeld)
+                    offset = Vector3.Zero; // the wall fade failed for good: the eye stays at the seat's eye, where no wall can be reached through
+                else if (!unclamped && VRSettings.SeatReach > 0f)
                     offset = Hold(__instance, fromHead, offset, frame);
                 LastHeld = offset;
                 LastFrame = frame;

@@ -6,11 +6,14 @@ using SpaceEngineersVR.Input;
 namespace SpaceEngineersVR.Hands
 {
     /// <summary>
-    /// Point and ping: aim at anything (ore, a block, a grid, a player, a spot on a planet or in space) and either ping it for
-    /// the team or mark it as a GPS of your own. The target and what it is called come from the game's own data
-    /// (Ping.Target.cs); the marker is the game's GPS, and the team hears of it through the game's chat with the GPS in the
-    /// game's own text form, which every client turns into a GPS without the plugin (Ping.Send.cs). While aiming, a long laser
-    /// runs from the hand to the target, and a ping flashes where it lands (Ping.Draw.cs).
+    /// Point and ping: aim at something within the suit radio's range (ore the HUD marks, a block or grid, a player, a spot
+    /// on an asteroid or a planet) and either ping it for the team or mark it as a GPS of your own. It tells no more than
+    /// the game's own HUD does: a grid that is not the player's or their faction's is only "Large grid", a player outside
+    /// the faction only "Player", with no friend or foe, and ore is named only where the HUD draws its marker. The target
+    /// and what it is called come from the game's own data (Ping.Target.cs); the marker is the game's GPS, and the team
+    /// hears of it through the game's chat with the GPS in the game's own text form, which every client turns into a GPS
+    /// without the plugin (Ping.Send.cs). While aiming, a long laser runs from the hand to the target, and a ping flashes
+    /// where it lands (Ping.Draw.cs).
     /// <list type="bullet">
     /// <item>Hold X (<see cref="HoldSeconds"/>) on foot, on the jetpack or in a ship's seat: a tick, and the laser shows what
     /// you point at, named on the HUD. Let go of X to ping it. Pull the pointing hand's trigger while X is held to mark it as
@@ -19,7 +22,7 @@ namespace SpaceEngineersVR.Hands
     /// trigger pings or marks, B cancels, and it gives up after <see cref="WheelAimSeconds"/>.</item>
     /// </list>
     /// On foot the ray is the pointing hand's; in a seat the hands hold the controls, so it is where the head looks. A ray that
-    /// meets nothing within <see cref="Range"/> pings where the player is. Off with the Ping setting's "Hold X" off (the wheel
+    /// meets nothing within <see cref="Range"/> makes no ping and no GPS. Off with the Ping setting's "Hold X" off (the wheel
     /// stays), or RenderDebug Ping=0.
     /// </summary>
     internal static partial class Ping
@@ -33,8 +36,22 @@ namespace SpaceEngineersVR.Hands
         /// <summary>An aim started from the wheel ends by itself after this long, so a forgotten one does not keep the trigger.</summary>
         public const double WheelAimSeconds = 15.0;
 
-        /// <summary>The longest ray, metres: past the game's usual sync distance, so anything the client knows of can be pinged.</summary>
-        public const double Range = 20000.0;
+        /// <summary>
+        /// The longest ray, metres: the broadcast radius of the character's suit radio, the antenna a player on foot always has
+        /// (200 m, set in MyCharacter.Init). Measured from the character, so a ping reaches no further than the suit's radio.
+        /// Read from the character, so a different radius (a mod's) is followed.
+        /// </summary>
+        public static double Range
+        {
+            get
+            {
+                float radius = MySession.Static?.LocalCharacter?.RadioBroadcaster?.BroadcastRadius ?? 0f;
+                return radius > 0f ? radius : SuitRadioRange;
+            }
+        }
+
+        /// <summary>The suit radio's broadcast radius as MyCharacter.Init sets it, metres; used when there is no radio to read.</summary>
+        private const double SuitRadioRange = 200.0;
 
         /// <summary>How long after the wheel starts an aim its fading screen may still hold the focus.</summary>
         private const double WheelFadeSeconds = 1.0;

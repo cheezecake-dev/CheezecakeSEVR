@@ -256,13 +256,13 @@ namespace SpaceEngineersVR
             tooltip: "Once your other hand has taken the tool's front grip, the astronaut's hand stays on it for as long as you hold that grip button, however far your real hand moves. Up to 15 cm off the grip your other hand still aims the tool; further off, its pull eases away and the tool points where your tool hand points. Let go of the button to go back to one hand. Off: pulling the hand 15 cm off the grip lets go as well."));
 
         private static readonly FlagSetting physicalReload = Add(new FlagSetting("physicalReload", "Reload by hand", "Controls", true,
-            tooltip: "Reloading a hand weapon is done with your hands. Click the right stick (or close your other hand at the magazine) and the magazine drops out. Once it is out, reach to your other hand's hip and close the grip to take a fresh one: a tick says you have it, two light ticks that there are none for this weapon. Push it up into the well under the gun and it clicks home; the weapon is loaded then. Let go of it anywhere else and it falls, or back at the hip and it goes back; neither costs a magazine. The rounds left in a dropped magazine are lost, as with the game's own reload. An empty weapon drops its magazine by itself. R on the keyboard still reloads the game's way. Off: the click reloads on the game's timer."));
+            tooltip: "Reloading a hand weapon is done with your hands. Click the gun hand's stick (or close your other hand at the magazine) and the magazine drops out. Once it is out, reach to your other hand's hip and close the grip to take a fresh one: a tick says you have it, two light ticks that there are none for this weapon. Push it up into the well under the gun and it clicks home; the weapon is loaded then, or when the game's own reload time is up if that is later. Let go of it anywhere else and it falls, or back at the hip and it goes back; neither costs a magazine. The rounds left in a dropped magazine are lost, as with the game's own reload. An empty weapon drops its magazine by itself. R on the keyboard still reloads the game's way. Off: the click reloads on the game's timer."));
 
         private static readonly ChoiceSetting kickback = Add(new ChoiceSetting("kickback", "Tool and weapon kickback", "Controls", new[] { "Off", "Light", "Full" }, 2,
-            tooltip: "A gun or tool made for two hands (the rifles, rocket launchers, grinders and hand drills) kicks hard when you use it in one hand: a gun climbs, snaps and shoves back with every shot while the trigger stays down. A grinder or drill fights you whenever it runs, cutting or not: it yanks as it spins up, climbs and pulls to the side more the longer you hold it, and jerks hard; the drill twists your wrist against its spin. A pistol in one hand flips up with each shot and comes back on its own: time your shots to it, or it walks up. Let go of the trigger and it settles back into your hand. Hold it in both hands and it stays steady. Only the tool and where it points move; the game's own recoil, which turns your view, is left out of a shot only when this kick is at least as strong (see Game recoil in VR). Light: half as hard. Off: no kick."));
+            tooltip: "A gun or tool made for two hands (the rifles, rocket launchers, grinders and hand drills) kicks hard when you use it in one hand: a gun climbs, snaps and shoves back with every shot while the trigger stays down. A grinder or drill fights you whenever it runs, cutting or not: it yanks as it spins up, climbs and pulls to the side more the longer you hold it, and jerks hard; the drill twists your wrist against its spin. A pistol in one hand flips up with each shot and comes back on its own: time your shots to it, or it walks up. Let go of the trigger and it settles back into your hand. Hold it in both hands and it stays steady. Only the tool and where it points move, never your view; the game's own recoil is left out of a shot only when this kick is at least as strong (see Game recoil in VR). Light: half as hard. Off: no kick."));
 
         private static readonly ChoiceSetting gameRecoil = Add(new ChoiceSetting("gameRecoil", "Game recoil in VR", "Controls", new[] { "Auto", "Off (comfort)" }, 0,
-            tooltip: "The game's own gun recoil turns your view with each shot. Auto: it is left out of a shot only when the tool and weapon kickback kicks that shot at least as hard, and applies otherwise (kickback Off or weaker, your hand not tracked). Off keeps the view still when firing (single player only; in multiplayer it works as Auto, so no one gains an edge)."));
+            tooltip: "The game's own gun recoil. On foot it turns your aim with each shot where flat play turns the view: the gun in your hand, or where you look when your hand is not tracked; your view stays still. On the jetpack in zero g it spins you, as in flat play. Auto: it is left out of a shot only when the tool and weapon kickback kicks that shot at least as hard, and applies otherwise (kickback Off or weaker, your hand not tracked). Off leaves it out (single player only; in multiplayer it works as Auto, so no one gains an edge)."));
 
         private static readonly FlagSetting vrButtonNames = Add(new FlagSetting("vrButtonNames", "VR button names", "Controls", true,
             tooltip: "The game's prompts name the controller buttons instead of the keys: \"Press [Right grip] to open\", \"[A] to jump\", \"[Y > Inventory]\" for what the wrist panel opens. A control the controllers have no way to press keeps its key. Off: the keyboard's names."));
@@ -274,17 +274,17 @@ namespace SpaceEngineersVR
             tooltip: "Clicking the left stick on the tools wheel opens the game's actions (inventory, dampeners, lights, helmet, HUD, broadcasting, and the Menu, View and Blueprint pages) as a wheel at your left hand: point at an entry with the hand or the stick, let go of the grip or pull the trigger to use it, B to close. Off: the game's own gamepad radial screen."));
 
         private static readonly FlagSetting pingHoldX = Add(new FlagSetting("pingHoldX", "Hold X to ping", "Controls", true,
-            tooltip: "Hold X and point (in a seat, look) at anything: ore, a block, a ship, a player, a spot on a planet. The laser shows what it is on, named on the HUD. Let go of X to ping it: a GPS marker for a while, and a line in the chat with the GPS in it, which every player's game adds to their GPS list. Pull the trigger while holding X to keep it as your own GPS instead. A tap of X is still the dampeners, given as you let go. Off: X is the dampeners as you press it, and the actions wheel's Ping and Mark GPS still work."));
+            tooltip: "Hold X and point (in a seat, look) at something within your suit radio's range (200 m): ore the HUD marks, a block or ship of yours or your faction's, a player, a spot on an asteroid or a planet. The laser shows what it is on, named on the HUD; a ship that is not yours or your faction's is only a grid, a player outside your faction is only a player, and ore is named only where the HUD marks it. Nothing in range: no ping. Let go of X to ping it: a GPS marker for a while, and a line in your faction's chat with the GPS in it, which every player in the channel's game adds to their GPS list. Pull the trigger while holding X to keep it as your own GPS instead. A tap of X is still the dampeners, given as you let go. Off: X is the dampeners as you press it, and the actions wheel's Ping and Mark GPS still work."));
 
         private static readonly NumberSetting pingSeconds = Add(new NumberSetting("pingSeconds", "Ping lasts", "Controls",
             60f, 10f, 180f, 10f, unit: "s", decimals: 0,
             tooltip: "How long your own marker for a ping stays on the HUD. Other players get the GPS from the chat line, in their GPS list, for as long as their game keeps it (three minutes, unless they keep it)."));
 
         private static readonly ChoiceSetting pingChat = Add(new ChoiceSetting("pingChat", "Ping chat", "Controls",
-            new[] { "Faction, else global", "Faction only", "Off" }, 0,
-            tooltip: "Where a ping's chat line goes: your faction's channel, or the global one when you have no faction; your faction's only; or nowhere (the marker is then only yours)."));
+            new[] { "Faction only", "Faction, else global chat", "Off" }, 0,
+            tooltip: "Where a ping's chat line goes. Faction only: your faction's channel (with no faction the ping stays your own marker). Faction, else global chat: your faction's, or the global channel when you have no faction (everyone on the server reads it). Off: nowhere (the marker is then only yours)."));
         private static readonly FlagSetting shipModel = Add(new FlagSetting("shipModel", "Ship model in your hand", "Interface", true,
-            tooltip: "The actions wheel's Ship model entry holds a small hologram of your ship above your off hand: seated, the ship you are in; on foot, the one your hand points at or the nearest. Grip it with either hand to turn it over, with both to make it bigger or smaller; let go and it stays there. Damaged blocks show red, blocks lost while it is out show dark, and pointing at a block on it outlines the real block with its name and integrity. The same entry puts it away. Off: no entry on the wheel."));
+            tooltip: "The actions wheel's Ship model entry holds a small hologram of your ship above your off hand: seated, the ship you are in; on foot, the one your hand points at or the nearest. Only ships that are yours or shared with your faction; other players' ships, neutral and unowned ones are never shown. Grip it with either hand to turn it over, with both to make it bigger or smaller; let go and it stays there. Damaged blocks show red, blocks lost while it is out show dark, and pointing at a block on it outlines the real block with its name and integrity. The same entry puts it away. Off: no entry on the wheel."));
         private static readonly FlagSetting shipModelThrusters = Add(new FlagSetting("shipModelThrusters", "Ship model: thrusters", "Interface", true,
             tooltip: "The ship model shows the thrusters in orange. Also switched on the actions wheel's Model overlays page."));
         private static readonly FlagSetting shipModelPower = Add(new FlagSetting("shipModelPower", "Ship model: power", "Interface", true,
@@ -295,7 +295,7 @@ namespace SpaceEngineersVR
             tooltip: "The ship model outlines guns and turrets in red. Also switched on the actions wheel's Model overlays page."));
 
         private static readonly FlagSetting headsetAudio = Add(new FlagSetting("headsetAudio", "Sound through the headset", "Sound", true, restart: true,
-            tooltip: "The game's sound plays through the headset's own audio device, the one the headset's runtime names for VR (with a Quest on Link, Headphones (Oculus Virtual Audio Device)), whatever the Windows default output is. Without a headset, or with a runtime that names no device, it plays through the Windows default. Off: always the Windows default. Takes effect the next time the game starts."));
+            tooltip: "The game's sound plays through the headset's own audio device, the one the headset's runtime names for VR (with a Quest on Link, Headphones (Oculus Virtual Audio Device)), whatever the Windows default output is. Without a headset, or with a runtime that names no device, it plays through the Windows default. Off: always the Windows default. On Linux, while WiVRn has the headset connected, the game's sound is moved to WiVRn's PipeWire output (this needs pw-dump and pw-metadata) and goes back to the default output when it is gone. Takes effect the next time the game starts."));
 
         private static readonly FlagSetting enabled = Add(new FlagSetting("enabled", "VR enabled", "Advanced", true, restart: true, hidden: true,
             // Not in the menu: turned off there, VR would have no menu to turn it back on. enabled=false in the file, or -novr.
@@ -693,7 +693,7 @@ namespace SpaceEngineersVR
         /// <summary>The kickback setting: 0 Off, 1 Light, 2 Full (<see cref="Hands.Kickback"/>).</summary>
         public static int KickbackLevel => kickback.Value;
 
-        /// <summary>The game recoil setting is Off (comfort): the game's view recoil is left out in single player (<see cref="Hands.Kickback"/>).</summary>
+        /// <summary>The game recoil setting is Off (comfort): the game's recoil is left out in single player (<see cref="Hands.Kickback"/>).</summary>
         public static bool GameRecoilOff => gameRecoil.Value == 1;
 
         /// <summary>The share of the one-handed kick: none (Off), a half (Light), all (Full).</summary>
@@ -717,10 +717,10 @@ namespace SpaceEngineersVR
         /// <summary>How long one's own marker for a ping lasts, seconds (<see cref="Hands.Ping"/>).</summary>
         public static float PingSeconds => pingSeconds.Value;
 
-        /// <summary>Where a ping's chat line goes: <see cref="PingChatFactionOrGlobal"/>, <see cref="PingChatFactionOnly"/> or <see cref="PingChatOff"/>.</summary>
+        /// <summary>Where a ping's chat line goes: <see cref="PingChatFactionOnly"/> (the default), <see cref="PingChatFactionOrGlobal"/> or <see cref="PingChatOff"/>.</summary>
         public static int PingChat => pingChat.Value;
 
-        public const int PingChatFactionOrGlobal = 0, PingChatFactionOnly = 1, PingChatOff = 2;
+        public const int PingChatFactionOnly = 0, PingChatFactionOrGlobal = 1, PingChatOff = 2;
         /// <summary>The actions wheel offers the ship model (<see cref="Hands.ShipModel"/>).</summary>
         public static bool ShipModel => shipModel.Value;
 

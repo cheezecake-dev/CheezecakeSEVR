@@ -71,18 +71,21 @@ namespace SpaceEngineersVR.Tracking
             // Got up from a seat: the head is placed from the on-foot centre again (the seat's was the sit-down's).
             GameHead.OnFoot();
 
-            // Synced to other players and used by the head animation, so others see the head tilt.
+            // Synced to other players and used by the head animation, so others see the head tilt. On a client the game's recoil
+            // on the aim goes on top: the server fires this player's shots along the synced pitch.
             __instance.HeadLocalXAngle = MathHelper.ToDegrees(GameHead.Pitch);
+            Hands.Kickback.OnSyncedHead(__instance);
 
             // The game's own head matrix is pitch * yaw (from the mouse) on the body's basis, at the head bone.
             MatrixD basis = MatrixD.CreateFromDir(__instance.WorldMatrix.Forward, __instance.WorldMatrix.Up);
             MatrixD result = (MatrixD)GameHead.Rotation(includeY, includeX) * basis;
             result.Translation = __result.Translation;
-            if (includeX && includeY)
+            if (includeX && includeY && !Rendering.WallFade.EyeHeld)
             {
                 // The head offset from the bone, kept out of the character's own body (BodyGuard: a real crouch is the
                 // character's, and what is left is pushed out of the suit and the backpack), the body where it is drawn
-                // this frame (BodyShift.Reckon), also when this is built before the bones are moved.
+                // this frame (BodyShift.Reckon), also when this is built before the bones are moved. Not at all once the
+                // wall fade has failed for good: the eye is then held at the head bone, where no wall can be reached through.
                 Vector3 offset = BodyGuard.Offset(__instance, __result.Translation, GameHead.Head.Translation, BodyShift.Reckon(__instance, ahead));
                 result.Translation += Vector3D.TransformNormal((Vector3D)offset, basis);
             }

@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Havok;
+using HarmonyLib;
 using Sandbox.Engine.Physics;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Common;
+using VRage.Game;
 using VRage.Game.Entity;
 using VRageMath;
 
@@ -43,20 +45,91 @@ namespace SpaceEngineersVR.Hands
         private static readonly List<HkBodyCollision> startsIn = new List<HkBodyCollision>();
         private static readonly Vector3D[] onePoint = new Vector3D[1];
         private static readonly Dictionary<float, HkShape> balls = new Dictionary<float, HkShape>();
-        private static int errors;
+
+        /// <summary>The hands' own failures (<see cref="Sweep(Vector3D, Vector3D, MySlimBlock, MySlimBlock, StringBuilder, out float, out object)"/>).</summary>
+        private static readonly Failures hands = new Failures(
+            "Reach: a line from the body could not be checked; the hands reach nothing past the head in that frame",
+            "Reach: a line from the body failed again; until the next world loads the hands reach nothing past the head, and use is the game's own from the head");
+
+        /// <summary>
+        /// The game method a world load goes through (MySession.LoadWorld): each caller's failure count starts again there
+        /// (<see cref="Failures.Reset"/>), so a few stray errors in one world do not decide the next.
+        /// </summary>
+        internal static System.Reflection.MethodBase WorldLoad() =>
+            AccessTools.DeclaredMethod(typeof(MySession), "LoadWorld", new[] { typeof(MyObjectBuilder_Checkpoint), typeof(MyObjectBuilder_Sector) });
+
+        /// <summary>The hands' failure count starts again with each world (<see cref="Failures.Reset"/>), so it is a world's failures that give up, not a run's.</summary>
+        public static void Patch(Harmony harmony) =>
+            PatchRegistry.Hook(harmony, typeof(Reach), "Reach", "the hands' failure count carries over from one world to the next", "world load",
+                WorldLoad(), prefix: nameof(NewWorld));
+
+        private static void NewWorld()
+        {
+            if (hands.Reset())
+                Log.Info("Reach: a world is loading; the hands' lines are checked again");
+        }
+
+        /// <summary>
+        /// Any thread: the hands' sweeps have failed three times and no longer run (until the next world loads). From then on <see cref="Limit"/> and
+        /// <see cref="Unblocked"/> stay at the head, so a hand presses and grabs nothing, and use is what the game itself
+        /// allows from the head (<see cref="HandUse"/> leaves its detectors on the head's own line).
+        /// </summary>
+        public static bool GivenUp => hands.GivenUp;
+
+        /// <summary>
+        /// How often a caller's sweeps have failed, and the log lines for it: at three, its sweeps stop until the next world
+        /// loads (<see cref="Reset"/>). Each caller keeps its own, so the hands failing does not switch another caller's
+        /// sweeps off, nor the reverse.
+        /// </summary>
+        internal sealed class Failures
+        {
+            private const int Limit = 3;
+            private readonly string failed, gaveUp;
+            private volatile int count;
+
+            /// <param name="failed">The log line for a failure that is not the last.</param>
+            /// <param name="gaveUp">The log line for the third, which says what happens from then on.</param>
+            public Failures(string failed, string gaveUp)
+            {
+                this.failed = failed;
+                this.gaveUp = gaveUp;
+            }
+
+            /// <summary>Any thread: three failures have been counted, and this caller's sweeps no longer run.</summary>
+            public bool GivenUp => count >= Limit;
+
+            /// <summary>Any thread: forgets the failures counted, so the caller's sweeps run again (a new world). True when there were any.</summary>
+            public bool Reset()
+            {
+                bool had = count > 0;
+                count = 0;
+                return had;
+            }
+
+            /// <summary>Counts one failure and logs it; the third is logged once, as the last.</summary>
+            public void Add(Exception e)
+            {
+                if (GivenUp)
+                    return;
+                Log.Error(e, ++count < Limit ? failed : gaveUp);
+            }
+        }
 
         /// <summary>
         /// The point a hand at <paramref name="hand"/> acts from: within <see cref="ArmLength"/> of the character's head
-        /// bone, and, when the line from the head bone to it runs into something solid (<see cref="Sweep"/>; in a closed
-        /// cockpit, also out of its cells), no more than <see cref="SurfaceGive"/> past where it does. Game thread. Unchanged
-        /// when there is no head bone to measure from.
+        /// bone, and, when the line from the head bone to it runs into something solid (<see cref="Sweep(Vector3D, Vector3D, MySlimBlock, MySlimBlock, StringBuilder, out float, out object)"/>; in a closed
+        /// cockpit, also out of its cells), no more than <see cref="SurfaceGive"/> past where it does. Game thread. A line
+        /// that cannot be checked (physics busy, or a failed cast, <see cref="Sweep(Vector3D, Vector3D, MySlimBlock, MySlimBlock, StringBuilder, out float, out object)"/>)
+        /// is taken as blocked at its start: the head bone, so in that frame the hand reaches nothing beyond it. Unchanged
+        /// only when there is no character to measure from.
         /// </summary>
         public static Vector3D Limit(MyCharacter character, Vector3D hand) => Stop(character, hand, ArmLength, SurfaceGive);
 
         /// <summary>
         /// <paramref name="point"/> brought back to the near side of the first solid thing on the line from the character's
         /// head bone to it, with no arm's length: for what a held item does from where the item is (a gun's muzzle), which
-        /// may be farther out than a hand reaches but not on the far side of a wall.
+        /// may be farther out than a hand reaches but not on the far side of a wall. A line that cannot be checked puts it
+        /// at the head bone, as <see cref="Limit"/> does.
         /// </summary>
         public static Vector3D Unblocked(MyCharacter character, Vector3D point) => Stop(character, point, double.MaxValue, 0.0);
 
@@ -70,7 +143,22 @@ namespace SpaceEngineersVR.Hands
                 return point;
             way /= length;
             length = Math.Min(length, maxLength);
-            if (Sweep(head, head + way * length, null, ClosedSeat(character), null, out float first, out object blocker) && blocker != null)
+            bool checkedLine;
+            float first = 1f;
+            object blocker = null;
+            try
+            {
+                checkedLine = Sweep(head, head + way * length, null, ClosedSeat(character), null, out first, out blocker);
+            }
+            catch (Exception e)
+            {
+                hands.Add(e);
+                checkedLine = false;
+            }
+            // An unchecked line is not a clear one: the hand reaches nothing past the line's start.
+            if (!checkedLine)
+                return head;
+            if (blocker != null)
                 length = Math.Min(length, first * length + give);
             return head + way * length;
         }
@@ -95,7 +183,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>
         /// The block of the cockpit the character sits in when the game counts it as closed (<c>MyCockpitDefinition.IsPressurized</c>,
         /// which is the game's own "inside a closed cockpit", MySectorWeatherComponent's m_insideClosedCockpit); null in an
-        /// open seat or on foot. A line from inside it does not leave its cells (<see cref="Sweep"/>).
+        /// open seat or on foot. A line from inside it does not leave its cells (<see cref="Sweep(Vector3D, Vector3D, MySlimBlock, MySlimBlock, StringBuilder, out float, out object)"/>).
         /// </summary>
         internal static MySlimBlock ClosedSeat(MyCharacter character) =>
             character?.Parent is MyCockpit seat && seat.BlockDefinition != null && seat.BlockDefinition.IsPressurized ? seat.SlimBlock : null;
@@ -110,22 +198,24 @@ namespace SpaceEngineersVR.Hands
         /// With <paramref name="closedSeat"/> (<see cref="ClosedSeat"/>), leaving that block's cells also stops the line, so
         /// its canopy and shell stop it however coarse their collision is. <paramref name="passed"/>, if given, gets what was
         /// passed and why. False when physics cannot be asked from here (inside the simulation, another thread) or the sweep
-        /// failed: the line was not checked, and callers take it as clear.
+        /// failed (the hands' own count stops them at three): the line was not checked, and callers take it as blocked.
         /// </summary>
         internal static bool Sweep(Vector3D origin, Vector3D to, MySlimBlock target, MySlimBlock closedSeat, StringBuilder passed,
             out float first, out object blocker) =>
-            Sweep(origin, to, BallRadius, StartProbeRadius, target, closedSeat, passed, out first, out blocker);
+            Sweep(origin, to, BallRadius, StartProbeRadius, target, closedSeat, passed, hands, out first, out blocker);
 
         /// <summary>
         /// <see cref="Sweep(Vector3D, Vector3D, MySlimBlock, MySlimBlock, StringBuilder, out float, out object)"/> with a ball
-        /// of <paramref name="radius"/>, and a probe of <paramref name="probeRadius"/> for what it starts inside.
+        /// of <paramref name="radius"/>, and a probe of <paramref name="probeRadius"/> for what it starts inside. Its failures
+        /// are counted in <paramref name="failures"/>, the caller's own: three stop this caller's sweeps (false from then on),
+        /// and no one else's.
         /// </summary>
         internal static bool Sweep(Vector3D origin, Vector3D to, float radius, float probeRadius, MySlimBlock target, MySlimBlock closedSeat,
-            StringBuilder passed, out float first, out object blocker)
+            StringBuilder passed, Failures failures, out float first, out object blocker)
         {
             first = 1f;
             blocker = null;
-            if (errors >= 3 || !MyPhysics.CheckThread() || MyPhysics.InsideSimulation)
+            if (failures.GivenUp || !MyPhysics.CheckThread() || MyPhysics.InsideSimulation)
                 return false;
             Vector3D way = to - origin;
             double length = way.Length();
@@ -178,7 +268,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Log.Error(e, ++errors < 3 ? "Reach: a line from the body could not be checked" : "Reach: a line from the body failed again; not checked until the game restarts");
+                failures.Add(e);
                 first = 1f;
                 blocker = null;
                 return false;

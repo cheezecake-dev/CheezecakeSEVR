@@ -25,6 +25,8 @@ namespace SpaceEngineersVR.Tracking
         private static readonly bool[] fixedViews = new bool[Capacity];
         private static readonly HandResidual.Frame[] hands = new HandResidual.Frame[Capacity];
         private static readonly long[] handTimes = new long[Capacity];
+        private static readonly Vector3?[] measuredHeads = new Vector3?[Capacity];
+        private static readonly long[] sentTimes = new long[Capacity];
         private static readonly Rendering.MotionExtrapolation.Sample[] motion = NewSamples();
         private static readonly Rendering.MotionExtrapolation.Sample captured = new Rendering.MotionExtrapolation.Sample();
         private static int next;
@@ -53,12 +55,23 @@ namespace SpaceEngineersVR.Tracking
         /// </summary>
         public static long HandsFrameTime { get; private set; }
 
+        /// <summary>
+        /// Render thread: where the tracked head was, in the tracking space, when the current camera was sent: the head the camera
+        /// includes, or in a camera not built from the head the head whose move is put round it (what the wall fade measured the
+        /// eye from, <see cref="Rendering.WallFade"/>). Null when the head was not tracked then, or the camera was not found.
+        /// </summary>
+        public static Vector3? MeasuredHead { get; private set; }
+
+        /// <summary>Render thread: when the current camera was sent (Stopwatch ticks), 0 when it was not found.</summary>
+        public static long SentTime { get; private set; }
+
         private static Matrix headFromSent = Matrix.Identity;
 
         /// <summary>
         /// From the camera last sent to the head as tracked when it was sent (for the HUD, <see cref="Rendering.HudCamera"/>):
         /// nothing when the camera was built from the head or is a block's fixed one (<see cref="FixedInCamera"/>), the head's
-        /// pose when the head turns the view about the camera (as the eyes are placed). Any thread.
+        /// pose when the head turns the view about the camera (as the eyes are placed), less its move once the wall fade has
+        /// failed for good (<see cref="Rendering.WallFade.EyeHeld"/>). Any thread.
         /// </summary>
         public static Matrix HeadFromSentCamera
         {
@@ -83,13 +96,20 @@ namespace SpaceEngineersVR.Tracking
             Matrix? head = GameHead.TakeCameraHead();
             bool fixedView = Rendering.ForcedView.FixedCamera(MySession.Static?.CameraController) != null;
             bool tracked = head.HasValue || GameHead.Take();
-            Matrix fromCamera = head.HasValue || fixedView || !tracked ? Matrix.Identity : Matrix.Invert(GameHead.TrackingPose);
+            Matrix pose = GameHead.TrackingPose;
+            if (Rendering.WallFade.EyeHeld)
+                pose.Translation = Vector3.Zero; // the wall fade failed for good: the eyes keep the head's turn round such a camera, not its move
+            Matrix fromCamera = head.HasValue || fixedView || !tracked ? Matrix.Identity : Matrix.Invert(pose);
             HandWorld.CameraSent(viewMatrix);
             HandResidual.Frame solved = HandResidual.Take();
             long handsTime = System.Math.Max(VRInput.Get(Hand.Left).FrameTime, VRInput.Get(Hand.Right).FrameTime);
             Rendering.MotionExtrapolation.Capture(captured, viewMatrix);
+            Vector3? measured = head.HasValue ? head.Value.Translation : tracked ? GameHead.TrackingPose.Translation : (Vector3?)null;
+            long sentAt = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (gate)
             {
+                measuredHeads[next] = measured;
+                sentTimes[next] = sentAt;
                 motion[next].CopyFrom(captured);
                 headFromSent = fromCamera;
                 views[next] = viewMatrix;
@@ -118,6 +138,8 @@ namespace SpaceEngineersVR.Tracking
                         FixedInCamera = fixedViews[index];
                         HandResidual.Drawing = hands[index];
                         HandsFrameTime = handTimes[index];
+                        MeasuredHead = measuredHeads[index];
+                        SentTime = sentTimes[index];
                         Rendering.MotionExtrapolation.Take(motion[index]);
                         return;
                     }
@@ -128,6 +150,8 @@ namespace SpaceEngineersVR.Tracking
             HeadInCamera = null;
             HandResidual.Drawing = null;
             HandsFrameTime = 0;
+            MeasuredHead = null;
+            SentTime = 0;
             Rendering.MotionExtrapolation.Take(null);
             if ((++misses & (misses - 1)) == 0)
                 Log.Warn($"Camera not found among the recent ones sent (miss {misses}); the eyes use the full head pose");

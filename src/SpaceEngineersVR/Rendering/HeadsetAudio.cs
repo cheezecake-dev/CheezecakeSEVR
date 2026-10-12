@@ -26,6 +26,7 @@ namespace SpaceEngineersVR.Rendering
     /// as pavucontrol's move. When the sink goes away, and when the game exits, the metadata is deleted so the stream goes back to
     /// the default output, and so it does while the picture is the game's because the headset is away
     /// (<see cref="StereoPatches.PlayingFlat"/>). Nothing in the game is patched; if pw-dump or pw-metadata is missing the sound stays on the default.
+    /// Until a headset is found (<see cref="HeadsetWatcher.HasHeadset"/>) no PipeWire tool is run at all: the poll only looks at that.
     /// No microphone: neither linux-compat's shim nor the Windows plugin opens a capture device, so there is nothing to route.
     /// </summary>
     internal static class HeadsetAudio
@@ -50,8 +51,8 @@ namespace SpaceEngineersVR.Rendering
                 Log.Info("Sound: HeadsetAudio=0 in the render debug file");
                 return;
             }
-            // Started with or without a headset: the WiVRn sink appearing is what moves the sound, so a headset that
-            // connects later in the run gets it too.
+            // Started with or without a headset: the thread waits, running nothing, until one is found, so a headset that
+            // connects later in the run gets the sound too.
             StereoPatches.PictureChanged += _ => pictureChanged.Set();
             new Thread(Run) { IsBackground = true, Name = "SEVR headset audio", Priority = ThreadPriority.BelowNormal }.Start();
             AppDomain.CurrentDomain.ProcessExit += (_, __) => MoveBack();
@@ -64,9 +65,15 @@ namespace SpaceEngineersVR.Rendering
             bool missingTools = false;
             while (!missingTools)
             {
+                // No headset, and no sink the sound was moved to: nothing to look for, so pw-dump is not run.
+                if (!HeadsetWatcher.HasHeadset && lastSink == null)
+                {
+                    pictureChanged.WaitOne(PollMs);
+                    continue;
+                }
                 try
                 {
-                    string dump = Tool("pw-dump", "", out bool started);
+                    string dump = Tool("pw-dump", out bool started);
                     if (!started)
                     {
                         Log.Info("Sound: pw-dump (PipeWire) is not installed; the game's sound stays on the default output");
@@ -96,7 +103,7 @@ namespace SpaceEngineersVR.Rendering
                         {
                             if (targets != null && targets.TryGetValue(id, out string target) && target == sink)
                                 continue;
-                            Tool("pw-metadata", $"{id} target.object {sink} Spa:String", out bool metadataStarted);
+                            Tool("pw-metadata", out bool metadataStarted, id.ToString(CultureInfo.InvariantCulture), "target.object", sink, "Spa:String");
                             if (!metadataStarted)
                             {
                                 missingTools = true;
@@ -174,7 +181,7 @@ namespace SpaceEngineersVR.Rendering
         private static Dictionary<uint, string> Targets()
         {
             var targets = new Dictionary<uint, string>();
-            string text = Tool("pw-metadata", "-n default", out bool _);
+            string text = Tool("pw-metadata", out bool _, "-n", "default");
             foreach (Match m in Regex.Matches(text ?? "", @"update: id:(\d+) key:'target\.object' value:'([^']*)'"))
                 targets[uint.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)] = m.Groups[2].Value;
             return targets;
@@ -200,7 +207,7 @@ namespace SpaceEngineersVR.Rendering
             {
                 try
                 {
-                    Tool("pw-metadata", $"-d {id} target.object", out bool _);
+                    Tool("pw-metadata", out bool _, "-d", id.ToString(CultureInfo.InvariantCulture), "target.object");
                 }
                 catch (Exception)
                 {
@@ -208,10 +215,15 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
-        /// <summary>Runs a PipeWire tool and returns its output; <paramref name="started"/> false when it is not installed.</summary>
-        private static string Tool(string file, string arguments, out bool started)
+        /// <summary>
+        /// Runs a PipeWire tool and returns its output; <paramref name="started"/> false when it is not installed. Each argument
+        /// is handed over as it is, one entry each (a node name with a space or a quote in it stays one argument).
+        /// </summary>
+        private static string Tool(string file, out bool started, params string[] arguments)
         {
-            var start = new ProcessStartInfo(file, arguments) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+            var start = new ProcessStartInfo(file) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+            foreach (string argument in arguments)
+                start.ArgumentList.Add(argument);
             Process p;
             try
             {

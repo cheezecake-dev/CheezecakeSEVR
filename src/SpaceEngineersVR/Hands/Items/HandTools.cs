@@ -35,6 +35,7 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         public static void Patch(Harmony harmony)
         {
+            Hook(nameof(Reach), "The reach of the hands", () => Reach.Patch(harmony));
             Hook(nameof(HeldItem), "Tools and guns in the hand", () => HeldItem.Patch(harmony));
             Hook(nameof(HandUse), "Use from the hand", () => HandUse.Patch(harmony));
             Hook(nameof(HandPlacement), "Building from the hand", () => HandPlacement.Patch(harmony));

@@ -83,13 +83,18 @@ namespace SpaceEngineersVR.Hands
             return weapon.DirectionToTarget(target);
         }
 
-        /// <summary>Replaces <c>GetHeadMatrix(...)</c> in UpdateShootDirection, whose forward is the straight shot of a gun.</summary>
+        /// <summary>
+        /// Replaces <c>GetHeadMatrix(...)</c> in UpdateShootDirection, whose forward is the straight shot of a gun: the hand's
+        /// aim, or with the hand not tracked the head's, turned by the game's recoil as the hand's aim is (<see cref="Kickback.TurnHeadAim"/>).
+        /// </summary>
         public static MatrixD HeadMatrix(MyCharacter character, bool includeY, bool includeX, bool forceHeadAnim, bool forceHeadBone, bool preferLocalOverSync)
         {
             if (HandTools.IsLocalOnFoot(character) && character.CurrentWeapon != null && HandTools.TryGetHand(out _, out MatrixD aim)
                 && HandTools.ReachRay(character, aim, out Vector3D origin, out Vector3D direction))
                 return HandTools.HeadLike(origin, direction, aim.Up);
-            return character.GetHeadMatrix(includeY, includeX, forceHeadAnim, forceHeadBone, preferLocalOverSync);
+            MatrixD head = character.GetHeadMatrix(includeY, includeX, forceHeadAnim, forceHeadBone, preferLocalOverSync);
+            Kickback.TurnHeadAim(character, ref head);
+            return head;
         }
 
         private static bool HoldsItem(IMyGunObject<MyDeviceBase> weapon)
@@ -178,6 +183,10 @@ namespace SpaceEngineersVR.Hands
                 MyHandItemDefinition item = character.HandItemDefinition;
                 if (item == null || !(character.CurrentWeapon is MyEntity weapon))
                     return HeldTrace.On && HeldTrace.Refused(character, forArms, "no hand item");
+                // A gun in the hand needs its muzzle checked against walls (MuzzleShift). Once those checks have given up, the
+                // game holds the gun its own way, so a barrel can never be pushed through a wall to fire from behind it.
+                if (Reach.GivenUp && weapon is IMyHandheldGunObject<MyGunBase>)
+                    return HeldTrace.On && HeldTrace.Refused(character, forArms, "the line checks gave up: the game holds the gun");
                 MatrixD grip, aim;
                 bool got = frame.HasValue ? HandTools.TryGetHand(frame.Value, out grip, out aim) : HandTools.TryGetHand(out grip, out aim);
                 if (!got)
@@ -209,7 +218,9 @@ namespace SpaceEngineersVR.Hands
         /// <summary>
         /// How far to move a gun placed at <paramref name="world"/> so its muzzle is on the near side of anything solid
         /// between the head and it (<see cref="Reach.Unblocked"/>): the shot starts at the muzzle, and a barrel pushed into
-        /// a wall would fire from behind it. Zero when the way is clear.
+        /// a wall would fire from behind it. Zero when the way is clear; a way that could not be checked puts the muzzle at the
+        /// head bone (<see cref="Reach.Unblocked"/>). Once the line checks have given up (<see cref="Reach.GivenUp"/>) a gun is
+        /// not placed in the hand at all (<see cref="Place"/>), so this is never asked then.
         /// </summary>
         private static Vector3D MuzzleShift(MyCharacter character, MyGunBase gun, in MatrixD world)
         {

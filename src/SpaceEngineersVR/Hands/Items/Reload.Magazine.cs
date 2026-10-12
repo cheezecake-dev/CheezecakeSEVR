@@ -26,7 +26,9 @@ namespace SpaceEngineersVR.Hands
     /// <para>The game's reload stays the one that counts. Its start (MyAutomaticRifleGun.Reload) empties the magazine, the
     /// rounds left in it lost (MyGunBase.EmptyMagazine), so that is the magazine dropping; its end (UpdateBeforeSimulation10,
     /// once m_reloadEndTime has passed) takes one magazine from the inventory and fills the weapon (ConsumeMagazine), so that is
-    /// the magazine seating. Between the two the end time is kept ahead of the clock, and seating sets it to now. Partial
+    /// the magazine seating. Between the two the end time is kept ahead of the clock, and seating sets it to now, or to the
+    /// time the game's own reload would have ended if that is later (<see cref="reloadFloor"/>): by hand the weapon is never
+    /// loaded sooner than the reload time, on a host or in single player any more than for another player. Partial
     /// rounds, the inventory count, infinite ammo and the reload refusals are therefore the game's own. Only a server owns the
     /// end time: as a client the drop and the seat are shown, and the weapon is loaded when the server's timer ends.</para>
     /// <para>Which reloads go this way: the reload press of the hands (<see cref="Wanted"/>), and the game's own reload of an
@@ -134,6 +136,12 @@ namespace SpaceEngineersVR.Hands
         private static bool seatSound;
         private static int placedFrame = -1;
         private static AccessTools.FieldRef<MyAutomaticRifleGun, MyTimeSpan> reloadEnd;
+
+        /// <summary>
+        /// The end time the game's own reload set as it began (MyAutomaticRifleGun.Reload: the clock then plus the weapon's reload
+        /// time), read before the hold moves it. A magazine seated earlier than this loads the weapon at this time, not before.
+        /// </summary>
+        private static MyTimeSpan reloadFloor;
 
         /// <summary>The held weapon's magazine is out of its well for a physical reload, or a fresh one is sliding in: the other hand is busy with it.</summary>
         internal static bool MagazineOut => well != Well.In;
@@ -263,6 +271,8 @@ namespace SpaceEngineersVR.Hands
             wellGun = rifle;
             outAt = System.Diagnostics.Stopwatch.GetTimestamp();
             holdingTimer = Sandbox.Game.Multiplayer.Sync.IsServer && reloadEnd != null;
+            if (holdingTimer)
+                reloadFloor = reloadEnd(rifle);
             HoldTimer(rifle);
             Shapes.HideWell(rifle);
             Shapes.Drop(WellModel(rifle), rest, character, -rest.Up * DropSpeed, rest.Right);
@@ -564,8 +574,19 @@ namespace SpaceEngineersVR.Hands
             slideFrom = (Matrix)(held * rifle.PositionComp.WorldMatrixNormalizedInv);
             slideAt = now;
             noRealignUntil = now + (long)((rifle.GetReloadDuration() + 0.5) * Second);
+            double toGo = 0.0;
             if (holdingTimer && reloadEnd != null)
-                reloadEnd(rifle) = MyTimeSpan.FromMilliseconds(MySandboxGame.TotalGamePlayTimeInMilliseconds - 1);
+            {
+                // Ends now, unless that is before the game's own reload time: then at that time.
+                MyTimeSpan gameNow = MyTimeSpan.FromMilliseconds(MySandboxGame.TotalGamePlayTimeInMilliseconds);
+                if (reloadFloor > gameNow)
+                {
+                    reloadEnd(rifle) = reloadFloor;
+                    toGo = (reloadFloor - gameNow).Seconds;
+                }
+                else
+                    reloadEnd(rifle) = MyTimeSpan.FromMilliseconds(MySandboxGame.TotalGamePlayTimeInMilliseconds - 1);
+            }
             holdingTimer = false;
             Haptics.Pulse(VRSettings.DominantHand, SeatAmplitude, SeatSeconds);
             Haptics.Pulse(off, SeatAmplitude, SeatSeconds);
@@ -580,7 +601,9 @@ namespace SpaceEngineersVR.Hands
             }
             Log.Info($"Reload: {off} hand seated a magazine in the {Name(character)} after {(now - outAt) / (double)Second:0.00} s " +
                      $"({across * 100:0.0} cm off the well's line, {angle:0} deg off its axis); " +
-                     (Sandbox.Game.Multiplayer.Sync.IsServer ? "the game's reload ends now" : "the server's reload ends on its timer"));
+                     (!Sandbox.Game.Multiplayer.Sync.IsServer ? "the server's reload ends on its timer"
+                      : toGo > 0.0 ? $"the game's reload ends in {toGo:0.00} s, at its own reload time"
+                      : "the game's reload ends now"));
         }
 
         /// <summary>The game's reload end kept one reload time ahead, so it ends that long after the hold stops if nothing seats.</summary>

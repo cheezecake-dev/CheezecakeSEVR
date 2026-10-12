@@ -1,16 +1,15 @@
 // Ping: what the ray meets, and what it is called.
 using System;
 using System.Collections.Generic;
-using Sandbox.Definitions;
 using Sandbox.Engine.Physics;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Entities.Cube;
+using Sandbox.Game.GUI.HudViewers;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
 using VRage.Game;
-using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
 using VRage.Voxels;
@@ -23,19 +22,19 @@ namespace SpaceEngineersVR.Hands
         /// <summary>What a ping or mark is about: where its GPS goes, what it is called, and the line the team reads.</summary>
         internal struct Target
         {
-            /// <summary>The ray met something; when it did not, the target is the player's own position.</summary>
+            /// <summary>The ray met something within <see cref="Range"/>. When it did not there is nothing to ping or mark.</summary>
             public bool Hit;
 
-            /// <summary>Where the GPS goes: the point the ray met, or a detected ore deposit's middle, or the player.</summary>
+            /// <summary>Where the GPS goes: the point the ray met, or the middle of an ore deposit the HUD marks.</summary>
             public Vector3D Point;
 
             /// <summary>Along the ray to where it met something, metres (for the laser); the range when it met nothing.</summary>
             public double Distance;
 
-            /// <summary>The GPS's name: at most <see cref="Sandbox.Game.Screens.Helpers.MyGps.NAME_MAX_LENGTH"/> characters, no colon.</summary>
+            /// <summary>The GPS's name: at most <see cref="Sandbox.Game.Screens.Helpers.MyGps.NAME_MAX_LENGTH"/> characters, no colon. Empty when the ray met nothing.</summary>
             public string Name;
 
-            /// <summary>What the chat line and the GPS description say: "Iron ore here", "Enemy grid: Raider".</summary>
+            /// <summary>What the chat line and the GPS description say: "Iron ore here", "Large grid".</summary>
             public string Line;
 
             public Color Color;
@@ -57,11 +56,19 @@ namespace SpaceEngineersVR.Hands
         private static readonly Color OreColor = new Color(255, 215, 60);
         private static readonly Color FriendlyColor = new Color(117, 201, 241); // the game's own GPS colour
         private static readonly Color DamagedColor = new Color(255, 120, 60);
-        private static readonly Color EnemyColor = new Color(255, 60, 50);
-        private static readonly Color NeutralColor = new Color(235, 235, 120);
 
         private static readonly List<MyPhysics.HitInfo> hits = new List<MyPhysics.HitInfo>();
         private static readonly List<MyLineSegmentOverlapResult<MyVoxelBase>> voxels = new List<MyLineSegmentOverlapResult<MyVoxelBase>>();
+
+        /// <summary>The ore the HUD draws a marker for, one per material (the nearest), as <see cref="HudOres"/> finds them.</summary>
+        private static readonly Dictionary<byte, Marker> markers = new Dictionary<byte, Marker>();
+
+        private struct Marker
+        {
+            public MyVoxelMaterialDefinition Material;
+            public Vector3D At;
+            public double DistanceSquared;
+        }
 
         /// <summary>
         /// The ray a ping takes: on foot the pointing hand's, in a seat (the hands on the controls) and with no tracked hand
@@ -82,19 +89,24 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// What the ray from <paramref name="origin"/> meets within <see cref="Range"/>. The physics first (grids, characters,
-        /// floating objects, voxels near anything), as a camera block's raycast does; then, with <paramref name="voxelsToo"/>,
-        /// the voxel maps' own geometry, which reaches asteroids and planets too far off to have physics (the camera block's
-        /// fallback: a planet seen from outside its gravity is its sphere). Then what the HUD's ore markers show along it.
+        /// What the ray from <paramref name="origin"/> meets within <see cref="Range"/> of the character. The physics first
+        /// (grids, characters, floating objects, voxels near anything), as a camera block's raycast does; then, with
+        /// <paramref name="voxelsToo"/>, the voxel maps' own geometry, which reaches asteroids and planets that have no physics
+        /// yet (the camera block's fallback: a planet seen from outside its gravity is its sphere). Then what the HUD's ore
+        /// markers show along it. Past the range the ray finds nothing: <see cref="Target.Hit"/> is false.
         /// </summary>
         internal static Target Cast(Vector3D origin, Vector3D direction, bool voxelsToo)
         {
             MyCharacter me = MySession.Static.LocalCharacter;
+            if (me == null)
+                return Nothing();
             MyCubeGrid seatGrid = (MySession.Static.ControlledEntity as MyShipController)?.CubeGrid;
-            Vector3D end = origin + direction * Range;
+            double range = Range;
+            Vector3D centre = me.PositionComp.GetPosition();
+            Vector3D end = origin + direction * range;
 
             IMyEntity entity = null;
-            double distance = Range;
+            double distance = range;
             hits.Clear();
             MyPhysics.CastRay(origin, end, hits);
             foreach (MyPhysics.HitInfo hit in hits)
@@ -122,25 +134,28 @@ namespace SpaceEngineersVR.Hands
                 distance = voxelDistance;
             }
 
+            // The ray starts at the hand, which is not quite where the suit's antenna is.
             Vector3D point = origin + direction * distance;
+            if (entity != null && Vector3D.DistanceSquared(point, centre) > range * range)
+                entity = null;
+
             Target target;
             if (entity is MyCubeGrid grid)
                 target = Grid(grid, point, direction);
             else if (entity is MyCharacter character)
                 target = Character(character, point);
             else if (entity is MyVoxelBase map)
-                target = Voxel(map, point, direction);
+                target = Voxel(map, point);
             else if (entity != null)
-                target = Spot(point, "other");
+                target = Spot(point, "Here", "other");
             else
-                target = Own();
+                target = Nothing();
             if (entity != null)
                 target.Distance = distance;
 
-            // A deposit the ore detector found, which the HUD marks: pointing at its marker pings the ore, unless a grid or
-            // someone stands in front of it.
+            // A deposit the HUD marks: pointing at its marker pings the ore, unless a grid or someone stands in front of it.
             if (!(entity is MyCubeGrid) && !(entity is MyCharacter)
-                && TryOre(origin, direction, entity != null ? distance + OreDepth : Range, out Target ore))
+                && TryOre(origin, direction, entity != null ? distance + OreDepth : range, centre, range, out Target ore))
                 target = ore;
             return target;
         }
@@ -190,18 +205,19 @@ namespace SpaceEngineersVR.Hands
                    && Vector3D.DistanceSquared(from, planet.PositionComp.GetPosition()) > maximum * maximum;
         }
 
+        /// <summary>
+        /// A grid the player owns or shares with their faction is named, and its block (and the block's damage) too. Any other is
+        /// only a grid: no name, no owner, no friend or foe.
+        /// </summary>
         private static Target Grid(MyCubeGrid grid, Vector3D point, Vector3D direction)
         {
-            string gridName = Clean(grid.DisplayName);
-            long owner = grid.BigOwners.Count > 0 ? grid.BigOwners[0] : 0L;
-            MyRelationsBetweenPlayerAndBlock relation = owner == 0L
-                ? MyRelationsBetweenPlayerAndBlock.NoOwnership
-                : MyIDModule.GetRelationPlayerBlock(owner, MySession.Static.LocalPlayerId, MyOwnershipShareModeEnum.Faction);
-            if (relation == MyRelationsBetweenPlayerAndBlock.Enemies)
-                return Make(point, "Enemy " + gridName, "Enemy grid: " + gridName, EnemyColor, "enemy grid");
-            if (relation == MyRelationsBetweenPlayerAndBlock.Neutral)
-                return Make(point, "Neutral " + gridName, "Neutral grid: " + gridName, NeutralColor, "neutral grid");
+            if (!Shared(grid))
+            {
+                string size = grid.GridSizeEnum == MyCubeSize.Large ? "Large grid" : "Small grid";
+                return Make(point, size, size, PointColor, "grid");
+            }
 
+            string gridName = Clean(grid.DisplayName);
             Vector3I? cell = grid.RayCastBlocks(point - direction * 0.5, point + direction * 1.5);
             MySlimBlock block = cell.HasValue ? grid.GetCubeBlock(cell.Value) : null;
             if (block == null)
@@ -214,45 +230,74 @@ namespace SpaceEngineersVR.Hands
             return Make(point, name, $"{name} ({gridName})", FriendlyColor, "block");
         }
 
-        /// <summary>The name the terminal shows: the block's own if it has one, else its kind's.</summary>
+        /// <summary>
+        /// The grid is the local player's own or their faction's: it has big owners, and every one of them is
+        /// (<see cref="Shared(long)"/>), as the ship model asks of a grid too. Only its name and the pointed-at block are told
+        /// here, not its insides, so a faction member's grid counts without its blocks being shared with the faction.
+        /// </summary>
+        private static bool Shared(MyCubeGrid grid)
+        {
+            if (grid.BigOwners.Count == 0)
+                return false;
+            foreach (long owner in grid.BigOwners)
+            {
+                if (!Shared(owner))
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// The identity is the local player's own or in their faction, as the game's own relation says
+        /// (<see cref="MyIDModule.GetRelationPlayerBlock"/>: Owner, or FactionShare). Anyone else, and nobody, is not.
+        /// </summary>
+        private static bool Shared(long identity)
+        {
+            if (identity == 0L)
+                return false;
+            MyRelationsBetweenPlayerAndBlock relation = MyIDModule.GetRelationPlayerBlock(identity, MySession.Static.LocalPlayerId, MyOwnershipShareModeEnum.Faction);
+            return relation == MyRelationsBetweenPlayerAndBlock.Owner || relation == MyRelationsBetweenPlayerAndBlock.FactionShare;
+        }
+
+        /// <summary>The name the terminal shows: the block's own if it has one and the player may see it in the terminal, else its kind's.</summary>
         private static string BlockName(MySlimBlock block)
         {
-            if (block.FatBlock is MyTerminalBlock terminal && terminal.CustomName != null && terminal.CustomName.Length > 0)
+            if (block.FatBlock is MyTerminalBlock terminal && terminal.CustomName != null && terminal.CustomName.Length > 0 && terminal.HasLocalPlayerAccess())
                 return Clean(terminal.CustomName.ToString());
             return Clean(block.BlockDefinition?.DisplayNameText ?? "Block");
         }
 
+        /// <summary>A player of the player's own faction (or themselves) is named; any other is only a player: no name, no friend or foe.</summary>
         private static Target Character(MyCharacter character, Vector3D point)
         {
+            if (!Shared(character.GetPlayerIdentityId()))
+                return Make(point, "Player", "Player", PointColor, "character");
             string name = Clean(character.DisplayNameText);
             if (string.IsNullOrEmpty(name))
                 name = "Someone";
-            long identity = character.GetPlayerIdentityId();
-            bool enemy = identity != 0L && MyIDModule.GetRelationPlayerBlock(identity, MySession.Static.LocalPlayerId,
-                MyOwnershipShareModeEnum.Faction) == MyRelationsBetweenPlayerAndBlock.Enemies;
-            return enemy
-                ? Make(point, "Enemy " + name, "Enemy: " + name, EnemyColor, "enemy character")
-                : Make(point, name, name + " here", FriendlyColor, "character");
+            return Make(point, name, name + " here", FriendlyColor, "character");
         }
 
-        /// <summary>The voxel material just under the surface the ray met: an ore by the name the HUD gives it, or a plain spot.</summary>
-        private static Target Voxel(MyVoxelBase map, Vector3D point, Vector3D direction)
-        {
-            Vector3D inside = point + direction * 0.5;
-            MyVoxelMaterialDefinition material = map.RootVoxel.GetMaterialAt(ref inside) ?? map.RootVoxel.GetMaterialAt(ref point);
-            if (material == null || string.IsNullOrEmpty(material.MinedOre) || material.MinedOre == "Stone")
-                return Spot(point, "voxel");
-            string ore = OreName(material);
-            return Make(point, ore, ore + " here", OreColor, "voxel " + material.MinedOre);
-        }
+        /// <summary>A voxel surface is only an asteroid or a planet: the material under it is not read, so no ore is told apart without a marker.</summary>
+        private static Target Voxel(MyVoxelBase map, Vector3D point) =>
+            Spot(point, map.RootVoxel is MyPlanet ? "Planet" : "Asteroid", "voxel");
 
-        /// <summary>The detected deposit whose HUD marker is nearest the ray, within <see cref="OreConeDegrees"/> and <paramref name="reach"/>.</summary>
-        private static bool TryOre(Vector3D origin, Vector3D direction, double reach, out Target target)
+        /// <summary>
+        /// The ore the HUD draws a marker for, where it draws it: for each material the deposit nearest the controlled entity
+        /// (<c>MyGuiScreenHudSpace.DrawOreMarkers</c>), and none when the HUD does not draw them: ore markers off, the HUD
+        /// hidden (dead, the medical screen), minimal or in a cutscene, or the signal display mode off
+        /// (<c>MyHudMarkerRender.AddOre</c>).
+        /// </summary>
+        private static void HudOres(Vector3D fallback)
         {
-            target = default;
-            double bestCos = Math.Cos(MathHelper.ToRadians(OreConeDegrees));
-            bool found = false;
-            foreach (MyEntityOreDeposit deposit in MyHud.OreMarkers)
+            markers.Clear();
+            MyHudOreMarkers oreMarkers = MyHud.OreMarkers;
+            if (!oreMarkers.Visible || !MyHud.IsVisible || MyHud.IsHudMinimal || MyHud.MinimalHud || MyHud.CutsceneHud
+                || MyHudMarkerRender.SignalDisplayMode == MyHudMarkerRender.SignalMode.Off)
+                return;
+            IMyControllableEntity controlled = MySession.Static.ControlledEntity;
+            Vector3D from = controlled?.Entity != null ? controlled.Entity.PositionComp.GetPosition() : fallback;
+            foreach (MyEntityOreDeposit deposit in oreMarkers)
             {
                 if (deposit?.VoxelMap == null || deposit.VoxelMap.Closed || deposit.VoxelMap.MarkedForClose)
                     continue;
@@ -264,19 +309,39 @@ namespace SpaceEngineersVR.Hands
                     Vector3 local = data.AverageLocalPosition;
                     MyVoxelCoordSystems.LocalPositionToWorldPosition(
                         deposit.VoxelMap.PositionComp.GetPosition() - (Vector3D)deposit.VoxelMap.StorageMin, ref local, out Vector3D at);
-                    Vector3D to = at - origin;
-                    double length = to.Length();
-                    if (length < 1e-3 || length > reach)
-                        continue;
-                    double cos = Vector3D.Dot(to, direction) / length;
-                    if (cos <= bestCos)
-                        continue;
-                    bestCos = cos;
-                    string ore = OreName(data.Material);
-                    target = Make(at, ore, ore + " here", OreColor, "ore marker " + data.Material.MinedOre);
-                    target.Distance = length;
-                    found = true;
+                    double squared = Vector3D.DistanceSquared(from, at);
+                    if (!markers.TryGetValue(data.Material.Index, out Marker nearest) || squared < nearest.DistanceSquared)
+                        markers[data.Material.Index] = new Marker { Material = data.Material, At = at, DistanceSquared = squared };
                 }
+            }
+        }
+
+        /// <summary>
+        /// The ore marker the HUD is drawing that is nearest the ray, within <see cref="OreConeDegrees"/> and
+        /// <paramref name="reach"/>, and within <paramref name="range"/> of <paramref name="centre"/>.
+        /// </summary>
+        private static bool TryOre(Vector3D origin, Vector3D direction, double reach, Vector3D centre, double range, out Target target)
+        {
+            target = default;
+            HudOres(centre);
+            double bestCos = Math.Cos(MathHelper.ToRadians(OreConeDegrees));
+            bool found = false;
+            foreach (Marker marker in markers.Values)
+            {
+                if (Vector3D.DistanceSquared(marker.At, centre) > range * range)
+                    continue;
+                Vector3D to = marker.At - origin;
+                double length = to.Length();
+                if (length < 1e-3 || length > reach)
+                    continue;
+                double cos = Vector3D.Dot(to, direction) / length;
+                if (cos <= bestCos)
+                    continue;
+                bestCos = cos;
+                string ore = OreName(marker.Material);
+                target = Make(marker.At, ore, ore + " here", OreColor, "ore marker " + marker.Material.MinedOre);
+                target.Distance = length;
+                found = true;
             }
             return found;
         }
@@ -290,18 +355,18 @@ namespace SpaceEngineersVR.Hands
             return material.MinedOre == "Ice" ? name : name + " ore";
         }
 
-        private static Target Spot(Vector3D point, string what) => Make(point, "Here", "Here", PointColor, what);
+        private static Target Spot(Vector3D point, string name, string what) => Make(point, name, name, PointColor, what);
 
-        /// <summary>The ray met nothing: where the player is (in a seat, the ship), as the game's "new from current position".</summary>
-        private static Target Own()
+        /// <summary>The ray met nothing within range: no point, no name; the caller makes no GPS and sends no chat line.</summary>
+        private static Target Nothing() => new Target
         {
-            IMyControllableEntity controlled = MySession.Static.ControlledEntity;
-            Vector3D at = controlled?.Entity != null ? controlled.Entity.PositionComp.GetPosition() : MySession.Static.LocalCharacter.PositionComp.GetPosition();
-            Target target = Make(at, "Here", "Here", PointColor, "own position");
-            target.Hit = false;
-            target.Distance = Range;
-            return target;
-        }
+            Hit = false,
+            Name = string.Empty,
+            Line = "Nothing in range",
+            Color = PointColor,
+            What = "nothing in range",
+            Distance = Range,
+        };
 
         private static Target Make(Vector3D point, string name, string line, Color color, string what) => new Target
         {

@@ -6,7 +6,7 @@ through WiVRn or Monado. This plugin does the VR rendering inside the game's own
 Status: tested on one setup, a Meta Quest 3 through WiVRn over USB, Ubuntu 26.04, RTX 3060. The session reaches Focused, the menu shows in the headset with the laser on it, and the game's sound
 reaches the headset. It is early: one machine, one runtime, and not every feature has had a headset pass on Linux.
 
-Every claim below names the commit or file it comes from. Commits are on `master` of this repository.
+Every claim below names the file or class it comes from.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ wineopenxr does.
 
 ## Problems and fixes
 
-### 1. DXVK Native never enables what an OpenXR runtime needs (c6d88a1, 4c9df5c, 13b9e26)
+### 1. DXVK Native never enables what an OpenXR runtime needs 
 In DXVK 3.0.2 the OpenXR and OpenVR extension providers sit under `#ifdef _WIN32` in `dxvk_instance.cpp`. On Linux, WiVRn
 asks for `VK_KHR_external_memory_fd`, `_semaphore_fd` and `_fence_fd` on the device; DXVK never enables them (gdb on
 `vkCreateDevice`: 42 device extensions stock, 45 patched, with the three present).
@@ -55,9 +55,11 @@ The second half was found by a crash. WiVRn also asks for four instance extensio
 KHR-named entry points. The loader returns those only when the extension is enabled on the instance, so they came back
 null and were called unchecked: `xrGetVulkanGraphicsDeviceKHR` jumped to address 0 on the render thread (gdb frames in
 `libopenxr_wivrn.so`). The patch (`tools/linux/dxvk-native-xr-external-fd.patch`) enables the four instance extensions and,
-per adapter that lists them, the three device extensions, all under `#ifndef _WIN32`. See the last section.
+per adapter that lists them, the three device extensions, all under `#ifndef _WIN32`. See the last section. With stock DXVK
+the plugin does not start the session: `XrRuntime.VulkanInstanceProblem` probes the instance for
+`vkGetPhysicalDeviceProperties2KHR`, and the log names `tools/linux/setup.sh`.
 
-### 2. DXGI detection through kernel32, and the distro's SDL3 (95e4ea2)
+### 2. DXGI detection through kernel32, and the distro's SDL3
 `DxvkInterop.DxgiIsDxvk` read the dxgi module path through kernel32, which throws `DllNotFoundException` on Linux. It
 answered "not DXVK" and the plugin stopped at "runtime does not support Direct3D 11". Under `LINUX` it now answers yes
 without creating a factory. The factory was the second problem: created that early, it loaded DXVK before linux-compat had
@@ -65,37 +67,39 @@ loaded its SDL3, DXVK's window-system code bound the distribution's SDL3 instead
 window" to it, so swap-chain creation failed. On Linux DXGI is always linux-compat's DXVK, so nothing is lost.
 `vkQueueWaitIdle` is imported from `libvulkan.so.1` there.
 
-### 3. linux-compat also prefixes `RenderMainSprites` (fc2dfe3)
+### 3. linux-compat also prefixes `RenderMainSprites`
 linux-compat patches `MyRender11.RenderMainSprites` with a prefix that draws the GUI to the backbuffer and returns false,
 so Harmony skipped ours. The GUI panel was never drawn, the menu never began a headset frame, `xrPollEvent` never ran and
 the session stayed `Unknown`. Under `LINUX` our prefix takes `Priority.First` (`EyeRenderer.cs`). Measured: the session
 then goes Idle to Focused at once with about 900 of 900 frames per 10 s, and the menu shows in the headset. With the change
 reverted the session never reaches READY.
 
-### 4. linux-compat redraws the cursor at the SDL mouse (9b3555e)
+### 4. linux-compat redraws the cursor at the SDL mouse
 linux-compat's `CursorRenderRatePatch` moves the cursor sprite to the SDL mouse position on the render thread, after the
 laser has placed it. While the laser holds the cursor, a postfix on `SdlGameWindow.TryGetFreshInWindowMousePosition` reports
 no fresh position, so the sprite stays where the game queued it (`PanelCursor.cs`). If the type is not found it logs and
 carries on.
 
-### 5. OpenXR runtime and loader discovery (54872e8)
+### 5. OpenXR runtime and loader discovery
 With neither `XR_RUNTIME_JSON` nor an `active_runtime.json`, the plugin picks the first installed of WiVRn (Flatpak, then
 system), Monado and SteamVR and logs the choice (`XrRuntimeDiscovery.cs`). An explicit choice always wins. The
 distribution's OpenXR loader is tried before a copy in the plugin folder; a missing loader names the package to install.
 The hub file lists no Linux loader asset.
 
-### 6. Audio through PipeWire (bd1cc8b)
+### 6. Audio through PipeWire
 While WiVRn is connected, the game's output stream is moved to WiVRn's sink with `pw-metadata` (`target.object`) and
-released when the sink goes away or the game exits (`HeadsetAudio.cs`). SDL's PipeWire stream node carries no process id, so
+released when the sink goes away or the game exits (`HeadsetAudio.cs`). Until a headset is found (`HeadsetWatcher.HasHeadset`)
+no PipeWire tool runs at all: the thread only waits, and polls every 3 s once there is a headset or a moved stream to
+release. SDL's PipeWire stream node carries no process id, so
 the stream is matched through its PipeWire client's `application.process.id` in `pw-dump`. Same setting and `RenderDebug`
 switch as the Windows MMDevice routing.
 
-### 7. Stall watchdog from /proc (924a088)
+### 7. Stall watchdog from /proc
 The Windows watchdog reads thread state through kernel32. On Linux it reports a render or main thread that stops making
 progress with kernel state, CPU time, process I/O and GC counts from `/proc` (`StallWatchdog.cs`). CoreCLR cannot sample
 another thread's stack, so there is no stack. No false stalls in a menu run.
 
-### 8. Dynamic resolution on a GPU-bound frame (ebb9c72)
+### 8. Dynamic resolution on a GPU-bound frame
 
 The controller steps the eye resolution down only when the GPU is the bottleneck, judged by GPU time against the render
 thread's time in the frame. Under DXVK the render thread blocks on the GPU inside the frame, so its wall time equals the
@@ -130,21 +134,21 @@ in linux-compat would be cleaner than ours.
 
 ## What Windows keeps
 
-The Windows path is unchanged by every Linux commit. The mechanism:
+The Windows path is unchanged by the Linux work. The mechanism:
 - Source differences are under `#if LINUX` with the original line in `#else` (for example `EyeRenderer.cs` priority,
   `DxvkInterop.DxgiIsDxvk`, the `vkQueueWaitIdle` library name). Pulsar defines `LINUX` (with `NETCOREAPP` and `PULSAR`)
-  when it compiles a plugin on Linux; the net48 build was checked after each change (fc2dfe3: 0 errors, 0 warnings).
+  when it compiles a plugin on Linux; the net48 build was checked after each change (0 errors, 0 warnings).
 - The Vulkan session path is taken only when the game's DXGI is DXVK, which also happens on Windows with DXVK's DLLs
-  (the session path predates the port; 94ccc53 added its error logging); without DXVK nothing changes.
-- The DXVK patch is entirely inside `#ifndef _WIN32` and the MinGW build compiles with it (c6d88a1).
+  (the session path predates the port); without DXVK nothing changes.
+- The DXVK patch is entirely inside `#ifndef _WIN32` and the MinGW build compiles with it.
 - The hub file lists `Windows,Linux` and `CLR,CoreCLR`; the Windows OpenXR loader asset is `Platforms="Windows"`.
-- The beam-over-panels change (e96fedc) is shared code and has been checked on Linux/WiVRn only.
+- The beam-over-panels change is shared code and has been checked on Linux/WiVRn only.
 
 ## Setup
 
 `tools/linux/setup.sh --no-plugin --install-deps --launcher` with the plugin installed from the hub, or without `--no-plugin`
 to register the clone as a development folder (see the Linux section of `README.md`). It finds
-Pulsar and the game, installs the distribution's OpenXR loader, builds DXVK Native with the patch and copies it into
+Pulsar and the game, installs the distribution's OpenXR loader and OpenAL, builds DXVK Native with the patch and copies it into
 linux-compat (keeping the originals; run it again after a linux-compat update), registers the plugin in Pulsar as a
 development folder unless `--no-plugin`, checks for WiVRn and `adb`, and can add a launcher entry. `--check` only reports.
 
@@ -163,12 +167,10 @@ RTX 3060, Ubuntu 26.04, WiVRn 26.9, Quest 3 over USB, the game and WiVRn's encod
 
 ## Open items
 
-- The Windows headset run of the beam-over-panels layer (e96fedc) is outstanding.
+- The Windows headset run of the beam-over-panels layer is outstanding.
 - Restoring the audio route when the headset disconnects: with the WiVRn server stopped the sink goes and the sound
   returns to the default output, and moves back when the headset reconnects; with only the headset app stopped the sink
   stays and the sound goes on into it.
-- Stock (unpatched) DXVK should fail with a clear message instead of crashing: `XrRuntime.VulkanInstanceProblem` probes
-  for `vkGetPhysicalDeviceProperties2KHR` and names `setup.sh`. This is being added and is not yet committed.
 - Only WiVRn has been run in the headset. Monado and SteamVR for Linux are untested.
 
 ## For CometWorks
@@ -182,5 +184,4 @@ The DXVK change is one patch against DXVK v3.0.2, written to apply on top of the
   `_fd` extensions gets none.
 - Tested: gdb extension counts above; a session on DXVK's device with WiVRn 26.9 (stock crashes at
   `xrGetVulkanGraphicsDeviceKHR`, patched does not); native and MinGW builds compile.
-- Submission notes: `docs/linux/dxvk-patch-submission.md`. Before sending, re-check that it applies to the DXVK version
-  linux-compat currently builds.
+- Before it is sent, re-check that it applies to the DXVK version linux-compat currently builds.

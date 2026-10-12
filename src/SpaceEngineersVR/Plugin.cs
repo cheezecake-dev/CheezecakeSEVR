@@ -58,8 +58,8 @@ namespace SpaceEngineersVR
 
         /// <summary>
         /// Called by the game once a frame, on the game thread: patches what changes play once the headset is first found,
-        /// turns the picture to the game's while the headset is away and back when it returns, and shows the notice about
-        /// patches that failed.
+        /// turns the picture to the game's while the headset is away and back when it returns (off for now:
+        /// <c>StereoPatches.FlatWhenAway</c>), and shows the notice about patches that failed.
         /// </summary>
         public void Update()
         {

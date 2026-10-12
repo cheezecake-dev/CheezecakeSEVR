@@ -60,14 +60,17 @@ You need:
 - A headset with [WiVRn](https://github.com/WiVRn/WiVRn): the server on the PC, the app on the headset.
 - Your distribution's **OpenXR loader** (`libopenxr-loader1`, `openxr-libs` or `openxr`). Nothing is shipped for Linux:
   the plugin uses this one.
+- Your distribution's **OpenAL** (`libopenal1`, `openal-soft` or `openal`). Without it the game starts and runs without
+  sound.
 - **DXVK Native with a patch.** WiVRn and Monado need Vulkan extensions that DXVK Native does not enable; without them the
   plugin stops before the headset session and logs why. Until CometWorks ships the fix
   ([patch](tools/linux/dxvk-native-xr-external-fd.patch)), the setup script builds DXVK with it (one to several minutes)
   and copies it into linux-compat, keeping the originals. **Run the script again after a linux-compat update**, which
   replaces the files.
 
-The script installs the loader and DXVK, checks for WiVRn and `adb`, and with `--launcher` adds a menu entry that starts
-the WiVRn server, runs `adb reverse` if a cable is attached, and starts Pulsar. Close Pulsar first.
+The script installs the loader and OpenAL, builds and installs DXVK, checks for WiVRn and `adb`, and with `--launcher`
+adds a menu entry that starts the WiVRn server, runs `adb reverse` if a cable is attached, and starts Pulsar. Close
+Pulsar first.
 
 ```sh
 git clone https://github.com/cheezecake-dev/CheezecakeSEVR.git
@@ -111,7 +114,8 @@ Proton the plugin is not offered: use native Pulsar.
   - a comfort vignette;
   - camera shake (off by default);
   - zero-g pitch and roll.
-- **Walls:** lean your head into a wall, a canopy or a dashboard and the view fades to black rather than going through it.
+- **Walls:** lean your head into a wall, a canopy or a dashboard and the view fades to black rather than going through
+  it. It does so in third person and while you steer a remote control too.
 - **Menus:** point at them with your right hand. The trigger clicks, the grip right-clicks, the stick scrolls, and B goes
   back.
 - **The HUD is on your visor:** the toolbar, suit status, block info, notifications, chat and the rest of the HUD sit
@@ -187,8 +191,10 @@ example "Press [Right grip] to open".
   - In a remote control, or a seat whose pose has no hand on a control, the grips roll instead.
 - **Hand flying** (off by default, Options > VR > Controls): fly by moving the controller while you hold the stick or
   throttle.
-- **Camera block view:** a sideways flick of the right stick switches camera. Hold the stick up or down to zoom, and the
-  zoomed view shows on a magnified inset. Hold Y for half a second to come back.
+- **Camera block view:** the game gives a camera block, a turret or a searchlight no look-around, so its view is on a
+  screen ahead of you, in the dark, at the game's field of view. Your head does not turn it; it turns only as the block
+  is aimed. A sideways flick of the right stick switches camera. Hold the stick up or down to zoom, and the zoom shows on
+  the screen as on a monitor. Hold Y for half a second to come back.
 - A passenger seat gets the buttons but not the sticks or grips.
 - Valve Index controllers have no Menu button the game can use. Recentre with Options > VR > **Recentre view**.
 - Steam Frame controllers: the left controller's View button is Menu, and its D-pad's down and up are X and Y. The
@@ -240,14 +246,31 @@ controls table above applies to it.
   - The right stick turns the toolbar page, and B closes the wheel without doing anything.
 - **Actions wheel**: click the left stick while the tools wheel is open. It holds the game's dampeners, lights, helmet,
   HUD and broadcasting, plus its Menu, View and Blueprint pages, and Ping and Mark GPS.
-- **Ping**: hold **X** and point at anything: ore the detector found, a block, a ship, a player, a spot on a planet or in
-  space. A long laser shows what you are on, named on the HUD ("Iron ore", "Damaged: Large Reactor (Miner 2)", "Enemy
-  grid: Raider"). Let go to ping it: a GPS on your HUD for a minute and a line in your faction's chat (global with no
-  faction) with the GPS in it, which every player's game adds to their GPS list; no plugin is needed on their side. Pull
-  the pointing hand's trigger while still holding X to keep it as your own GPS instead. In a pilot seat it is where you look. A
-  quick tap of X is still the dampeners, now as you let go. The actions wheel's Ping and Mark GPS do the same with X
-  up: point, pull the trigger, or B to cancel. Options > VR > Controls > Ping sets how long a ping lasts and where its
-  chat line goes, or turns the hold on X off.
+- **Ship model**: the actions wheel's last entry holds a small hologram of your ship above your off hand. Seated it is
+  the ship you are in; on foot it is the ship your pointing hand is aimed at, else the nearest within 50 m. It shows
+  only ships that are yours or shared with your faction, never another player's, a neutral one or an unowned one.
+  Grip it with either hand to turn it, with both to make it bigger or smaller; let go and it stays where you left it.
+  Damaged blocks are red and blocks lost while it is out are dark. Point at a block on it and the real block is
+  outlined in the world, with its name and integrity beside it. The same entry puts it away. Options > VR > Interface >
+  **Ship model** turns the entry off.
+- **Model overlays**: while the model is out, the actions wheel has a Model overlays page. Thrusters (orange), Power
+  (yellow), Doors (green) and Weapons (outlined red) each switch on and off there, and the wheel stays up for the next.
+  The same switches are in Options > VR > Interface.
+- **Voxel material** (creative): while the voxel hand is in your hand, the actions wheel has a Voxel material page. It
+  is the game's own voxel material wheel: your last-used materials on the page, each group of materials a ring of its
+  own. Choosing one sets the brush's material and puts it first among the last used.
+- **Ping**: hold **X** and point at something within your suit radio's range (200 m): ore the HUD marks, a block or
+  ship of yours or your faction's, a player, a spot on an asteroid or a planet. A laser shows what you are on, named on
+  the HUD ("Iron ore", "Damaged: Large Reactor (Miner 2)"); it tells no more than the game's own HUD, so a ship that
+  is not yours or your faction's is only "Large grid", a player outside your faction only "Player", and ore is named
+  only where the HUD draws its marker. Pointing at nothing in range makes no ping. Let go to ping it: a GPS on your
+  HUD for a minute and a line in your faction's chat with the GPS in it, which the game of everyone in that chat adds to
+  their GPS list; no plugin is needed on their side. With no faction the ping stays your own marker, unless you set the
+  chat to "Faction, else global chat". Pull the pointing hand's trigger while still holding X to keep it as your own GPS
+  instead.
+  In a pilot seat it is where you look. A quick tap of X is still the dampeners, now as you let go. The actions
+  wheel's Ping and Mark GPS do the same with X up: point, pull the trigger, or B to cancel. Options > VR > Controls >
+  Ping sets how long a ping lasts and where its chat line goes, or turns the hold on X off.
 - **Wrist panel**: on foot, press **Y**. It has big buttons for Inventory, Terminal, G menu, Lights, Helmet, Dampeners,
   Relative, Heal, Broadcast, Symmetry and Colour. Press them with the laser. You can keep walking while it is open.
 - **Status on the wrist**: the screen on your left gauntlet shows your suit and body status: health, energy, oxygen,
@@ -263,13 +286,14 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
 
 - **Tools in your hands:** the tool or gun aims where your hand points, and a block goes where your hand points.
 - **Two-handed tools:** close your other hand on the front of the tool or gun. A rifle, grinder or drill held in one hand
-  kicks hard (**Tool and weapon kickback** sets how hard). The game's own recoil turns the view only when that kick
-  is weaker; **Game recoil in VR** Off keeps the view still in single player.
+  kicks hard (**Tool and weapon kickback** sets how hard). The game's own recoil applies only when that kick
+  is weaker, and on foot it turns the gun, not the view; **Game recoil in VR** Off leaves it out in single player.
 - **Reload:** click the gun hand's stick (or close your other hand's grip at the gun's magazine) and the magazine drops
   out. Left-handed, that is the left stick, and sprint moves to the right stick click while the gun is held (on the
   jetpack with zero-g roll on, the left click stays the roll's and reload stays on the right).
   Then reach to your other hand's hip, close the grip to take a fresh one, and push it up into the well under the gun until
-  it clicks (**Reload by hand**; off, the click reloads on the game's timer).
+  it clicks. The gun is loaded then, or when the game's own reload time is up if that is later: reloading by hand is never
+  quicker than the game's (**Reload by hand**; off, the click reloads on the game's timer).
 - **Suit lamp:** grip your helmet, or tap the side of your head, to switch the suit lamp. The helmet itself is on the
   wrist panel and the actions wheel.
 - **Push to talk:** hold the left grip with your hand at your helmet's mouth.
@@ -304,7 +328,7 @@ This is **early access**. These are the known issues and limits:
   worth trying.
 - **Minor:** the drill's tip moves slightly while you walk.
 - **Newer and less tested.** These are in, but have had little or no time in a headset yet:
-  - where the zoomed view sits when you zoom a camera, turret or searchlight;
+  - the screen that shows a camera block's, turret's or searchlight's view, and its zoom;
   - the death screen view, and the respawn menu with the death screen behind it;
   - the on-screen keyboard moving to the top of a text editor to keep your line clear;
   - typing amounts at a store block or ATM;
@@ -330,7 +354,7 @@ This is **early access**. These are the known issues and limits:
 Open an issue on the [issue tracker](https://github.com/cheezecake-dev/CheezecakeSEVR/issues/new/choose); the bug
 report form asks for what we need:
 
-- your **headset and how it is connected**: Link cable, Air Link, Virtual Desktop or SteamVR;
+- your **headset and how it is connected**: Link cable, Air Link, Virtual Desktop or SteamVR (WiVRn on Linux);
 - your **graphics card and driver version**;
 - **both plugin logs**, from `%APPDATA%\SpaceEngineers\` (`~/.config/SpaceEngineers/` on Linux, or the game's `-appdata` folder):
   - `SpaceEngineersVR.log` is the last run;
@@ -343,7 +367,8 @@ Before you report, check these:
   has started; check that your headset's runtime is the active OpenXR runtime ([Install](#install-with-pulsar), step 2).
   On a PC with two graphics cards, start Link or SteamVR before the game, so it picks the headset's card.
 - **No sound in the headset:** **Sound through the headset** (Options > VR > Display) is on by default and needs a
-  restart after a change. Start Link before the game.
+  restart after a change. Start Link before the game. On Linux the sound moves to WiVRn's output once the headset has
+  connected, which needs PipeWire's `pw-dump` and `pw-metadata`.
 - **A button does nothing:** the log records each controller press (`Input: ...`), so attach it.
 
 ## Credits

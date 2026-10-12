@@ -13,6 +13,7 @@ using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
 using SpaceEngineersVR.Rendering;
 using SpaceEngineersVR.Tracking;
+using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
@@ -26,7 +27,8 @@ namespace SpaceEngineersVR.Hands
     /// <list type="bullet">
     /// <item>Shown and dismissed from the actions wheel ("Ship model", <see cref="Gui.ShipModelEntries"/>). Seated, it is the
     /// ship you are in; on foot, the grid under the dominant hand's ray, else the nearest within <see cref="NearestReach"/>,
-    /// else the one shown last.</item>
+    /// else the one shown last. Only a grid that is yours or shared with your faction (<see cref="Permitted"/>): another's
+    /// ship, a neutral or unowned one is not shown, however close, and one that stops being yours while shown is put away.</item>
     /// <item>It rides above the off hand, the ship's forward (the cockpit's) pointing where you look, until either hand grips
     /// it: then it turns with that hand, two hands scale it, and let go it stays where it was left.</item>
     /// <item>Damaged blocks are red, deeper the more damaged; blocks destroyed or removed while it is out are dark. The overlays
@@ -123,6 +125,9 @@ namespace SpaceEngineersVR.Hands
         private static readonly List<MyEntity> nearby = new List<MyEntity>();
         private static readonly List<MyPhysics.HitInfo> hits = new List<MyPhysics.HitInfo>();
 
+        /// <summary>The grids <see cref="Target"/> has turned down this time as not yours or your faction's, by entity id.</summary>
+        private static readonly HashSet<long> refused = new HashSet<long>();
+
         /// <summary>The model is out (or fading out).</summary>
         public static bool Shown => main != null;
 
@@ -146,7 +151,7 @@ namespace SpaceEngineersVR.Hands
                 Show();
         }
 
-        /// <summary>Shows the model of the ship in reach (see the class remarks); false with a notice when there is none.</summary>
+        /// <summary>Shows the model of the ship of yours in reach (see the class remarks); false with a notice when there is none.</summary>
         public static bool Show()
         {
             if (!Enabled)
@@ -156,8 +161,9 @@ namespace SpaceEngineersVR.Hands
                 MyCubeGrid grid = Target(out string how);
                 if (grid == null)
                 {
-                    HudToolbar.Notice("No ship in reach");
-                    Log.Info("Ship model: no grid to show (not seated, nothing under the ray, none within " + NearestReach.ToString("0") + " m, none shown before)");
+                    HudToolbar.Notice("No ship of yours in reach");
+                    Log.Info($"Ship model: no grid of yours or your faction's to show (seated, under the ray, within {NearestReach:0} m, shown before: none; " +
+                             $"{refused.Count} other grid(s) seen and refused)");
                     return false;
                 }
                 Clear();
@@ -206,6 +212,8 @@ namespace SpaceEngineersVR.Hands
 
                 if (!hiding && (!Enabled || MySession.Static == null || main.Closed || main.MarkedForClose))
                     Hide(main.Closed || main.MarkedForClose ? "the grid is gone" : "switched off");
+                else if (!hiding && !Permitted(main))
+                    Hide("the grid is no longer yours or your faction's");
                 fade = MathHelper.Clamp(fade + (hiding ? -dt : dt) / FadeSeconds, 0f, 1f);
                 if (hiding)
                 {
@@ -214,6 +222,7 @@ namespace SpaceEngineersVR.Hands
                     return;
                 }
 
+                Vet();
                 if (frame % GroupCheckFrames == 0)
                     Join();
                 Take();
@@ -257,13 +266,17 @@ namespace SpaceEngineersVR.Hands
 
         // ---- Which grid ----
 
-        /// <summary>The grid to show: the one controlled, else under the ray, else the nearest, else the last.</summary>
+        /// <summary>
+        /// The grid to show: the one controlled, else under the ray, else the nearest, else the last; each only if it is yours or
+        /// your faction's (<see cref="Showable"/>). Seated in a ship that is not, there is none: the ship you are in is the one asked for.
+        /// </summary>
         private static MyCubeGrid Target(out string how)
         {
+            refused.Clear();
             if (MySession.Static?.ControlledEntity is MyCubeBlock seat && seat.CubeGrid != null)
             {
                 how = "seated in " + seat.DisplayNameText;
-                return seat.CubeGrid;
+                return Showable(seat.CubeGrid);
             }
             if (HandWorld.TryGet(VRSettings.DominantHand, out _, out MatrixD aim) && HandTools.Ray(aim, out Vector3D origin, out Vector3D direction))
             {
@@ -305,8 +318,63 @@ namespace SpaceEngineersVR.Hands
             return lastGridId != 0 && MyEntities.TryGetEntityById(lastGridId, out MyEntity last) ? Showable(last as MyCubeGrid) : null;
         }
 
-        private static MyCubeGrid Showable(MyCubeGrid grid) =>
-            grid == null || grid.Closed || grid.MarkedForClose || grid.Projector != null || grid.IsPreview || grid.BlocksCount == 0 ? null : grid;
+        /// <summary>The grid if it can be shown (a real grid with blocks) and is yours or your faction's; else null, with the others noted in <see cref="refused"/>.</summary>
+        private static MyCubeGrid Showable(MyCubeGrid grid)
+        {
+            if (grid == null || grid.Closed || grid.MarkedForClose || grid.Projector != null || grid.IsPreview || grid.BlocksCount == 0)
+                return null;
+            if (Permitted(grid))
+                return grid;
+            refused.Add(grid.EntityId);
+            return null;
+        }
+
+        /// <summary>
+        /// Whether the grid is yours or shared with your faction, the way the game's terminal reads it: the owners of the grid
+        /// (<see cref="MyCubeGrid.BigOwners"/>, the players with the most working blocks; while none works, those with any block)
+        /// must all be you, or in your faction with their blocks shared with it (<see cref="MyIDModule.GetRelationPlayerBlock"/>
+        /// answering owner or faction share). Unowned, neutral, allied-faction and enemy grids are not, a block shared with
+        /// everyone does not make its grid yours, and a grid captured by another player stops being. Nothing is shown of a
+        /// grid the terminal would refuse you, nor more than it would show.
+        /// </summary>
+        private static bool Permitted(MyCubeGrid grid)
+        {
+            long me = MySession.Static?.LocalPlayerId ?? 0L;
+            if (grid == null || me == 0L)
+                return false;
+            List<long> owners = grid.BigOwners;
+            if (owners == null || owners.Count == 0)
+                owners = grid.SmallOwners;
+            if (owners == null || owners.Count == 0)
+                return false;
+            foreach (long owner in owners)
+            {
+                MyRelationsBetweenPlayerAndBlock relation = owner == me ? MyRelationsBetweenPlayerAndBlock.Owner : RelationTo(grid, owner, me);
+                if (relation != MyRelationsBetweenPlayerAndBlock.Owner && relation != MyRelationsBetweenPlayerAndBlock.FactionShare)
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// How <paramref name="me"/> stands to a block of <paramref name="owner"/> on the grid, as the faction sees it: the share
+        /// mode set on that block counts when it is faction or nobody's, but a block shared with everyone (a public medical room,
+        /// a door) is read as faction, so it is the owner's faction that decides. On a grid with none of the owner's own blocks
+        /// (a rotor head takes its owners from the ship), the faction share mode is taken as set.
+        /// </summary>
+        private static MyRelationsBetweenPlayerAndBlock RelationTo(MyCubeGrid grid, long owner, long me)
+        {
+            foreach (MyCubeBlock block in grid.GetFatBlocks())
+            {
+                if (block.OwnerId != owner || block.IDModule == null)
+                    continue;
+                MyOwnershipShareModeEnum share = block.IDModule.ShareMode == MyOwnershipShareModeEnum.None
+                    ? MyOwnershipShareModeEnum.None
+                    : MyOwnershipShareModeEnum.Faction;
+                return MyIDModule.GetRelationPlayerBlock(owner, me, share);
+            }
+            return MyIDModule.GetRelationPlayerBlock(owner, me, MyOwnershipShareModeEnum.Faction);
+        }
 
         /// <summary>A grid on foot is shown from the largest of the grids joined to it (a ship, not the rotor head pointed at).</summary>
         private static MyCubeGrid Largest(MyCubeGrid grid)
@@ -339,7 +407,10 @@ namespace SpaceEngineersVR.Hands
 
         // ---- The grids joined to it, and their events ----
 
-        /// <summary>Takes in the grids joined to the main one (rotors, pistons, hinges, connectors; not landing gear), and lets go of any no longer joined.</summary>
+        /// <summary>
+        /// Takes in the grids joined to the main one (rotors, pistons, hinges, connectors; not landing gear), and lets go of any no
+        /// longer joined. A joined grid that is not yours or your faction's, a ship docked at a connector, is left out.
+        /// </summary>
         private static void Join()
         {
             groupNodes.Clear();
@@ -358,7 +429,7 @@ namespace SpaceEngineersVR.Hands
             }
             foreach (MyCubeGrid grid in groupNodes)
             {
-                if (grid.Closed || grid.Projector != null || parts.Exists(p => p.Grid == grid))
+                if (grid.Closed || grid.Projector != null || parts.Exists(p => p.Grid == grid) || !Permitted(grid))
                     continue;
                 parts.Add(new Part { Grid = grid });
                 grid.OnBlockAdded += BlockAdded;
@@ -369,6 +440,21 @@ namespace SpaceEngineersVR.Hands
             groupNodes.Clear();
             if (changed)
                 dirty = true;
+        }
+
+        /// <summary>Every frame: a grid of the model that is no longer yours or your faction's (sold, captured, the faction changed) is taken out of it.</summary>
+        private static void Vet()
+        {
+            for (int i = parts.Count - 1; i >= 0; i--)
+            {
+                MyCubeGrid grid = parts[i].Grid;
+                if (Permitted(grid))
+                    continue;
+                Log.Info($"Ship model: '{grid.DisplayName}' is no longer yours or your faction's, left out");
+                Unhook(grid);
+                parts.RemoveAt(i);
+                dirty = true;
+            }
         }
 
         private static void Unhook(MyCubeGrid grid)
@@ -422,8 +508,9 @@ namespace SpaceEngineersVR.Hands
             return ShipPart.Hull;
         }
 
+        /// <summary>The name the terminal shows: the block's own if it has one and the terminal is open to you, else its kind's.</summary>
         private static string NameOf(MySlimBlock slim) =>
-            slim.FatBlock is MyTerminalBlock terminal && terminal.CustomName != null && terminal.CustomName.Length > 0
+            slim.FatBlock is MyTerminalBlock terminal && terminal.CustomName != null && terminal.CustomName.Length > 0 && terminal.HasLocalPlayerAccess()
                 ? terminal.CustomName.ToString()
                 : slim.BlockDefinition?.DisplayNameText ?? "Block";
 

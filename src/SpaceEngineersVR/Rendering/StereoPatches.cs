@@ -142,8 +142,8 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>
         /// The picture is VR's: the eyes, the mirror window, the GUI on its panel at <see cref="GuiLayout.Size"/>, the cursor
         /// through the panel, the HUD's projection and the blood overlay. Off until a headset is first found, so a PC with
-        /// an OpenXR runtime and no headset shows the game as it is; after that off again while the headset is away
-        /// (<see cref="FollowHeadset"/>). Read from any thread.
+        /// an OpenXR runtime and no headset shows the game as it is; after that it goes off again while the headset is away
+        /// (<see cref="FollowHeadset"/>), but that is off for now (<see cref="FlatWhenAway"/>). Read from any thread.
         /// </summary>
         internal static bool VRPicture => vrPicture;
 
@@ -177,7 +177,7 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// The picture went back to the game's because the headset is away (<see cref="FollowHeadset"/>); VR's again when its
-        /// session has the focus. Read from any thread.
+        /// session has the focus. Never true while <see cref="FlatWhenAway"/> is off. Read from any thread.
         /// </summary>
         internal static bool PlayingFlat => playingFlat;
 
@@ -258,7 +258,8 @@ namespace SpaceEngineersVR.Rendering
         /// Game thread, every frame (<see cref="Plugin.Update"/>), once the headset has been found: the picture goes back to
         /// the game's when the headset has been away for <see cref="AwaySeconds"/> (it died, sleeps, was taken off or
         /// unplugged, or its runtime closed), so the game goes on on the monitor with the keyboard and mouse; it turns to
-        /// VR's again when the session has the focus, a new one after a loss included.
+        /// VR's again when the session has the focus, a new one after a loss included. While <see cref="FlatWhenAway"/> is off,
+        /// as it is for now, nothing here runs and the picture stays VR's.
         /// </summary>
         internal static void FollowHeadset()
         {

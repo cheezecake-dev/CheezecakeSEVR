@@ -41,14 +41,25 @@ namespace SpaceEngineersVR.Hands
                 return;
             }
             Target target = Cast(origin, direction, voxelsToo: true);
-            Send(kind, target);
+            if (!Send(kind, target))
+                return;
             flash = new Flash { Point = target.Point, Color = target.Color, Distance = Vector3D.Distance(origin, target.Point), Started = FlashClock() };
             Haptics.Pulse(VRSettings.DominantHand, CommitAmplitude, CommitSeconds);
         }
 
-        /// <summary>The GPS, and for a ping the chat line. Internal so the drive can send a target it cast itself.</summary>
-        internal static void Send(Kind kind, Target target)
+        /// <summary>
+        /// The GPS, and for a ping the chat line. Internal so the drive can send a target it cast itself. A target that met
+        /// nothing within range sends nothing and makes no GPS; returns whether anything was sent.
+        /// </summary>
+        internal static bool Send(Kind kind, Target target)
         {
+            if (!target.Hit)
+            {
+                LastResult = $"no {(kind == Kind.Ping ? "ping" : "mark")}: nothing within {Metres(Range)}";
+                Log.Info("Ping: " + LastResult);
+                Notify($"Nothing in range ({Metres(Range)})", NotifyMilliseconds);
+                return false;
+            }
             MySession session = MySession.Static;
             long me = session.LocalPlayerId;
             string player = session.LocalHumanPlayer?.DisplayName ?? "VR";
@@ -83,6 +94,7 @@ namespace SpaceEngineersVR.Hands
             LastResult = $"{(kind == Kind.Ping ? "ping" : "mark")} '{gps.Name}' ({target.What}) at {gps.Coords.X:0.##}, {gps.Coords.Y:0.##}, {gps.Coords.Z:0.##}; {where}";
             Log.Info("Ping: " + LastResult);
             Notify(kind == Kind.Ping ? $"Pinged: {target.Line}" : $"GPS added: {gps.Name}", NotifyMilliseconds);
+            return true;
         }
 
         /// <summary>
@@ -105,9 +117,10 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// The chat line, in the faction's channel or the global one as the Ping chat setting says, through the game's own
-        /// send (MyGuiScreenChat.SendChatMessage, with the channel chosen here rather than the chat screen's). Every client
-        /// that receives it adds the GPS in it to its list (MyGpsCollection.ParseChat). Returns where it went.
+        /// The chat line, in the faction's channel, or the global one only when the Ping chat setting says so for a player with
+        /// no faction (it does not by default: the ping then stays the player's own marker), through the game's own send
+        /// (MyGuiScreenChat.SendChatMessage, with the channel chosen here rather than the chat screen's). Every client that
+        /// receives it adds the GPS in it to its list (MyGpsCollection.ParseChat). Returns where it went.
         /// </summary>
         private static string Chat(string text)
         {
@@ -152,8 +165,10 @@ namespace SpaceEngineersVR.Hands
             if (!voxelsToo && !target.Hit && preview.Hit && preview.What != null && preview.What.StartsWith("voxel", StringComparison.Ordinal))
                 target = preview; // keep the far surface found last time until the next geometry cast
             preview = target;
-            string distance = target.Hit ? Metres(Vector3D.Distance(origin, target.Point)) : "where you are";
-            SetLabel($"{target.Line}, {distance}.  {AimVerb}");
+            if (target.Hit)
+                SetLabel($"{target.Line}, {Metres(Vector3D.Distance(origin, target.Point))}.  {AimVerb}");
+            else
+                SetLabel($"Nothing in range ({Metres(Range)})");
         }
 
         private static string Metres(double m) => m < 1000d ? $"{m:0} m" : $"{m / 1000d:0.0} km";
