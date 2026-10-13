@@ -7,7 +7,8 @@ namespace SpaceEngineersVR.Hands
     /// Something solid a hand has met this frame: where (<see cref="Point"/>, on the surface, world), which way out
     /// (<see cref="Normal"/>, world, unit), how far the real hand went through (<see cref="Depth"/>, metres, positive), and
     /// what it is (<see cref="Source"/>: compared with <see cref="object.Equals(object)"/> frame to frame, so a surface keeps
-    /// the same value while the hand stays on it, and its ToString names it in the log).
+    /// the same value while the hand stays on it, and its ToString names it in the log). <see cref="Silent"/> leaves the tick
+    /// on first contact to whoever else marks the surface.
     /// </summary>
     internal struct HandContact
     {
@@ -15,6 +16,9 @@ namespace SpaceEngineersVR.Hands
         public Vector3 Normal;
         public float Depth;
         public object Source;
+
+        /// <summary>No tick on the controller for this contact (the helmet's own tick, <see cref="HeadGestures"/>, marks the hand reaching it).</summary>
+        public bool Silent;
     }
 
     /// <summary>One kind of solid thing the hands stop on (screens' glass, hulls, terrain), asked once per hand per frame.</summary>

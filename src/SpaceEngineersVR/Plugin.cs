@@ -59,10 +59,13 @@ namespace SpaceEngineersVR
         /// <summary>
         /// Called by the game once a frame, on the game thread: patches what changes play once the headset is first found,
         /// turns the picture to the game's while the headset is away and back when it returns (off for now:
-        /// <c>StereoPatches.FlatWhenAway</c>), and shows the notice about patches that failed.
+        /// <c>StereoPatches.FlatWhenAway</c>), and shows the notice about patches that failed. Before that, and whatever becomes of
+        /// it, the eyes come back after a failure when the world allows (<see cref="MenuFallback"/>). Offers the mod API while a
+        /// world runs (<see cref="Api.SevrApi"/>).
         /// </summary>
         public void Update()
         {
+            MenuFallback.Update();
             if (!updateGuard.On)
                 return;
             try
@@ -70,6 +73,7 @@ namespace SpaceEngineersVR
                 StereoPatches.PatchForHeadset();
                 StereoPatches.FollowHeadset();
                 PatchRegistry.Update();
+                Api.SevrApi.Update();
             }
             catch (Exception e)
             {

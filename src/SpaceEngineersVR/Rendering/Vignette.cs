@@ -133,11 +133,33 @@ namespace SpaceEngineersVR.Rendering
                 for (int x = 0; x < size; x++)
                 {
                     float u = (x + 0.5f) / size - 0.5f, v = (y + 0.5f) / size - 0.5f;
-                    float radius = (float)Math.Sqrt(u * u + v * v);
-                    data[(y * size + x) * 4 + 3] = (byte)(Fade((radius - InnerUv) / (OuterUv - InnerUv)) * 255f + 0.5f);
+                    data[(y * size + x) * 4 + 3] = (byte)(AlphaAt(u, v) * 255f + 0.5f);
                 }
             }
             return data;
+        }
+
+        /// <summary>The texture's darkness at (<paramref name="u"/>, <paramref name="v"/>) from its middle, as shares of its size.</summary>
+        private static float AlphaAt(float u, float v) => Fade(((float)Math.Sqrt(u * u + v * v) - InnerUv) / (OuterUv - InnerUv));
+
+        /// <summary>
+        /// How dark the vignette is now (0 clear to 1 black) in the direction <paramref name="inHead"/>, in the head's own space
+        /// (-z ahead), for what is shown over the eyes as a layer of its own and should be dimmed with them (the external view's
+        /// screen, <see cref="VisorGlass.CopyThrough"/>): the texture as <see cref="Layout"/> lays it at the current strength, the
+        /// direction taken onto the eye through the headset's field of view, centred (the eye's off-centre shift left out).
+        /// Behind the head: as dark as the vignette's edge.
+        /// </summary>
+        public static float DarknessAt(Vector3 inHead)
+        {
+            float strength = Strength;
+            if (strength < Visible || Off)
+                return 0f;
+            HeadsetFov.Half(out float halfWide, out float halfHigh);
+            if (inHead.Z >= -1e-3f)
+                return AlphaAt(OuterUv, 0f);
+            float x = inHead.X / -inHead.Z / (float)Math.Tan(halfWide), y = inHead.Y / -inHead.Z / (float)Math.Tan(halfHigh);
+            float scale = Scale(strength);
+            return AlphaAt(x / (2f * scale), y / (2f * scale));
         }
 
         /// <summary>Smootherstep, so the edge of the clear middle and the start of the black have no visible line.</summary>

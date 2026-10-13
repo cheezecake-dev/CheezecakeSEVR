@@ -462,6 +462,11 @@ namespace SpaceEngineersVR.Tracking
             Hands.HandStop.Apply(hand, body, state, trackingToModel, ref target);
             // The other hand on the held tool's grip settles there (Hands.TwoHand), and stays on it.
             float onTool = Hands.TwoHand.Settle(hand, ref target, out Vector3 grip);
+            // A hand on one of ColbyJack1134's cockpit sticks is drawn on the stick's palm, and its fingers close round it.
+            bool onStick = Cockpits.CockpitControls.PalmTarget(hand, body, ref target);
+            // A hand on one of his dashboard switches, covers or levers stays on it; on a handle bar its fingers close round the bar.
+            if (!onStick && Cockpits.CockpitTouch.PalmTarget(hand, body, ref target, out bool onBar))
+                onStick = onBar;
 
             if (Mode == 4)
             {
@@ -498,7 +503,9 @@ namespace SpaceEngineersVR.Tracking
             if (easeLog && other)
                 EaseLog(hand, onTool, use.EaseFrom > 0f, result);
             HandResidual.Solved(hand, chain.Palm, target, bones[chain.Palm].AbsoluteTransform);
-            if (Mode != 2)
+            if (Mode != 2 && onStick)
+                Cockpits.CockpitHand.StickFingers(bones, fingers, state.Trigger);
+            else if (Mode != 2)
             {
                 ArmSolver.Curl(bones, fingers,
                     IndexCurl(hand, state),

@@ -98,7 +98,16 @@ namespace SpaceEngineersVR.Input
         private static int zeroGPitchLogged, zeroGRollLogged;
 
         /// <summary>Gravity at or below this (m/s², squared) is zero g: the game's own line, below which it does not stand the body up (MyCharacter.UpdateStandup).</summary>
-        private const float ZeroGSquared = 0.1f;
+        internal const float ZeroGSquared = 0.1f;
+
+        /// <summary>The furthest the head looks round from the body, radians: past it the thrust, the character's head and the helmet stop turning, and the eyes turn on inside the helmet. The game has no yaw limit of its own outside ladders; a neck turns about this far.</summary>
+        internal static float MaxLookYaw { get; set; } = DefaultMaxLookYaw;
+
+        /// <summary>The default of <see cref="MaxLookYaw"/>, 70 deg; RenderDebug MaxLookYaw=n sets it, degrees, while the game runs.</summary>
+        internal static readonly float DefaultMaxLookYaw = MathHelper.ToRadians(70f);
+
+        /// <summary>The furthest the head looks up or down from the body, radians: the game's own limit on the character's head (MyCharacter.MAX_HEAD_LOCAL_X_ANGLE, 89 deg).</summary>
+        internal static readonly float MaxLookPitch = MathHelper.ToRadians(89f);
 
         /// <summary>The jetpack rolls the body by the roll input times this, radians (MyCharacterJetpackComponent.MoveAndRotate).</summary>
         private const float JetpackRollPerUnit = 0.02f;
@@ -235,6 +244,9 @@ namespace SpaceEngineersVR.Input
                 cameraView = seatSticks = false;
                 ControlGrip.Frame(false);
                 HandFlight.Frame(false);
+                Cockpits.CockpitControls.Stop();
+                Cockpits.SeatFit.Reset();
+                Cockpits.CockpitButtons.Reset();
                 stickUp = stickDown = false;
                 flickArmed = true;
                 cameraFlickArmed = true;
@@ -261,8 +273,16 @@ namespace SpaceEngineersVR.Input
             context = Resolve(out cameraView, out seatSticks, out string detail);
             LogContext(detail);
             VRPrompts.Frame(context);
-            ControlGrip.Frame(context == VRContext.Ship && seatSticks);
-            HandFlight.Frame(context == VRContext.Ship && seatSticks);
+            // ColbyJack1134's cockpit sticks first: where his rig owns the seat, ControlGrip and HandFlight stand down.
+            Cockpits.CockpitControls.Update(MenuScreen() != null);
+            bool colby = Cockpits.CockpitControls.Owns;
+            // His seat fit, in the seat his rig owns (moved from the quick menu's Seat page, Cockpits.SeatPage).
+            Cockpits.SeatFit.Update();
+            // His dashboard switches and covers, touched by the fingertip and pressed with the trigger or grip.
+            Cockpits.CockpitTouch.BeginFrame();
+            Cockpits.CockpitButtons.Update();
+            ControlGrip.Frame(context == VRContext.Ship && seatSticks && !colby);
+            HandFlight.Frame(context == VRContext.Ship && seatSticks && !colby);
 
             leftStick = Dead(VRInput.Get(Hand.Left).Stick);
             rightStick = Dead(VRInput.Get(Hand.Right).Stick);

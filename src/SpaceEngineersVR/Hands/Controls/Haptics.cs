@@ -14,12 +14,16 @@ namespace SpaceEngineersVR.Hands
     /// The controllers buzz on what happens to the local character, from the game's own events (Harmony postfixes, so
     /// nothing is faked):
     /// <list type="bullet">
-    /// <item>a shot of a hand weapon: a short, strong pulse on the dominant hand;</item>
+    /// <item>a shot of a hand weapon: a pulse shaped by the gun's own recoil and rate of fire, a launcher's a heavy thump, in the
+    /// other hand too while it holds the fore grip; and a light click when the trigger is pulled on an empty gun
+    /// (<c>Haptics.Guns.cs</c>);</item>
     /// <item>a welder, a grinder or a hand drill working: a rumble of its own kind that follows what it touches, asked for
     /// again every frame (<c>Haptics.Tools.cs</c>);</item>
     /// <item>the character taking damage: a pattern for the kind of damage, and a slow heartbeat at low health or oxygen
     /// (<c>Haptics.Damage.cs</c>);</item>
-    /// <item>a block placed from the cube builder: a short click on the dominant hand.</item>
+    /// <item>a block placed from the cube builder: a short click on the dominant hand;</item>
+    /// <item>movement, in both hands: the jetpack's thrust, the magnetic boots locking on and letting go, a hard landing
+    /// (<c>Haptics.Movement.cs</c>).</item>
     /// </list>
     /// All of it is scaled by the "Haptic strength" setting (0 is off), and <c>Haptics=0</c> in the render debug file
     /// switches it off. A pulse goes through <see cref="VRInput.Haptic"/>, so the headset's controllers play it, or the
@@ -31,9 +35,6 @@ namespace SpaceEngineersVR.Hands
         public static bool Off { get; set; }
 
         // ---- What each event feels like. Amplitude 0..1 (before the strength setting), duration in seconds. ----
-
-        /// <summary>A shot: short and strong.</summary>
-        public const float FireAmplitude = 0.9f, FireSeconds = 0.06f;
 
         /// <summary>A block placed: a click.</summary>
         public const float PlaceAmplitude = 0.6f, PlaceSeconds = 0.03f;
@@ -55,6 +56,7 @@ namespace SpaceEngineersVR.Hands
             Hook(harmony, "firing", () => AccessTools.Method(typeof(MyAutomaticRifleGun), nameof(MyAutomaticRifleGun.Shoot),
                 new[] { typeof(MyShootActionEnum), typeof(Vector3), typeof(Vector3D?), typeof(string) }), nameof(AfterShoot));
 
+            PatchGuns(harmony);
             PatchTools(harmony);
             PatchDamage(harmony);
 
@@ -91,8 +93,6 @@ namespace SpaceEngineersVR.Hands
             VRInput.Haptic(hand, Math.Min(1f, amplitude * strength), seconds);
         }
 
-        internal static void Shot() => Pulse(ToolHand, FireAmplitude, FireSeconds);
-
         internal static void BlockPlaced() => Pulse(ToolHand, PlaceAmplitude, PlaceSeconds);
 
         /// <summary>The character is the one playing on this machine.</summary>
@@ -105,7 +105,7 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 if (action == MyShootActionEnum.PrimaryAction && IsLocal(__instance.Owner))
-                    Shot();
+                    Shot(__instance);
             }
             catch (Exception e)
             {

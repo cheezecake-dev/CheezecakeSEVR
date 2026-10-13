@@ -157,15 +157,7 @@ namespace SpaceEngineersVR.Hands
                 if (stats.HealthRatio <= critical)
                     danger = Math.Max(danger, 0.01f);
             }
-            MyCharacterOxygenComponent oxygen = character.OxygenComponent;
-            if (oxygen != null && MySession.Static.Settings.EnableOxygen && oxygen.HelmetEnabled
-                && character.EnvironmentOxygenLevel < character.Definition.PressureLevelForLowDamage)
-            {
-                float low = MyCharacterOxygenComponent.LOW_OXYGEN_RATIO;
-                if (oxygen.SuitOxygenLevel <= low)
-                    danger = Math.Max(danger, Math.Max(0.01f, 1f - oxygen.SuitOxygenLevel / low));
-            }
-            return danger;
+            return Math.Max(danger, Common.SuitAir.Shortness(character, out _));
         }
 
         /// <summary>Heartbeat for the strength of danger: the lub now, the dub a moment later (<see cref="BeatFrame"/>).</summary>
@@ -276,7 +268,10 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 if (IsLocal(__instance))
+                {
                     BeatFrame(__instance.IsDead ? 0f : BeatTest ?? Danger(__instance));
+                    MovementFrame(__instance);
+                }
             }
             catch (Exception e)
             {

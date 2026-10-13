@@ -45,7 +45,7 @@ namespace SpaceEngineersVR
         /// </summary>
         public const string BreakVariable = "SEVR_BREAK_PATCH";
 
-        private const string PluginName = "Cheezecake's SE VR";
+        internal const string PluginName = "Cheezecake's SE VR";
         private const int NoticeNames = 8;
 
         private static readonly List<string> applied = new List<string>();

@@ -36,9 +36,45 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting lensMask = Add(new FlagSetting("lensMask", "Lens mask", "Display", true,
             tooltip: "Skip lighting and shading the corners of each eye the headset's lenses never show (their shape comes from the headset's runtime), which saves GPU time. Those corners show black in the desktop window. Off draws every pixel."));
 
+        private static readonly NumberSetting particleDensity = Add(new NumberSetting("particleDensity", "Particle density", "Display",
+            1f, 0.15f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "How many particles the game's continuous GPU effects make (dust, smoke, sparks, thruster flames, weather), as a share of what its own particle quality gives. 100% leaves the game as it is. Lower makes thinner effects and frees GPU time in busy scenes. You see the change at once."));
+
         private static readonly NumberSetting comfortVignette = Add(new NumberSetting("comfortVignette", "Comfort vignette", "Display",
             0f, 0f, 1f, 0.05f, decimals: 2,
             tooltip: "Darkens the edges of your view while the thumbsticks move or turn you, which eases motion sickness. 0 turns it off. Moving your head never triggers it."));
+
+        private static readonly FlagSetting comfortGrid = Add(new FlagSetting("comfortGrid", "Comfort grid", "Display", false,
+            tooltip: "On the jetpack in zero g, a faint grid at your real floor that stays still around you while you fly, pitch and roll: something steady for your eyes to rest on, which eases motion sickness. It fades in when you fly in zero g and out when you land or come into gravity."));
+
+        private static readonly FlagSetting helmetView = Add(new FlagSetting("helmetView", "Helmet view", "Display", true,
+            tooltip: "You are inside your astronaut's helmet, on foot and in a seat: the helmet's inside round the edge of your view, the visor's glass tinting what you see through it, and the HUD projected onto the glass. Open the helmet and the air hisses out, the glass swings up and its tint and the HUD go with it; the helmet stays round you. Off: none of this, and the HUD as it was without the helmet, staying with the helmet open."));
+
+        private static readonly ChoiceSetting visorTintColour = Add(new ChoiceSetting("visorTintColour", "Visor tint colour", "Display",
+            Rendering.VisorGlass.ColourNames, 0,
+            tooltip: "The colour of your visor's glass. Neutral darkens all colours alike; Gold is an astronaut's sun visor, holding back blue the most; Blue, Green and Rose let their own colour through and hold back the others. The glass filters the light as real tinted glass does: it only ever takes light away, never adds any, so it cannot show more than the game does. Needs Helmet view."));
+
+        private static readonly NumberSetting visorTint = Add(new NumberSetting("visorTint", "Visor tint", "Display",
+            Rendering.VisorGlass.DefaultDarkness, 0f, Rendering.VisorGlass.MostDarkness, 0.01f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "How much light your visor's glass takes away, on average over the colours: 0 is clear glass, 13% is about the game's own visor glass. With a colour, that colour's light goes through more and the others less. Shown while the helmet is closed; it swings away with the glass as the helmet opens. Needs Helmet view. You see the change at once."));
+
+        private static readonly NumberSetting sunVisorTint = Add(new NumberSetting("sunVisorTint", "Sun visor", "Display",
+            0.6f, 0.2f, 0.85f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "Your helmet has a gold sun visor on its outside, as a spacesuit does. Grip the brow of your helmet and draw your hand down to lower it over the glass; grip it and push up to raise it. This is how much light it takes away when down, on top of the glass's own tint. It only ever darkens, for glare off a sun or a bright planet. Needs Helmet view."));
+
+        private static readonly NumberSetting visorGlare = Add(new NumberSetting("visorGlare", "Visor glare", "Display",
+            1f, 0f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "Looking toward the sun through your closed visor, its light scatters in the glass: a glow round the sun and a haze over your view. Lower the sun visor (grip the helmet's brow and draw your hand down) to cut it. Only near the sun, where the game already glares for everyone. This sets how strong it is; 0 turns it off. Needs Helmet view."));
+
+        private static readonly ChoiceSetting helmetBreathing = Add(new ChoiceSetting("helmetBreathing", "Breathing in the helmet", "Display",
+            Rendering.HelmetBreath.LevelNames, 1,
+            tooltip: "With your helmet closed you hear yourself breathe, calm at rest and harder while you sprint and for a moment after: the game's own breathing sounds, inside your helmet. Only you hear it. Quiet or Normal sets how loud; Off: none. Works with Helmet view on or off."));
+
+        private static readonly FlagSetting hudOnHelmet = Add(new FlagSetting("hudOnHelmet", "HUD fixed to the helmet", "Display", true,
+            tooltip: "The HUD is projected on the helmet's glass, so it stays with the helmet: the helmet turns only a little with your head, and turning your head further looks away from the HUD, as in a real helmet. Off: the HUD turns with your head wherever you look. Needs Helmet view and HUD on the visor."));
+
+        private static readonly FlagSetting helmetInterior = Add(new FlagSetting("helmetInterior", "Helmet interior", "Display", true,
+            tooltip: "The inside of your helmet round the edge of your view, close to your eyes as a real helmet is: its padded shell and the visor's seal, lit by the light coming through the glass and by your suit lamp. It stays outside what the game's own view shows, so it hides nothing a player without a headset would see. It turns with the helmet: within your neck's reach it stays put, and turning your head further brings more of it into view. Needs Helmet view."));
 
         private static readonly FlagSetting comfortFade = Add(new FlagSetting("comfortFade", "Fade on camera cuts", "Display", true,
             tooltip: "When the game puts your view somewhere else at once - getting into or out of a seat, a camera block or a turret, a respawn, a jump drive's jump, a teleport, or standing upright as you come into gravity - the view goes black and the world fades back in over a moment. Off: the view cuts straight to the new place."));
@@ -62,9 +98,9 @@ namespace SpaceEngineersVR
             tooltip: "How large the HUD's parts on the visor are drawn, text with its plates and bars, from the middle of the view outward: each grows away from its own edge or corner. The parts are drawn at the larger size, so the text stays sharp (the game's own fonts, as it draws them at a larger UI scale); only when the visor image is full are the largest parts drawn smaller and sampled up. 100% is as wide as the HUD width gives. Needs HUD on the visor; the flat panel is sized by HUD width. You see the change once the menu is closed."));
         private static readonly NumberSetting hudTextBacking = Add(new NumberSetting("hudTextBacking", "HUD text backing", "Interface",
             0f, 0f, 0.9f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
-            tooltip: "A dark plate behind each block of HUD text on the visor, so it can be read against a bright sky or planet. The number is how solid the plate is; 0 draws none. Needs HUD on the visor. You see the change once the menu is closed."));
+            tooltip: "Darkens behind the HUD's text on the visor, so it can be read against a bright sky or planet: with Helmet view on, a soft dark band round the visor's rim behind the HUD; with it off, a dark plate behind each block of text. The number is how dark; 0 draws none. Needs HUD on the visor. You see the change once the menu is closed."));
         private static readonly FlagSetting hudVisor = Add(new FlagSetting("hudVisor", "HUD on the visor", "Interface", true,
-            tooltip: "The HUD's parts sit on your helmet's visor: the toolbar, suit and ship status, block info, chat, notifications and the rest each move out toward their own edge or corner, curve round your head and face your eyes, so the middle of your view stays clear. Markers on things in the world (ore, antennas, target locks, the selection box) and the crosshair stay where they are. Off: the whole HUD on one flat panel ahead of you, as before. The distance and width under HUD set how far and how wide the visor is."));
+            tooltip: "The HUD's parts sit on your helmet's visor, with the middle of your view clear. With Helmet view on the HUD is projected onto the glass as one display curved round your head, laid out whole as the game lays it out: light on the glass that you see through, focused at the HUD distance so your eyes can rest on it, and swinging up with the glass when the helmet opens. With it off, each part moves out toward its own edge or corner, curves round your head and faces your eyes. Markers on things in the world (ore, antennas, target locks, the selection box) and the crosshair stay where they are. Off: the whole HUD on one flat panel ahead of you, as before. The distance and width under HUD set how far and how wide the visor is."));
         private static readonly FlagSetting showToolbarOnFoot = Add(new FlagSetting("showToolbarOnFoot", "Toolbar on the HUD", "Interface", false,
             tooltip: "The HUD's bottom toolbar (the hotbar, its page numbers, the Customize Toolbar and Color lines, and the plate behind them) on foot and on the jetpack. Off: left out there, since the tools wheel and the wrist panel do its job, and a short label names the tool you pick; in a seat, a camera view, the G menu and the terminal it is shown as the game shows it."));
         private static readonly FlagSetting controlHints = Add(new FlagSetting("controlHints", "Control hints", "Interface", true,
@@ -187,6 +223,42 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting handFlying = Add(new FlagSetting("handFlying", "Hand flying", "Controls", false,
             tooltip: "In a ship seat, press a grip with your hand by the stick (dominant hand) or throttle (other hand) to take hold of it, and fly by moving the controller. Off: thumbsticks and grips only."));
 
+        private static readonly FlagSetting colbyCockpit = Add(new FlagSetting("colbyCockpit", "Cockpit sticks", "Cockpits", true,
+            tooltip: "In a cockpit with flight sticks, the sticks in the seat move with your hands. Reach a hand to one and squeeze the grip to take hold of it: tilt the right stick to pitch and roll, twist it to yaw; push and pull the left one to move. Let go and it springs back to centre. In a rover, buggy or speeder, take the wheel or handlebars the same way and turn them to steer. Off: the seat flies with the thumbsticks and grips as set under Piloting."));
+
+        private static readonly FlagSetting colbyThumbsticks = Add(new FlagSetting("colbyThumbsticks", "Thumbstick controls in cockpits", "Cockpits", false,
+            tooltip: "In a cockpit with Cockpit sticks, the thumbsticks also fly or drive as on a gamepad: the left one moves, the right one turns. Off: the cockpit's own sticks, wheel and handlebars fly and drive it. With Cockpit sticks off, the thumbsticks always fly and drive."));
+
+        private static readonly FlagSetting colbyStickTwist = Add(new FlagSetting("colbyStickTwist", "Twist the cockpit sticks", "Cockpits", true,
+            tooltip: "Twisting a held cockpit stick yaws the ship (right stick) or moves it up and down (left stick). Off: the twist does nothing."));
+
+        private static readonly FlagSetting colbyTapHoldSticks = Add(new FlagSetting("colbyTapHoldSticks", "Tap to hold the cockpit sticks", "Cockpits", false,
+            tooltip: "A quick squeeze of the grip by a cockpit stick keeps hold of it without squeezing; squeeze again to let go. Off: you hold a stick only while squeezing."));
+
+        private static readonly FlagSetting colbyTapHoldLevers = Add(new FlagSetting("colbyTapHoldLevers", "Tap to hold analog levers", "Cockpits", false,
+            tooltip: "A quick squeeze of the grip on a cockpit handle keeps hold of it without squeezing; squeeze again to let go. Off: you hold a handle only while squeezing."));
+
+        private static readonly FlagSetting colbyVehicleFlight = Add(new FlagSetting("colbyVehicleFlight", "Fly with the wheel and handlebars", "Cockpits", false,
+            tooltip: "In a rover, buggy or speeder seat, turning the wheel or handlebars yaws the vehicle as a ship, and with the right hand on the wheel the right thumbstick pitches and rolls. A speeder's right grip is a throttle: twist it to go forward. Off: the wheel and handlebars steer the wheels. A cockpit's own Flight Settings, opened from the quick menu's Seat page, override this for that cockpit."));
+
+        private static readonly FlagSetting colbyBarTilt = Add(new FlagSetting("colbyBarTilt", "Two-hand pitch and roll on handlebars", "Cockpits", false,
+            tooltip: "Flying a speeder with the handlebars, holding both grips, raise or lower both hands together to pitch and tilt the bars to roll. Needs Fly with the wheel and handlebars. A cockpit's own Flight Settings, opened from the quick menu's Seat page, override this for that cockpit."));
+
+        private static readonly FlagSetting colbyWheelMotion = Add(new FlagSetting("colbyWheelMotion", "Wheel pitch and roll", "Cockpits", false,
+            tooltip: "Flying a rover or buggy with the wheel, push and pull the wheel to pitch and turn it to roll; with the right hand on the wheel the right thumbstick yaws. Needs Fly with the wheel and handlebars. A cockpit's own Flight Settings, opened from the quick menu's Seat page, override this for that cockpit."));
+
+        private static readonly TextSetting colbySeatFits = Add(new TextSetting("colbySeatFits", "Cockpit seat positions", "Cockpits", hidden: true,
+            tooltip: "Where the quick menu's seat arrows have moved your view in each kind of cockpit, one entry per cockpit, separated by semicolons: cockpit:x,y,z in metres (right, up, back)."));
+
+        private static readonly TextSetting colbyStickPlacements = Add(new TextSetting("colbyStickPlacements", "Cockpit stick placement", "Cockpits", hidden: true,
+            tooltip: "Where you have moved the sticks in each kind of cockpit, one entry per cockpit, separated by semicolons: subtype:left x,y,z,right x,y,z (metres, in the cockpit's frame)."));
+
+        private static readonly TextSetting colbyCockpitSwitches = Add(new TextSetting("colbyCockpitSwitches", "Cockpit switch assignments", "Cockpits", hidden: true,
+            tooltip: "What each dashboard switch of each cockpit does and which switch covers are open, kept per world and cockpit."));
+
+        private static readonly TextSetting colbyFlightTunings = Add(new TextSetting("colbyFlightTunings", "Cockpit flight settings", "Cockpits", hidden: true,
+            tooltip: "Each cockpit's own flight settings, as set from the quick menu's Seat page, kept per world and cockpit."));
+
         private static readonly NumberSetting stickMaxAngle = Add(new NumberSetting("stickMaxAngle", "Stick full deflection", "Controls",
             25f, 10f, 45f, 1f, unit: "deg", decimals: 0,
             tooltip: "How far you tilt or twist the held stick for full pitch, roll or yaw. Smaller is twitchier."));
@@ -208,6 +280,9 @@ namespace SpaceEngineersVR
         private static readonly NumberSetting hapticStrength = Add(new NumberSetting("hapticStrength", "Haptic strength", "Controls",
             1f, 0f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
             tooltip: "How hard the controllers buzz when you fire, weld, grind or drill, place a block or get hit, and for the heartbeat. 0 turns all of it off."));
+        private static readonly FlagSetting hapticMovement = Add(new FlagSetting("hapticMovement", "Movement", "Controls", true,
+            tooltip: "Feel your movement in both hands: a rumble while the jetpack fires, stronger the harder it pushes (braking with the dampeners too), a clunk as your magnetic boots lock on and a click as they let go, and a jolt when you land hard. Scaled by Haptic strength."));
+
         private static readonly FlagSetting hapticHeartbeat = Add(new FlagSetting("hapticHeartbeat", "Heartbeat", "Controls", true,
             tooltip: "A slow double pulse in both controllers while your health or your suit's oxygen is low, until it recovers. Off: hits and tools still buzz."));
         private static readonly FlagSetting grabToUse = Add(new FlagSetting("grabToUse", "Grab to use", "Controls", true,
@@ -229,8 +304,8 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting fingerPress = Add(new FlagSetting("fingerPress", "Press with fingertip", "Controls", true,
             tooltip: "On foot, touching a push-button with the tip of a controller's index finger presses it, as the Use key does: the buttons of a button panel, and the next, previous and pause buttons of a jukebox. Doors, seats, terminals and cargo are not touched. Not while that hand holds a tool, a menu is up or you are on a ladder or seated. Off: only the Use key and the hand's ray."));
 
-        private static readonly FlagSetting helmetAndLamp = Add(new FlagSetting("helmetAndLamp", "Suit lamp by hand", "Controls", true,
-            tooltip: "On foot, grip your helmet with either hand, or tap the side of your head with a fingertip, to switch the suit lamp. A grip anywhere else keeps its old job (Use, the toolbar wheel). The helmet itself is on the wrist panel and the actions wheel. Off: the key and the wrist panel only."));
+        private static readonly FlagSetting helmetAndLamp = Add(new FlagSetting("helmetAndLamp", "Helmet and lamp by hand", "Controls", true,
+            tooltip: "On foot or in a seat, with either hand, grip the right side of your helmet to open or close it, the left side to switch your suit lamp (with Helmet view off, either side switches the lamp); tap the side of your head with a fingertip for the lamp. A grip anywhere else keeps its old job (Use, the toolbar wheel). Off: the keys, the wrist panel and the actions wheel only."));
         private static readonly FlagSetting moveViewByHand = Add(new FlagSetting("moveViewByHand", "Move the external view by hand", "Controls", true,
             tooltip: "Grip the external view screen with either hand to pick it up and put it anywhere; it stays where you let go, the next time too. The External view page's Reset puts it back on the dash. Off: it stays on the dash."));
         private static readonly FlagSetting touchToolbar = Add(new FlagSetting("touchToolbar", "Touch toolbar on the cockpit screen", "Controls", true,
@@ -313,6 +388,9 @@ namespace SpaceEngineersVR
             1080f, 360f, 2160f, 40f, unit: "px", decimals: 0, restart: true, integer: true,
             tooltip: "Height of the game window on your monitor."));
 
+        private static readonly FlagSetting freeMouse = Add(new FlagSetting("freeMouse", "Mouse can leave the window", "Advanced", true,
+            tooltip: "While VR runs, the game does not hold the desktop mouse inside its window (it does that whenever the cursor is hidden in play), so the mouse can reach your other monitors. Off: the game's own confinement. You see the change at once. Windows only."));
+
         // ---- What the rest of the plugin reads. ----
 
         /// <summary>-novr: load the plugin but leave the game untouched.</summary>
@@ -326,13 +404,16 @@ namespace SpaceEngineersVR
 
         public static int MirrorHeight => (int)mirrorHeight.Value;
 
+        /// <summary>The game does not confine the desktop mouse to its window while VR runs (<see cref="Input.CursorClip"/>).</summary>
+        public static bool FreeMouse => freeMouse.Value;
+
         /// <summary>The game's sound goes to the headset's audio device, when the runtime names one (<see cref="Rendering.HeadsetAudio"/>). Read at the next game start.</summary>
         public static bool HeadsetAudio => headsetAudio.Value;
 
         /// <summary>The game's toolbar stays on the HUD on foot too; off (the default) it is left out there (<see cref="Rendering.HudToolbar"/>).</summary>
         public static bool ShowToolbarOnFoot => showToolbarOnFoot.Value;
 
-        /// <summary>The HUD's parts are on the visor, curved round the head, and its markers on the flat panel (<see cref="Rendering.HudVisor"/>); off, all of it is on the panel.</summary>
+        /// <summary>The HUD's parts are on the visor, curved round the head (one display with the helmet view, a layer each without), and its markers on the flat panel (<see cref="Rendering.HudVisor"/>); off, all of it is on the panel.</summary>
         public static bool HudVisor => hudVisor.Value;
 
         /// <summary>How far ahead of the eyes the GUI and HUD panel floats, metres (-hudDistance 1.5).</summary>
@@ -360,7 +441,7 @@ namespace SpaceEngineersVR
         /// <summary>How large the HUD's parts on the visor are, 1 as the HUD width gives (<see cref="Rendering.HudVisor"/>).</summary>
         public static float HudTextSize => hudTextSize.Value;
 
-        /// <summary>How solid the dark plate behind HUD text on the visor is, 0 (none) to 0.9.</summary>
+        /// <summary>How dark the backing behind HUD text on the visor is (a band round the rim with the helmet view, a plate behind each text without), 0 (none) to 0.9.</summary>
         public static float HudTextBacking => hudTextBacking.Value;
 
         /// <summary>How wide the quick-actions panel is on the left wrist, metres (<see cref="Rendering.WorldMenu"/>).</summary>
@@ -368,6 +449,33 @@ namespace SpaceEngineersVR
 
         /// <summary>How strongly the comfort vignette darkens the edges of the view while the sticks move or turn you, 0 (off) to 1 (<see cref="Rendering.Vignette"/>).</summary>
         public static float ComfortVignette => comfortVignette.Value;
+
+        /// <summary>On the jetpack in zero g, a faint grid at the player's real floor that stays with the player (<see cref="Rendering.ComfortGrid"/>).</summary>
+        public static bool ComfortGrid => comfortGrid.Value;
+
+        /// <summary>The view is from inside the helmet, on foot and in a seat: the helmet's inside round the view, the visor's glass a tint, the HUD projected on the visor (glass and HUD gone with the helmet open), the head's turn from the body limited (<see cref="Input.VRControls.MaxLookYaw"/>); off, none of it.</summary>
+        public static bool HelmetView => helmetView.Value;
+
+        /// <summary>The visor's tint colour, an index into <see cref="Rendering.VisorGlass.ColourNames"/>.</summary>
+        public static int VisorTintColour => visorTintColour.Value;
+
+        /// <summary>How much light the visor's glass takes away, 0 (clear) to <see cref="Rendering.VisorGlass.MostDarkness"/>, averaged over the colours by brightness.</summary>
+        public static float VisorTint => visorTint.Value;
+
+        /// <summary>How much light the sun visor takes away when lowered (<see cref="Rendering.SunVisor"/>), gold.</summary>
+        public static float SunVisorTint => sunVisorTint.Value;
+
+        /// <summary>How strong the sun's glare in the visor's glass is, 0 none to 1 (<see cref="Rendering.VisorGlare"/>).</summary>
+        public static float VisorGlare => visorGlare.Value;
+
+        /// <summary>How loud the breathing in the closed helmet is, an index into <see cref="Rendering.HelmetBreath.LevelNames"/> (0 none).</summary>
+        public static int HelmetBreathing => helmetBreathing.Value;
+
+        /// <summary>The HUD projected on the glass stays with the helmet as it turns (<see cref="Rendering.HelmetTurn"/>), not with the head.</summary>
+        public static bool HudOnHelmet => hudOnHelmet.Value;
+
+        /// <summary>The helmet's inside round the view (<see cref="Rendering.HelmetInterior"/>), with the helmet view on.</summary>
+        public static bool HelmetInterior => helmetInterior.Value;
 
         /// <summary>A cut of the view is faded from black (<see cref="Rendering.CameraCut"/>).</summary>
         public static bool ComfortFade => comfortFade.Value;
@@ -505,6 +613,9 @@ namespace SpaceEngineersVR
         /// <summary>The parts of the eyes the lenses never show are left out of the costly passes (<see cref="Rendering.LensMask"/>).</summary>
         public static bool LensMask => lensMask.Value;
 
+        /// <summary>The share of the game's continuous GPU particle emission that is made, 0.15 to 1 (<see cref="Rendering.ParticleDensity"/>).</summary>
+        public static float ParticleDensity => particleDensity.Value;
+
         /// <summary>The external view is drawn every other frame.</summary>
         public static bool ExternalViewHalfRate => externalViewHalfRate.Value;
         /// <summary>Third person in a ship: the camera keeps the horizon level (<see cref="Tracking.ChaseCamera"/>) instead of rolling with the ship.</summary>
@@ -612,6 +723,9 @@ namespace SpaceEngineersVR
         /// <summary>The slow pulse at low health or oxygen (<see cref="Hands.Haptics"/>).</summary>
         public static bool HapticHeartbeat => hapticHeartbeat.Value;
 
+        /// <summary>The jetpack, the magnetic boots and hard landings are felt in the hands (<see cref="Hands.Haptics"/>).</summary>
+        public static bool HapticMovement => hapticMovement.Value;
+
         /// <summary>How far a thumbstick has to be pushed before it counts, 0 to 1.</summary>
         public static float StickDeadzone => stickDeadzone.Value;
 
@@ -620,6 +734,72 @@ namespace SpaceEngineersVR
 
         /// <summary>In a pilot seat the ship flies only while its stick and throttle are held (<see cref="Input.ControlGrip"/>).</summary>
         public static bool HandsOnControls => handsOnControls.Value;
+
+        /// <summary>ColbyJack1134's cockpit sticks and throttles (<see cref="Cockpits.CockpitControls"/>); RenderDebug ColbyCockpit=0/1 overrides it.</summary>
+        public static bool ColbyCockpit => ColbyCockpitOverride ?? colbyCockpit.Value;
+
+        /// <summary>Set by RenderDebug's ColbyCockpit switch; null follows the setting.</summary>
+        internal static bool? ColbyCockpitOverride;
+
+        /// <summary>
+        /// Our thumbstick flight (ShipStick) works in a seat ColbyJack1134's rig owns: off by default there, so his sticks, wheel and
+        /// bars fly it; always on with his cockpit setting off.
+        /// </summary>
+        public static bool ColbyThumbsticks => !ColbyCockpit || colbyThumbsticks.Value;
+
+        /// <summary>A held cockpit stick's twist counts (his StickTwist).</summary>
+        public static bool ColbyStickTwist => colbyStickTwist.Value;
+
+        /// <summary>A tap on a cockpit stick latches the hold (his TapHoldSticks).</summary>
+        public static bool ColbyTapHoldSticks
+        {
+            get => colbyTapHoldSticks.Value;
+            set => colbyTapHoldSticks.Set(value);
+        }
+
+        /// <summary>A tap on a cockpit handle latches the hold (his TapHoldLevers).</summary>
+        public static bool ColbyTapHoldLevers
+        {
+            get => colbyTapHoldLevers.Value;
+            set => colbyTapHoldLevers.Set(value);
+        }
+
+        /// <summary>His FlightTuning.FlightMode for a wheel cockpit with no flight settings of its own: the wheel flies the vehicle as a ship.</summary>
+        public static bool ColbyVehicleFlight => colbyVehicleFlight.Value;
+
+        /// <summary>His FlightTuning.BarTiltEnabled for a wheel cockpit with no flight settings of its own: two-hand pitch and roll on a speeder's bars.</summary>
+        public static bool ColbyBarTilt => colbyBarTilt.Value;
+
+        /// <summary>His FlightTuning.WheelMotion for a wheel cockpit with no flight settings of its own: a rover or buggy wheel flown as a yoke.</summary>
+        public static bool ColbyWheelMotion => colbyWheelMotion.Value;
+
+        /// <summary>His seat fits, one per cockpit subtype (<see cref="Cockpits.SeatFit"/>).</summary>
+        public static string ColbySeatFits
+        {
+            get => colbySeatFits.Value;
+            set => colbySeatFits.Set(value);
+        }
+
+        /// <summary>The cockpit sticks' placement per subtype, as the settings file holds it (his StickPlacements; <see cref="Cockpits.CockpitControls"/>).</summary>
+        public static string ColbyStickPlacements
+        {
+            get => colbyStickPlacements.Value;
+            set => colbyStickPlacements.Set(value);
+        }
+
+        /// <summary>The dashboard switches' toolbar and covers per world and cockpit (<see cref="Cockpits.CockpitActions"/>).</summary>
+        public static string ColbyCockpitSwitches
+        {
+            get => colbyCockpitSwitches.Value;
+            set => colbyCockpitSwitches.Set(value);
+        }
+
+        /// <summary>Each cockpit's own FlightTuning per world and cockpit (<see cref="Cockpits.FlightSettings"/>).</summary>
+        public static string ColbyFlightTunings
+        {
+            get => colbyFlightTunings.Value;
+            set => colbyFlightTunings.Set(value);
+        }
 
         /// <summary>The held stick's twist yaws the ship (<see cref="Input.ControlGrip.PitchAndYaw"/>).</summary>
         public static bool YawFromTwist => yawFromTwist.Value;

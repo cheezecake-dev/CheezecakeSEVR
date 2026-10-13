@@ -29,6 +29,7 @@ namespace SpaceEngineersVR.Tracking
         private static bool tracked;
         private static Matrix raw, head;
         private static float? originAboveFloor;
+        private static float heightReference;
         private static long sampledAt;
         private static float yaw, pitch, roll;
         private static float anchor;
@@ -82,6 +83,46 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>Head yaw relative to the body this frame, radians, + left.</summary>
         public static float Yaw => yaw;
+
+        /// <summary>
+        /// The head's look from the body this frame, limited as a neck is (<see cref="Input.VRControls.MaxLookYaw"/>,
+        /// <see cref="Input.VRControls.MaxLookPitch"/>): what the zero-g thrust, the character's head and the helmet turn by.
+        /// Bent back past straight up (or forward past straight down), <see cref="Yaw"/> comes out turned half round and
+        /// <see cref="Pitch"/> short of the bend, the roll half round with them; that is undone first, so the look stops at
+        /// straight up (down) facing the body's way instead of flipping round behind it. A head rolled over while looking
+        /// about level (the pitch under 45 deg) is taken as rolled, and keeps its yaw.
+        /// </summary>
+        public static void LimitedLook(out float limitedYaw, out float limitedPitch)
+        {
+            Look(out float y, out float p);
+            limitedYaw = MathHelper.Clamp(y, -Input.VRControls.MaxLookYaw, Input.VRControls.MaxLookYaw);
+            limitedPitch = MathHelper.Clamp(p, -Input.VRControls.MaxLookPitch, Input.VRControls.MaxLookPitch);
+        }
+
+        /// <summary>
+        /// The head's look from the body as <see cref="LimitedLook"/> takes it before the limits: bent back past straight up
+        /// (or forward past straight down), turned back round. With <see cref="LimitedLook"/>, how far the head has turned
+        /// on inside the helmet past the neck's limits (<see cref="Rendering.HelmetInterior"/>).
+        /// </summary>
+        public static void Look(out float lookYaw, out float lookPitch)
+        {
+            lookYaw = yaw;
+            lookPitch = pitch;
+            if (head.Up.Y < 0f && Math.Abs(lookPitch) > MathHelper.PiOver4)
+            {
+                lookPitch = Math.Sign(lookPitch) * (MathHelper.Pi - Math.Abs(lookPitch));
+                lookYaw = MathHelper.WrapAngle(lookYaw + MathHelper.Pi);
+            }
+        }
+
+        /// <summary>How high the tracking space's origin is above the floor in this frame's snapshot, metres; null when the headset gives no floor.</summary>
+        public static float? OriginAboveFloor => originAboveFloor;
+
+        /// <summary>
+        /// The height in the tracking space at which the head is at the character's eye this frame (<see cref="HeadCentre.HeightReference"/>;
+        /// in a seat, the sit-down's), for <see cref="Rendering.ComfortGrid"/> to find the floor by the eye height when the headset gives none.
+        /// </summary>
+        public static float HeightReference => heightReference;
 
         /// <summary>A head was tracked in the last snapshot taken (this frame's once a head matrix has been built in it), for the logs.</summary>
         public static bool Tracked
@@ -241,9 +282,15 @@ namespace SpaceEngineersVR.Tracking
             }
         }
 
+        /// <summary>How many recentres have been taken: ColbyJack1134's cockpit lets go of its sticks when this changes.</summary>
+        internal static int Recentres => System.Threading.Volatile.Read(ref recentres);
+
+        private static int recentres;
+
         /// <summary>Takes the recentre asked for from this frame's head, then places the head. Caller holds the gate.</summary>
         private static void TakeRecentre()
         {
+            recentres++;
             Vector3 before = head.Translation;
             float turned = yaw;
             recentreAfter = -1;
@@ -359,6 +406,7 @@ namespace SpaceEngineersVR.Tracking
             // pose, so this is in the camera the game builds and is not repeated by the renderer's eye placement.
             // In a seat, from the sit-down's centre on all three axes, whatever the play position.
             float reference = inSeat ? seatCentre.Y : HeadCentre.HeightReference(seated, centre.Y, originAboveFloor, VRSettings.EyeHeight);
+            heightReference = reference;
             head.Translation = HeadCentre.Place(raw.Translation, inSeat ? seatCentre : centre, anchor, reference) + new Vector3(0f, VRSettings.HeightOffset, 0f);
 
             // On foot with the lock's pushed edge in use: a head past the edge moves the on-foot centre with it (PushOnFoot).

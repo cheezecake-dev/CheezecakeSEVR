@@ -69,7 +69,8 @@ namespace SpaceEngineersVR.Input
         /// <summary>
         /// A second press on a grid within <see cref="DoubleClickSeconds"/> of the first and this near it (degrees of aim, at
         /// the distance the ray hits) goes where the first went: the game counts a double click only within 0.005 of its
-        /// screen units (about 7 pixels of 1080), a quarter of a degree at two metres.
+        /// screen units (about 7 pixels of 1080), a quarter of a degree at two metres. Lists and tables are not pressed through
+        /// here: their check is the wider one of <see cref="DoubleClickTolerance"/>.
         /// </summary>
         internal const float DoubleClickDegrees = 1.5f;
 
@@ -133,13 +134,6 @@ namespace SpaceEngineersVR.Input
                     postfix: new HarmonyMethod(typeof(Laser), nameof(AfterInput)) { priority = Priority.Last });
             }, "Laser pointer (mouse input) could not be hooked; it will not reach the game");
 
-            PatchRegistry.Apply("visible line", () =>
-            {
-                // The gameplay screen's draw: only when there is a scene, never on the main menu. Billboards added up to the
-                // end of the game's frame are drawn in it (MyRenderProxy.AfterUpdate swaps them to the renderer).
-                harmony.Patch(AccessTools.Method(typeof(MySession), nameof(MySession.DrawSync)),
-                    postfix: new HarmonyMethod(typeof(Laser), nameof(DrawLine)));
-            }, "Laser pointer (visible line) could not be hooked; the cursor still works");
         }
 
         /// <summary>The laser has the cursor: it is where the hand's ray hits the panel.</summary>
@@ -154,7 +148,7 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>
         /// The beam as the last frame left it, both ends in the tracking space, to where the ray meets the panel: from the
-        /// drawn hand's fingertip, as <see cref="DrawLine"/> starts it, or from the controller's aim pose where no hand is drawn
+        /// drawn hand's fingertip, or from the controller's aim pose where no hand is drawn
         /// (the main menu and the forced view, where <see cref="Rendering.MainMenu"/> draws the beam into the eyes). The
         /// headset's beam over the panel draws it too, and has to meet the world's beam at the hand.
         /// Any thread. False when the laser is not on the panel.
@@ -518,42 +512,5 @@ namespace SpaceEngineersVR.Input
             suppressed = 0;
         }
 
-        /// <summary>
-        /// Game thread, in the gameplay screen's draw: a thin line from the drawn hand's index fingertip (the aim pose's own
-        /// origin is below the drawn hand) to where the ray hits the panel, as the game draws its own lines (billboards), in
-        /// the world where the hand is (<see cref="HandWorld"/>). Given in the character's space
-        /// (<see cref="MotionExtrapolation.AddLine"/>), so it stays on the hand and the panel when the view is moved on past
-        /// the game frame, in a moving ship or on foot.
-        /// </summary>
-        private static void DrawLine()
-        {
-            if (!guard.On)
-                return;
-            try
-            {
-                Vector3 from, to;
-                lock (gate)
-                {
-                    if (!lineOn)
-                        return;
-                    from = lineTip;
-                    to = lineTo;
-                }
-                // In the forced view no eye sees the world: the beam is drawn into the black eyes instead (Rendering.MainMenu),
-                // and a billboard here would hang in the game camera's picture on the screen ahead.
-                if (Off || Rendering.ForcedView.Showing || !MyTransparentGeometry.HasCamera || !HandWorld.TryGetTrackingToWorld(out MatrixD toWorld))
-                    return;
-                Vector3D start = Vector3D.Transform((Vector3D)from, toWorld);
-                Vector3D along = Vector3D.Transform((Vector3D)to, toWorld) - start;
-                double length = along.Length();
-                if (length < 0.02)
-                    return;
-                MotionExtrapolation.AddLine(LineMaterial, LineColor, start, (Vector3)(along / length), (float)length, LineThickness);
-            }
-            catch (Exception e)
-            {
-                guard.Failed(e, "Laser pointer could not draw its line");
-            }
-        }
     }
 }

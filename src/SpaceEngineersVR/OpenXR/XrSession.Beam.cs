@@ -13,6 +13,9 @@ namespace SpaceEngineersVR.OpenXR
         private static Texture2D[] beamImages;
         private static bool beamFailed;
 
+        /// <summary>The light through the visor the beam's images were last filled for (<see cref="Rendering.VisorGlass.Behind"/>).</summary>
+        private static VRageMath.Vector3 beamThrough = VRageMath.Vector3.One;
+
         /// <summary>
         /// Fills <paramref name="quad"/> with a layer for the laser's beam (a thin quad along it, turned about its axis to face the
         /// head), when the laser is on the panel. The tracking space, like the beam's ends. False when there is no beam to show.
@@ -25,6 +28,10 @@ namespace SpaceEngineersVR.OpenXR
             {
                 if (beamSwapchain == 0 && !MakeBeamTexture())
                     return false;
+                // The beam is outside the helmet: seen through the visor, filled again when what comes through it changes.
+                VRageMath.Vector3 through = Rendering.VisorGlass.Behind;
+                if (VRageMath.Vector3.DistanceSquared(through, beamThrough) > 1e-4f)
+                    FillBeam(through);
             }
             catch (Exception e)
             {
@@ -119,15 +126,27 @@ namespace SpaceEngineersVR.OpenXR
             return true;
         }
 
-        /// <summary>The beam's swapchain, every image filled once with the beam's colour, fading to nothing across the width.</summary>
+        /// <summary>The beam's swapchain, every image filled with the beam's colour as seen now through the visor.</summary>
         private static bool MakeBeamTexture()
         {
             if (session == 0)
                 return false;
-            ulong swapchain = CreateSwapchain(BeamTextureWidth, BeamTextureHeight, out Texture2D[] textures);
+            beamSwapchain = CreateSwapchain(BeamTextureWidth, BeamTextureHeight, out beamImages);
+            FillBeam(Rendering.VisorGlass.Behind);
+            Log.Info($"OpenXR beam swapchain {BeamTextureWidth}x{BeamTextureHeight}, {beamImages.Length} images");
+            return true;
+        }
+
+        /// <summary>
+        /// Fills every image of the beam's swapchain with its colour times <paramref name="through"/> (the light through the
+        /// visor), fading to nothing across the width, so whichever image the runtime shows has it.
+        /// </summary>
+        private static void FillBeam(VRageMath.Vector3 through)
+        {
+            beamThrough = through;
             bool bgra = swapchainFormat == Format.B8G8R8A8_UNorm || swapchainFormat == Format.B8G8R8A8_UNorm_SRgb;
             byte[] pixels = new byte[BeamTextureWidth * BeamTextureHeight * 4];
-            VRageMath.Vector4 color = Input.Laser.LineColor;
+            VRageMath.Vector4 color = Input.Laser.LineColor * new VRageMath.Vector4(through, 1f);
             for (int x = 0; x < BeamTextureWidth; x++)
             {
                 // Across the width: 1 in the middle, 0 at the edges. Premultiplied, as the layer's blend takes it.
@@ -144,12 +163,9 @@ namespace SpaceEngineersVR.OpenXR
                 }
             }
 
-            beamSwapchain = swapchain;
-            beamImages = textures;
-            // Every image of the chain, so whichever the runtime shows has the beam in it.
-            for (int i = 0; i < textures.Length; i++)
+            for (int i = 0; i < beamImages.Length; i++)
             {
-                Texture2D image = textures[Acquire(swapchain)];
+                Texture2D image = beamImages[Acquire(beamSwapchain)];
                 try
                 {
                     fixed (byte* data = pixels)
@@ -157,11 +173,9 @@ namespace SpaceEngineersVR.OpenXR
                 }
                 finally
                 {
-                    Release(swapchain);
+                    Release(beamSwapchain);
                 }
             }
-            Log.Info($"OpenXR beam swapchain {BeamTextureWidth}x{BeamTextureHeight}, {textures.Length} images");
-            return true;
         }
     }
 }

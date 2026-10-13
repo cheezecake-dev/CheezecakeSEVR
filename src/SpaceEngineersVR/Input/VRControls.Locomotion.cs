@@ -300,8 +300,12 @@ namespace SpaceEngineersVR.Input
             GamepadFeel feel = GamepadFeel.Current();
             float sensitivity = VRSettings.ShipStickSensitivity;
             bool fire = TriggerHeld(Hand.Right);
+            // In a seat ColbyJack1134's rig owns, the thumbsticks fly or drive on their own only with Thumbstick controls in
+            // cockpits on (VRSettings.ColbyThumbsticks); his ApplyFlight below still has them for his held sticks, wheel and bars.
+            bool thumbsticks = !Cockpits.CockpitControls.Owns || VRSettings.ColbyThumbsticks;
+            Vector2 flyLeft = thumbsticks ? leftStick : Vector2.Zero, flyRight = thumbsticks ? rightStick : Vector2.Zero;
             if (seatSticks)
-                seatRotation = ShipStick.Rotation(rightStick, feel, sensitivity);
+                seatRotation = ShipStick.Rotation(flyRight, feel, sensitivity);
             if (context != VRContext.Ship)
             {
                 Set(Intent.Primary, fire);
@@ -316,7 +320,7 @@ namespace SpaceEngineersVR.Input
             bool up = VRInput.IsPressed(Hand.Right, VRButtons.A), down = !Hands.Ping.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B);
             if (seatSticks)
             {
-                seatMove = ShipStick.Move(leftStick, up, down, feel);
+                seatMove = ShipStick.Move(flyLeft, up, down, feel);
                 // Holding the controls, the grips are the hold and the stick hand is a flight stick: its sideways tilt is the
                 // roll, its forward and back tilt the pitch and its twist the yaw (each yaw can be turned off), added to the
                 // right stick's turn (no more than a full push of it). The stick not held, Gate takes the turn away.
@@ -331,6 +335,8 @@ namespace SpaceEngineersVR.Input
                     seatRoll = ShipStick.Roll(Squeeze(Hand.Left), Squeeze(Hand.Right), feel, sensitivity);
                 HandFlight.Apply(ref seatRotation, ref seatMove, ref seatRoll, up, down, feel);
                 ControlGrip.Gate(leftStick, rightStick, ref seatRotation, ref seatMove, ref seatRoll, ref fire, ref secondary, ref up, ref down);
+                // ColbyJack1134's cockpit: a held stick or throttle overrides the turn, roll and move (his ApplyFlight).
+                Cockpits.CockpitControls.ApplyFlight(Cockpits.CockpitControls.RotationSpeed, leftStick, rightStick, ref seatMove, ref seatRotation, ref seatRoll);
             }
             Set(Intent.Primary, fire);
             Set(Intent.Secondary, secondary);

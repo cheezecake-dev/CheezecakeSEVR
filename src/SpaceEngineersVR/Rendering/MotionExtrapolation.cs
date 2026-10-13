@@ -61,6 +61,9 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>RenderDebug ToolPartsRide=0: the held tool's parts are left where the game frame put them again, as before (<see cref="AddTool"/>), for comparison.</summary>
         public static bool PartsOff { get; set; }
 
+        /// <summary>RenderDebug ColbyCockpitRide=0: ColbyJack1134's cockpit pieces are left where the game frame put them again, as before, for comparison.</summary>
+        public static bool CockpitRideOff { get; set; }
+
         /// <summary>No shift beyond one game step either way, ms.</summary>
         private const double MaxShiftMs = 1000.0 / 60.0;
 
@@ -150,6 +153,12 @@ namespace SpaceEngineersVR.Rendering
                                     s.Add(id);
                         }
                         grids.Clear();
+                        // ColbyJack1134's cockpit pieces stand in for the seat's own interior, which is a child of its cell's
+                        // cull object and so moves with the grid above; his are roots placed in the world, and left out they kept
+                        // the game frame's place while the view and the ship were moved on: the whole cockpit lagged behind.
+                        if (!CockpitRideOff && Cockpits.CockpitRender.ActorsIn(seat as MyCockpit) is uint[] pieces)
+                            foreach (uint id in pieces)
+                                s.Add(id);
                         if (seat.Pilot != null)
                             AddCharacter(s, seat.Pilot);
                         break;

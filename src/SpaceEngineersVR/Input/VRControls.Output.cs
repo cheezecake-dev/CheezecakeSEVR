@@ -16,13 +16,21 @@ namespace SpaceEngineersVR.Input
 {
     internal static partial class VRControls
     {
+        /// <summary>RenderDebug ZeroGHeadThrust=0: on the jetpack in zero g the left stick and the climb are turned by the head's yaw only, level with the body, as in gravity.</summary>
+        public static bool HeadThrustOff { get; set; }
+
+        // The first frame the zero-g thrust went where the head looks is logged, once a run (HeadThrust).
+        private static bool headThrustLogged;
+
         /// <summary>
         /// Adds the left stick to the game's movement input (MyInputExtensions.GetPositionDelta: x right, y up, z back,
         /// as the keys give it). Walking goes where the head looks: the stick is turned by the head's yaw from the body,
         /// and the body turns to follow while it walks (<see cref="BodyFollow"/>). On the jetpack the right stick and A
-        /// add the climb; on foot jump and crouch are buttons only. In a ship controller the left stick is the move
-        /// indicator the thrusters and the wheels read (forward and back, strafe, steer), A is up and B down. The free spectator
-        /// camera is flown as the jetpack is: the left stick turned by the head's yaw, A up and B down.
+        /// add the climb; on foot jump and crouch are buttons only. On the jetpack in zero g the stick and the climb are
+        /// turned by the head's pitch as well, so the thrust goes where the head looks (<see cref="HeadThrust"/>). In a ship
+        /// controller the left stick is the move indicator the thrusters and the wheels read (forward and back, strafe, steer),
+        /// A is up and B down. The free spectator camera is flown as the jetpack is in gravity: the left stick turned by the
+        /// head's yaw, A up and B down.
         /// </summary>
         public static void AddMovement(ref Vector3 delta)
         {
@@ -47,14 +55,94 @@ namespace SpaceEngineersVR.Input
             if (character == null || (leftStick == Vector2.Zero && rightStick == Vector2.Zero && !jumpButton))
                 return;
             bool jetpack = character.JetpackRunning;
+            float climb = jetpack ? MathHelper.Clamp(rightStick.Y + (jumpButton ? 1f : 0f), -1f, 1f) : 0f;
+            if (jetpack && HeadThrust(character, climb, out Vector3 looked))
+            {
+                delta = Clamp(delta + looked);
+                return;
+            }
 
-            float yaw = HeadYaw(character);
+            // On the jetpack the body does not turn after the head (BodyFollow), so the head can look further round than the
+            // thrust goes: it stops at the look limit, as in zero g.
+            float yaw = jetpack ? LimitedHeadYaw(character) : HeadYaw(character);
             float cos = (float)Math.Cos(yaw), sin = (float)Math.Sin(yaw);
             Vector3 add = new Vector3(
                 leftStick.X * cos - leftStick.Y * sin,
-                jetpack ? MathHelper.Clamp(rightStick.Y + (jumpButton ? 1f : 0f), -1f, 1f) : 0f,
+                climb,
                 -(leftStick.X * sin + leftStick.Y * cos));
             delta = Clamp(delta + add);
+        }
+
+        /// <summary>The head's yaw from the body as <see cref="HeadYaw"/> gives it, limited to <see cref="MaxLookYaw"/> (<see cref="GameHead.LimitedLook"/>).</summary>
+        private static float LimitedHeadYaw(MyCharacter character)
+        {
+            if ((!character.IsInFirstPersonView && !character.ForceFirstPersonCamera) || !GameHead.Take())
+                return 0f;
+            GameHead.LimitedLook(out float yaw, out _);
+            return yaw;
+        }
+
+        /// <summary>
+        /// On the jetpack in zero g the thrust goes where the head looks, as it does in the game, where the mouse pitches the whole
+        /// body and W goes where the view looks: the left stick and the climb are turned from the head's frame into the body's by
+        /// the head's yaw and pitch from the body, and by none of its roll. The look is the one limited as a neck is
+        /// (<see cref="GameHead.LimitedLook"/>): round no further than <see cref="MaxLookYaw"/> (70 deg) from the body, and up or
+        /// down no further than <see cref="MaxLookPitch"/> (89 deg). Forward is the limited look's forward, the strafe its right
+        /// levelled, the climb its up with the roll taken out. The limited look never passes straight up or down, and a head bent
+        /// back past vertical is read as looking straight up facing the body's way, so the strafe and the climb need no flipping
+        /// to stay on the head's right and up. False, and the stick is turned by the yaw alone as in gravity, where the zero-g
+        /// pitch and roll would be refused (gravity, a character that flies upright only: <see cref="CanPitchAndRoll"/>), with the
+        /// head not tracked or the view not first person, and with RenderDebug ZeroGHeadThrust=0.
+        /// </summary>
+        /// <param name="climb">The climb, from the right stick and A, -1 to 1.</param>
+        /// <param name="add">The movement to add, in the body's frame (x right, y up, z back).</param>
+        private static bool HeadThrust(MyCharacter character, float climb, out Vector3 add)
+        {
+            add = Vector3.Zero;
+            if (!FliesWhereHeadLooks(character) || !GameHead.Take())
+                return false;
+            GameHead.LimitedLook(out float yaw, out float pitch);
+            add = Vector3.TransformNormal(new Vector3(leftStick.X, climb, -leftStick.Y),
+                Matrix.CreateRotationX(pitch) * Matrix.CreateRotationY(yaw));
+            if (!headThrustLogged)
+            {
+                headThrustLogged = true;
+                Log.Info($"Zero-g thrust: the jetpack goes where the head looks, pitched {MathHelper.ToDegrees(Math.Abs(pitch)):F0} deg {(pitch >= 0f ? "up" : "down")} " +
+                         $"and turned {MathHelper.ToDegrees(Math.Abs(yaw)):F0} deg {(yaw >= 0f ? "left" : "right")} from the body " +
+                         $"(the look is limited to {MathHelper.ToDegrees(MaxLookYaw):F0} deg round and {MathHelper.ToDegrees(MaxLookPitch):F0} deg up/down; " +
+                         "the stick along the head's forward and its levelled right, the climb along its up; the body turns by the sticks only, not after the head; " +
+                         "RenderDebug ZeroGHeadThrust=0 flies level with the body)");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// On the jetpack in zero g, in first person, with RenderDebug ZeroGHeadThrust not 0: the thrust goes where the head looks
+        /// (<see cref="HeadThrust"/>), so the body does not turn to follow the head (<see cref="Tracking.BodyFollow"/>) and turns by the
+        /// sticks only. Looked past straight up, the head's yaw from the body comes out turned half round, and a body following it
+        /// would spin round with it.
+        /// </summary>
+        internal static bool FliesWhereHeadLooks(MyCharacter character) =>
+            !HeadThrustOff && (character.IsInFirstPersonView || character.ForceFirstPersonCamera) && CanPitchAndRoll(out _);
+
+        /// <summary>
+        /// Floating free: in zero g (the gravity <see cref="CanPitchAndRoll"/> allows, <see cref="ZeroGSquared"/>), with the jetpack
+        /// off, standing on nothing and not on a ladder. There is no friction to turn the body by then, so the body does not turn
+        /// to follow the head (<see cref="Tracking.BodyFollow"/>) and turns by the sticks only. What the character stands on is the
+        /// game's own physics answer, <c>CharacterProxy.Supported</c>: the feet are on the ground, a hull or an asteroid, which is
+        /// also what the magnetic boots hold to (MyCharacter.UpdateBootsStateAndEmmisivity reads it for their state, and the
+        /// boots are only ever on while the character is not falling), so it is true on the boots as on the ground. It is read
+        /// from the physics every step (MyCharacter.UpdateMovement), rather than from IsFalling, which is not set during a jump
+        /// (MyCharacter.OnCharacterStateChanged starts a fall only when no jump is running) and so would call a character that
+        /// has jumped off in zero g grounded. A character with no physics proxy is not taken to be floating.
+        /// </summary>
+        internal static bool FloatsFree(MyCharacter character)
+        {
+            if (character == null || character.IsDead || character.IsSitting || character.JetpackRunning || character.IsOnLadder
+                || character.Gravity.LengthSquared() > ZeroGSquared)
+                return false;
+            var proxy = character.Physics?.CharacterProxy;
+            return proxy != null && !proxy.Supported;
         }
 
         /// <summary>

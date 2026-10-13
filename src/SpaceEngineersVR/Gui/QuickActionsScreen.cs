@@ -52,6 +52,8 @@ namespace SpaceEngineersVR.Gui
     /// the game gives a seated player and VR has no button for, each the game's own control as its key presses it, with the
     /// grid's state read as the HUD reads it, greyed where the game would refuse it from this seat (a passenger seat, a cockpit
     /// that is not the main one). Y does not reach the panel there, so the actions wheel has a "Quick actions" entry for it (<see cref="AddTo"/>).
+    /// In a cockpit ColbyJack1134's rig owns, the pilot's group also has a Seat tile: his seat panel's keys on a page of their
+    /// own (<see cref="Cockpits.SeatPage"/>), which, like the External view page, act at once and leave the panel up.
     /// </para>
     /// </remarks>
     internal sealed partial class QuickActionsScreen : MyGuiScreenBase
@@ -378,6 +380,9 @@ namespace SpaceEngineersVR.Gui
             if (VRSettings.ThirdPerson)
                 pilot.Add(Camera);
             pilot.Add(ExternalViewTile);
+            // ColbyJack1134's seat panel, as a page: only in a seat his rig owns.
+            if (Cockpits.SeatPage.Available)
+                pilot.Add(Cockpits.SeatPage.Tile);
             return new[] { ShipActions, pilot.ToArray() };
         }
 
@@ -430,6 +435,9 @@ namespace SpaceEngineersVR.Gui
         {
             Actions,
             ExternalView,
+
+            /// <summary>ColbyJack1134's seat panel's keys (<see cref="Cockpits.SeatPage"/>), in a seat his rig owns.</summary>
+            Seat,
         }
 
         /// <summary>Debug: the plain panel as it was, a flat background and text-only buttons (<see cref="Rendering.RenderDebug"/> QuickMenuNative=0).</summary>
@@ -522,6 +530,11 @@ namespace SpaceEngineersVR.Gui
                 foreach (QuickAction action in ExternalViewPage.Build(null))
                     if (action != null && !icons.Contains(action.Icon))
                         icons.Add(action.Icon);
+                foreach (QuickAction action in Cockpits.SeatPage.Build(null))
+                    if (!icons.Contains(action.Icon))
+                        icons.Add(action.Icon);
+                if (!icons.Contains(Cockpits.SeatPage.Tile.Icon))
+                    icons.Add(Cockpits.SeatPage.Tile.Icon);
                 MyRenderProxy.PreloadTextures(icons, TextureType.GUI);
             }
             RecreateControls(constructor: true);
@@ -556,8 +569,8 @@ namespace SpaceEngineersVR.Gui
                 return;
             }
 
-            bool viewPage = page == Page.ExternalView;
-            AddCaption(viewPage ? "External View" : "Quick Actions", null, new Vector2(0f, TitleHeight / 2f - MyGuiConstants.SCREEN_CAPTION_DELTA_Y - 0.005f), CaptionScale);
+            bool viewPage = page == Page.ExternalView, seatPage = page == Page.Seat;
+            AddCaption(viewPage ? "External View" : seatPage ? "Seat" : "Quick Actions", null, new Vector2(0f, TitleHeight / 2f - MyGuiConstants.SCREEN_CAPTION_DELTA_Y - 0.005f), CaptionScale);
 
             float left = -size.X / 2f, top = -size.Y / 2f, inner = size.X - 2f * MarginX;
             var lines = new MyGuiControlSeparatorList();
@@ -571,7 +584,7 @@ namespace SpaceEngineersVR.Gui
             lines.AddHorizontal(new Vector2(left + MarginX, -top - FootHeight), inner, Line);
             Controls.Add(lines);
 
-            seatedLayout = !viewPage && Seat != null;
+            seatedLayout = !viewPage && !seatPage && Seat != null;
             if (seatedLayout)
             {
                 hint = Hint;
@@ -584,6 +597,11 @@ namespace SpaceEngineersVR.Gui
                 {
                     tiles = ExternalViewPage.Build(() => switchTo = Page.Actions);
                     hint = PageHint;
+                }
+                else if (seatPage)
+                {
+                    tiles = Cockpits.SeatPage.Build(() => switchTo = Page.Actions);
+                    hint = SeatHint;
                 }
                 else
                 {
@@ -656,6 +674,7 @@ namespace SpaceEngineersVR.Gui
 
         private const string Hint = "Point at an action and pull the trigger";
         private const string PageHint = "Point at a control and pull the trigger; grip the screen to move it";
+        private const string SeatHint = "Point at a control and pull the trigger: each press moves the seat a step";
 
         /// <summary>
         /// A page change asked for by a button is made here, outside the controls' own input pass; the actions are laid out
@@ -668,7 +687,12 @@ namespace SpaceEngineersVR.Gui
                 page = switchTo.Value;
                 switchTo = null;
                 Guard("page", () => RecreateControls(false));
-                Log.Info($"Wrist panel: {(page == Page.ExternalView ? "External view page" : "back to the actions")}{(seatedLayout ? " (seated)" : string.Empty)}, {TileCount} tiles");
+                Log.Info($"Wrist panel: {(page == Page.ExternalView ? "External view page" : page == Page.Seat ? "Seat page" : "back to the actions")}{(seatedLayout ? " (seated)" : string.Empty)}, {TileCount} tiles");
+            }
+            else if (!plain && page == Page.Seat && !Cockpits.SeatPage.Available)
+            {
+                // Out of his cockpit (got up, or his cockpit setting turned off) with the seat page up: back to the actions.
+                switchTo = Page.Actions;
             }
             else if (!plain && page == Page.Actions && seatedLayout != (Seat != null))
             {
@@ -764,6 +788,12 @@ namespace SpaceEngineersVR.Gui
             if (action == ExternalViewTile)
             {
                 switchTo = Page.ExternalView;
+                return;
+            }
+            if (action == Cockpits.SeatPage.Tile)
+            {
+                if (Cockpits.SeatPage.Available)
+                    switchTo = Page.Seat;
                 return;
             }
             if (action.CanUse != null && !action.CanUse())

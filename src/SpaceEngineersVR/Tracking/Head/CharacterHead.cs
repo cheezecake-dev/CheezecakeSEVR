@@ -94,6 +94,10 @@ namespace SpaceEngineersVR.Tracking
                 CameraShake.NoteEye(__instance, result.Translation);
             // On magnetic boots the head rides the smoothed up, not the body's (the hands, tools and lasers are placed by it too).
             MagBootsSmoothing.Apply(__instance, ref __result);
+            // With the helmet drawn, the eye stops where the helmet meets a wall (HelmetWalls): the camera, the helmet on it, the aim
+            // and the hands together. Nothing while nothing is near.
+            if (includeX && includeY && !Rendering.WallFade.EyeHeld)
+                __result.Translation += HelmetWalls.Hold(__instance, __result, basis);
             GameHead.UsedForView();
         }
     }

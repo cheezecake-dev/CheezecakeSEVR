@@ -16,7 +16,7 @@ namespace SpaceEngineersVR.Rendering
     /// RightFirst=1 draws the right eye first; EyeOffset=0 turns off <see cref="EyeOffset"/>,
     /// SharedBillboards=1 lets the eyes share <see cref="OnceBillboards"/>, HudCamera=0 turns off <see cref="HudCamera"/>,
     /// HudVisor=0 puts the whole HUD back on the flat panel (<see cref="HudVisor"/>), HudVisorCylinder=0 draws its pieces on flat quads
-    /// even when the runtime offers cylinder layers,
+    /// even when the runtime offers cylinder layers, HudVisorZones=1 puts them in zones, a layer each, instead of on the one display,
     /// PanelCursor=0 turns off <see cref="PanelCursor"/>, WorldMenu=0 makes menus head-locked like the HUD (<see cref="WorldMenu"/>),
     /// FullView=0 turns off <see cref="FullView"/>, VRInput=0 stops the hands reaching the game (<see cref="VRControls"/>),
     /// BloodPulse=0 gives the blood overlay the game's own flashes back (<see cref="BloodPulse"/>); BloodTest=N draws it as if the
@@ -45,6 +45,30 @@ namespace SpaceEngineersVR.Rendering
     /// ToolSteady=1 logs once a second, while a tool is held on foot, how far the tool, the controller it is placed from, the palm on
     /// it, the camera off the head and the body's push ahead moved in the view (<see cref="Tracking.ToolSteady"/>).
     /// Vignette=0 turns off the comfort vignette (<see cref="Vignette"/>), VignetteTest=1 draws it at full strength without any motion.
+    /// ComfortGrid=0 hides the comfort grid on the jetpack in zero g, whatever the Comfort grid setting says (<see cref="ComfortGrid"/>).
+    /// HelmetView=0 turns the whole helmet view off, whatever the Helmet view setting says (<see cref="HelmetView"/>).
+    /// HelmetHeadTurn=0 leaves the head as the game's animation poses it instead of on the eye, HelmetBodyFollow=0 keeps the spine and the body still under it (only the neck
+    /// points at it), =2 moves the body only across, HelmetEyeMm=n puts the eye n mm further forward in the helmet, HelmetTrace=1 logs its pose once a second
+    /// (<see cref="Tracking.HelmetHead"/>).
+    /// HelmetWalls=0 lets the head lean the helmet and the eye into walls again, HelmetWallsMm=n makes the helmet that walls stop n mm round its middle (50 to 250,
+    /// 190 by default) (<see cref="Tracking.HelmetWalls"/>).
+    /// HelmetHud=0 keeps the HUD in the headset with the helmet open (<see cref="HelmetHud"/>).
+    /// HelmetAir=0 turns off the depressurize hiss as the helmet opens and the repressurize hiss as it closes (<see cref="HelmetAir"/>; on with the helmet view).
+    /// HelmetAirOpen=n and HelmetAirClose=n choose the game's sound cue for each, from the list: 0 none, 1 BlockAirVentDepressurize (the default for opening:
+    /// the air vent drawing air out, looped, 2 s or so), 2 BlockAirVentExhale (the default for closing: the vent blowing air in, looped), 3 ArcEventAirVent (the
+    /// air leak, a one-shot hiss of 2.4 s), 4 PlayChokeInitiate (the game's air-escape gasp, 0.5 s; left to the game when it plays its own in vacuum),
+    /// 5 ArcPlayHelmetOn and 6 ArcPlayHelmetOff (the game's own helmet cues in the Arcade sound setting, a thin hiss recorded very quietly),
+    /// 7 RealPlayHelmetOn and 8 RealPlayHelmetOff (its Realistic sound setting's latches). HelmetAirMs=n is how long a looped cue's loop runs
+    /// before it fades away, milliseconds (800 as built, 0 to 8000); HelmetAirVol=n its volume, percent of the cue's own (50 as built, 0 to 200).
+    /// VisorGlass=0 takes away the visor's glass, the tint filtering the view while the helmet is closed (its colour and strength are
+    /// settings; <see cref="VisorGlass"/>). HelmetInterior=0 takes away the helmet's inside round the view (<see cref="HelmetInterior"/>).
+    /// ConformalHorizon=0 gives back the game's own artificial horizon in a cockpit (<see cref="ConformalHorizon"/>).
+    /// VisorGlare=0 takes away the sun's glare in the visor's glass (<see cref="VisorGlare"/>).
+    /// HelmetBreath=0 stops the breathing in the closed helmet, whatever its setting (<see cref="HelmetBreath"/>).
+    /// HelmetTravelYaw=d, HelmetTravelUp=d and HelmetTravelDown=d, live: how far the helmet turns with the head, degrees, before the
+    /// head turns on inside it (12, 6 and 10 as built; <see cref="HelmetTurn"/>).
+    /// HudVisorLight=x, live: how much of the HUD projected on the glass is added light rather than painted over the view (0.6 as
+    /// built, 0 painted, 1 all light; <see cref="HudVisor.Projected"/>).
     /// Haptics=0 turns off the controllers' buzzing (<see cref="Hands.Haptics"/>).
     /// BuildMode=0 gives back the on-foot buttons with a block in hand (A jumps, B the jetpack, X the dampers, no turning by hand; <see cref="Hands.BuildMode"/>).
     /// ToolbarWheel=0 turns off the hands' radial wheel, =1 (the default) is the toolbar's slots, =2 the game's system radial only (what the wheel was
@@ -85,6 +109,8 @@ namespace SpaceEngineersVR.Rendering
     /// GrabUse=0 turns off using things by closing the grip on them (<see cref="Hands.GrabUse"/>); the right grip is then Use along the ray only.
     /// GrabUseTrace=1 logs each grab-to-use grip's line of reach from the shoulder: clear, or the block in the way.
     /// HeadGestures=0 turns off the helmet grip and the temple tap for the lamp (<see cref="Hands.HeadGestures"/>).
+    /// HelmetHands=0 lets the drawn hands through the helmet's shell again (they stop on it while the helmet view is drawn), HelmetHandsMm=n
+    /// puts the surface they stop on n mm further out of the fitted shape (negative: in; 0 as built) (<see cref="Hands.HelmetStop"/>).
     /// ToolGrasp=0 holds a tool by the game's wrist spot instead of the middle of the hand, as before (<see cref="Hands.HeldItem.WristGrasp"/>).
     /// TwoHand=0 turns off holding the tool in both hands; the other grip opens the toolbar wheel as before (<see cref="Hands.TwoHand"/>).
     /// TwoHandStay=0 lets go of the tool's second grip when the hand pulls 15 cm off it, TwoHandStay=1 keeps it while the grip is held,
@@ -116,6 +142,9 @@ namespace SpaceEngineersVR.Rendering
     /// CameraShake=0 (Off), 1 (Low, a quarter) or 2 (Full) sets how much of the game's camera shake, camera spring and walking head bob reaches the view, whatever the Camera shake setting says (<see cref="Tracking.CameraShake"/>).
     /// ExitUpright=0 leaves getting up from a seat in gravity to the game, which places the character tilted as the vehicle is and then turns it upright over the next frames, the view with it (<see cref="Tracking.ExitUpright"/>); ExitUprightTrace=1 logs every frame of the 3 s after getting up: the body's tilt and the view's pitch, roll and yaw from the frame before.
     /// ZeroGPivot=0 leaves zero-g pitch and roll from the hands turning the body about its middle, as the game's jetpack does, instead of about the eyes (<see cref="Tracking.ZeroGPivot"/>).
+    /// MaxLookYaw=n (degrees, 10 to 120) sets how far round from the body the head looks before the helmet, the character's head and the thrust stop turning with it (<see cref="Input.VRControls.MaxLookYaw"/>, 70 by default);
+    /// NeckLimit=n (degrees, 10 to 120) how far the head turns on foot before the body turns after it (<see cref="Tracking.BodyFollow.NeckLimit"/>, 50 by default). Both live.
+    /// ZeroGHeadThrust=0 flies the jetpack in zero g level with the body again, the left stick turned by the head's yaw only, instead of where the head looks, its pitch with it (<see cref="Input.VRControls.HeadThrustOff"/>).
     /// MagBootsSmoothing=0 gives the view on magnetic boots the body's up again, which the game turns toward the surface in 2.3 deg steps, instead of a smoothed up
     /// (<see cref="Tracking.MagBootsSmoothing"/>; its 10 s "Magnetic boots" log line measures both either way); MagBootsSmoothingMs=n smooths over n ms (20 to 2000) instead of 200.
     /// MenuHoldRecentre=0 makes the left Menu button what it was before the hold: the game menu or Back from the press, and no recentre (<see cref="Input.VRControls.MenuHoldOff"/>).
@@ -130,11 +159,21 @@ namespace SpaceEngineersVR.Rendering
     /// instead of moved on by how much older the game frame is than usual (<see cref="Rendering.MotionExtrapolation"/>); LaserRide=0 gives the lasers
     /// in the world again, so they are not moved on with the view and the cockpit (<see cref="Rendering.MotionExtrapolation.AddLine"/>); ToolPartsRide=0 leaves
     /// the held tool's parts (the drill's spike, the grinder's disc) where the game frame put them again, so they slide against the tool while the body moves
-    /// (<see cref="Rendering.MotionExtrapolation.PartsOff"/>); DesktopIpd=0 (mm) sets how far
+    /// (<see cref="Rendering.MotionExtrapolation.PartsOff"/>); ColbyCockpitRide=0 leaves ColbyJack1134's cockpit pieces where the game frame put them
+    /// again, so they fall behind the ship and the view while it moves (<see cref="Rendering.MotionExtrapolation.CockpitRideOff"/>); DesktopIpd=0 (mm) sets how far
     /// apart the desktop eyes are, in place of the IPD setting (0 draws both from one point, so the two halves of the window should match).
     /// FocusMute=1 gives the game's own mute when its window is in the background back, even in the headset (<see cref="SoundFocus"/>; by default the sound stays on in VR).
     /// HeadsetAudio=0 plays the game's sound through the Windows default output, not the headset's audio device (<see cref="HeadsetAudio"/>); read when the
     /// game starts its sound (at start-up, or again after its audio device went away).
+    /// LensMaskMargin=n (percent, 0 to 20) moves the lens mask's edge n% outward from the middle of each eye's image, so a margin of the picture is drawn
+    /// inside the hidden corners, against black corners when a frame is shown again with the head moved on (<see cref="LensMask.Margin"/>; 0, the default, is the runtime's mask as it is).
+    /// DoubleClickRadius=n (thousandths of the game's screen units, 5 to 100) sets how far the cursor may move between the two presses of a double
+    /// click on a list, table or grid while the picture is VR's (<see cref="Input.DoubleClickTolerance"/>; 15 by default, 5 is the game's own).
+    /// ColbyCockpit=0/1 overrides the Cockpits setting (ColbyJack1134's cockpit sticks, <see cref="Cockpits.CockpitControls"/>); ColbyGrip=0 takes our
+    /// OpenXR grip as his hand grip instead of converting it with his openxr_grip -> handgrip offset (<see cref="Cockpits.CockpitHand"/>);
+    /// ColbyGripX/Y/Z move that grip further, mm, and ColbyGripPitch turns it about its X axis, degrees.
+    /// ColbyStickPlacement=1 unlocks the seat's cockpit sticks so a gripped stick moves with the hand, 0 locks and saves them, -1 puts them
+    /// back where the cockpit has them (the quick menu Seat page's Move sticks and Reset sticks).
     /// Removing a name restores it.
     /// </summary>
     internal static partial class RenderDebug
@@ -219,11 +258,13 @@ namespace SpaceEngineersVR.Rendering
             Rendering.MotionExtrapolation.On = true;
             Rendering.MotionExtrapolation.RideOff = false;
             Rendering.MotionExtrapolation.PartsOff = false;
+            Rendering.MotionExtrapolation.CockpitRideOff = false;
             EyeOffset.Off = false;
             OnceBillboards.Shared = false;
             HudCamera.Off = false;
             HudVisor.Off = false;
             HudVisor.NoCylinder = false;
+            HudVisor.Zones = false;
             PanelCursor.Off = false;
             WorldMenu.Off = false;
             FullView.Off = false;
@@ -234,6 +275,8 @@ namespace SpaceEngineersVR.Rendering
             BloodPulse.TestHits = null;
             VRControls.Off = false;
             Laser.Off = false;
+            Input.DoubleClickTolerance.Radius = Input.DoubleClickTolerance.DefaultRadius;
+            LensMask.Margin = 0;
             SoundFocus.GameMute = false;
             HandIK.ResetDebug();
             Tracking.HandResidual.On = false;
@@ -242,6 +285,25 @@ namespace SpaceEngineersVR.Rendering
             Tracking.ToolSteady.On = false;
             Vignette.Off = false;
             Vignette.Test = false;
+            ComfortGrid.Off = false;
+            HelmetView.Off = false;
+            Tracking.HelmetHead.TurnOff = false;
+            Tracking.HelmetHead.FollowMode = 1;
+            Tracking.HelmetHead.EyeMm = 0;
+            Tracking.HelmetHead.TraceOn = false;
+            Tracking.HelmetWalls.Off = false;
+            Tracking.HelmetWalls.RadiusMm = Tracking.HelmetWalls.DefaultRadiusMm;
+            HelmetHud.Off = false;
+            HelmetAir.Reset();
+            VisorGlass.Off = false;
+            HelmetInterior.Off = false;
+            HelmetBreath.Off = false;
+            VisorGlare.Off = false;
+            ConformalHorizon.Off = false;
+            HudVisor.Projected = HudVisor.DefaultProjected;
+            HelmetTurn.TravelYaw = HelmetTurn.DefaultTravelYaw;
+            HelmetTurn.TravelUp = HelmetTurn.DefaultTravelUp;
+            HelmetTurn.TravelDown = HelmetTurn.DefaultTravelDown;
             Hands.Haptics.Off = false;
             Hands.BuildMode.Off = false;
             ToolbarWheel.Mode = ToolbarWheel.ModeSlots;
@@ -276,6 +338,8 @@ namespace SpaceEngineersVR.Rendering
             Hands.ViewScreenGrab.Off = false;
             Hands.ShipModel.Off = false;
             Hands.HeadGestures.Off = false;
+            Hands.HelmetStop.Off = false;
+            Hands.HelmetStop.MarginMm = Hands.HelmetStop.DefaultMarginMm;
             Hands.HeldItem.WristGrasp = false;
             Hands.TwoHand.Off = false;
             Hands.TwoHand.StaysDebug = null;
@@ -316,24 +380,51 @@ namespace SpaceEngineersVR.Rendering
             Tracking.ExitUpright.Off = false;
             Tracking.ExitUpright.Trace = false;
             Tracking.ZeroGPivot.Off = false;
+            Input.VRControls.HeadThrustOff = false;
+            Input.VRControls.MaxLookYaw = Input.VRControls.DefaultMaxLookYaw;
+            Tracking.BodyFollow.NeckLimit = Tracking.BodyFollow.DefaultNeckLimit;
             Tracking.MagBootsSmoothing.Off = false;
             Tracking.MagBootsSmoothing.SmoothSeconds = Tracking.MagBootsSmoothing.DefaultSmoothSeconds;
             Input.VRControls.MenuHoldOff = false;
             Input.ControlGrip.Debug = null;
             Input.ControlGrip.LogInputs = false;
             Input.ControlGrip.TakeDebug = null;
+            VRSettings.ColbyCockpitOverride = null;
+            Cockpits.CockpitHand.Convert = true;
+            Cockpits.CockpitHand.Nudge = VRageMath.Vector3.Zero;
+            Cockpits.CockpitHand.NudgePitch = 0f;
 
             var applied = new List<string>();
             foreach (string part in (text ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 string[] pair = part.Split('=');
-                // The kick's tuning takes fractions (KickScale=1.5); every other switch is a whole number.
+                // The kick's tuning and the visor's glass and frame take fractions (KickScale=1.5); every other switch is a whole number.
                 if (pair.Length == 2 && double.TryParse(pair[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double factor) && !double.IsNaN(factor))
                 {
                     if (pair[0].Equals("KickScale", StringComparison.OrdinalIgnoreCase))
                     {
                         Hands.Kickback.Scale = Math.Max(0.0, Math.Min(5.0, factor));
                         applied.Add($"KickScale={Hands.Kickback.Scale:0.##}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetTravelYaw", StringComparison.OrdinalIgnoreCase)
+                        || pair[0].Equals("HelmetTravelUp", StringComparison.OrdinalIgnoreCase)
+                        || pair[0].Equals("HelmetTravelDown", StringComparison.OrdinalIgnoreCase))
+                    {
+                        float travel = VRageMath.MathHelper.ToRadians((float)Math.Max(0.0, Math.Min(90.0, factor)));
+                        if (pair[0].EndsWith("Yaw", StringComparison.OrdinalIgnoreCase))
+                            HelmetTurn.TravelYaw = travel;
+                        else if (pair[0].EndsWith("Up", StringComparison.OrdinalIgnoreCase))
+                            HelmetTurn.TravelUp = travel;
+                        else
+                            HelmetTurn.TravelDown = travel;
+                        applied.Add($"{pair[0]}={factor:0.#}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HudVisorLight", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HudVisor.Projected = (float)Math.Max(0.0, Math.Min(1.0, factor));
+                        applied.Add($"HudVisorLight={HudVisor.Projected:0.##}");
                         continue;
                     }
                     if (pair[0].Equals("KickAir", StringComparison.OrdinalIgnoreCase))
@@ -418,6 +509,47 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"RecentreAll={!Tracking.GameHead.RecentreTurnOnly}");
                         continue;
                     }
+                    if (pair[0].Equals("ColbyCockpit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        VRSettings.ColbyCockpitOverride = setting != 0;
+                        applied.Add($"ColbyCockpit={VRSettings.ColbyCockpitOverride}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ColbyGrip", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Cockpits.CockpitHand.Convert = setting != 0;
+                        applied.Add($"ColbyGrip={(Cockpits.CockpitHand.Convert ? "his handgrip conversion" : "our OpenXR grip as it is")}");
+                        continue;
+                    }
+                    if (pair[0].StartsWith("ColbyGrip", StringComparison.OrdinalIgnoreCase) && pair[0].Length == 10)
+                    {
+                        float mm = Math.Max(-100, Math.Min(100, setting)) / 1000f;
+                        VRageMath.Vector3 nudge = Cockpits.CockpitHand.Nudge;
+                        switch (char.ToUpperInvariant(pair[0][9]))
+                        {
+                            case 'X': nudge.X = mm; break;
+                            case 'Y': nudge.Y = mm; break;
+                            case 'Z': nudge.Z = mm; break;
+                            default: goto unknown;
+                        }
+                        Cockpits.CockpitHand.Nudge = nudge;
+                        applied.Add($"{pair[0]}={mm * 1000f:0}mm");
+                        continue;
+                    }
+                    if (pair[0].Equals("ColbyStickPlacement", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Cockpits.CockpitControls.Request = setting > 0 ? Cockpits.CockpitControls.PlacementRequest.Unlock
+                            : setting < 0 ? Cockpits.CockpitControls.PlacementRequest.Reset : Cockpits.CockpitControls.PlacementRequest.Lock;
+                        applied.Add($"ColbyStickPlacement={Cockpits.CockpitControls.Request}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ColbyGripPitch", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Cockpits.CockpitHand.NudgePitch = Math.Max(-90, Math.Min(90, setting));
+                        applied.Add($"ColbyGripPitch={Cockpits.CockpitHand.NudgePitch:0}");
+                        continue;
+                    }
+                unknown:
                     if (pair[0].Equals("SeatedPlay", StringComparison.OrdinalIgnoreCase))
                     {
                         VRSettings.SeatedPlayOverride = setting != 0;
@@ -434,6 +566,24 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Tracking.ZeroGPivot.Off = setting == 0;
                         applied.Add($"ZeroGPivot={!Tracking.ZeroGPivot.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("MaxLookYaw", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Input.VRControls.MaxLookYaw = VRageMath.MathHelper.ToRadians(VRageMath.MathHelper.Clamp(setting, 10, 120));
+                        applied.Add($"MaxLookYaw={VRageMath.MathHelper.ToDegrees(Input.VRControls.MaxLookYaw):F0}");
+                        continue;
+                    }
+                    if (pair[0].Equals("NeckLimit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.BodyFollow.NeckLimit = VRageMath.MathHelper.ToRadians(VRageMath.MathHelper.Clamp(setting, 10, 120));
+                        applied.Add($"NeckLimit={VRageMath.MathHelper.ToDegrees(Tracking.BodyFollow.NeckLimit):F0}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ZeroGHeadThrust", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Input.VRControls.HeadThrustOff = setting == 0;
+                        applied.Add($"ZeroGHeadThrust={!Input.VRControls.HeadThrustOff}");
                         continue;
                     }
                     if (pair[0].Equals("MagBootsSmoothing", StringComparison.OrdinalIgnoreCase))
@@ -506,6 +656,12 @@ namespace SpaceEngineersVR.Rendering
                     {
                         HudVisor.NoCylinder = setting == 0;
                         applied.Add($"HudVisorCylinder={!HudVisor.NoCylinder}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HudVisorZones", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HudVisor.Zones = setting != 0;
+                        applied.Add($"HudVisorZones={HudVisor.Zones}");
                         continue;
                     }
                     if (pair[0].Equals("FullView", StringComparison.OrdinalIgnoreCase))
@@ -596,6 +752,120 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Vignette.Off = setting == 0;
                         applied.Add($"Vignette={!Vignette.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ComfortGrid", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ComfortGrid.Off = setting == 0;
+                        applied.Add($"ComfortGrid={!ComfortGrid.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetView", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetView.Off = setting == 0;
+                        applied.Add($"HelmetView={!HelmetView.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetHeadTurn", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.HelmetHead.TurnOff = setting == 0;
+                        applied.Add($"HelmetHeadTurn={!Tracking.HelmetHead.TurnOff}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetBodyFollow", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.HelmetHead.FollowMode = Math.Max(0, Math.Min(2, setting));
+                        applied.Add($"HelmetBodyFollow={Tracking.HelmetHead.FollowMode}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetEyeMm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.HelmetHead.EyeMm = Math.Max(-100, Math.Min(100, setting));
+                        applied.Add($"HelmetEyeMm={Tracking.HelmetHead.EyeMm}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetTrace", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.HelmetHead.TraceOn = setting != 0;
+                        applied.Add($"HelmetTrace={Tracking.HelmetHead.TraceOn}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ConformalHorizon", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ConformalHorizon.Off = setting == 0;
+                        applied.Add($"ConformalHorizon={!ConformalHorizon.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("VisorGlare", StringComparison.OrdinalIgnoreCase))
+                    {
+                        VisorGlare.Off = setting == 0;
+                        applied.Add($"VisorGlare={!VisorGlare.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetBreath", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetBreath.Off = setting == 0;
+                        applied.Add($"HelmetBreath={!HelmetBreath.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetInterior", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetInterior.Off = setting == 0;
+                        applied.Add($"HelmetInterior={!HelmetInterior.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("VisorGlass", StringComparison.OrdinalIgnoreCase))
+                    {
+                        VisorGlass.Off = setting == 0;
+                        applied.Add($"VisorGlass={!VisorGlass.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetWalls", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.HelmetWalls.Off = setting == 0;
+                        applied.Add($"HelmetWalls={!Tracking.HelmetWalls.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetWallsMm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Tracking.HelmetWalls.RadiusMm = Math.Max(50, Math.Min(250, setting));
+                        applied.Add($"HelmetWallsMm={Tracking.HelmetWalls.RadiusMm}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetHud", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetHud.Off = setting == 0;
+                        applied.Add($"HelmetHud={!HelmetHud.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetAir", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetAir.Off = setting == 0;
+                        applied.Add($"HelmetAir={!HelmetAir.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetAirOpen", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetAir.OpenCue = HelmetAir.ClampCue(setting);
+                        applied.Add($"HelmetAirOpen={HelmetAir.Describe(HelmetAir.OpenCue)}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetAirClose", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetAir.CloseCue = HelmetAir.ClampCue(setting);
+                        applied.Add($"HelmetAirClose={HelmetAir.Describe(HelmetAir.CloseCue)}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetAirMs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetAir.Milliseconds = HelmetAir.ClampMilliseconds(setting);
+                        applied.Add($"HelmetAirMs={HelmetAir.Milliseconds}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetAirVol", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetAir.VolumePercent = HelmetAir.ClampVolume(setting);
+                        applied.Add($"HelmetAirVol={HelmetAir.VolumePercent}%");
                         continue;
                     }
                     if (pair[0].Equals("VignetteTest", StringComparison.OrdinalIgnoreCase))
@@ -764,6 +1034,18 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Hands.HandStop.Off = setting == 0;
                         applied.Add($"HandStop={!Hands.HandStop.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetHands", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.HelmetStop.Off = setting == 0;
+                        applied.Add($"HelmetHands={!Hands.HelmetStop.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetHandsMm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.HelmetStop.MarginMm = Math.Max(-50, Math.Min(100, setting));
+                        applied.Add($"HelmetHandsMm={Hands.HelmetStop.MarginMm}");
                         continue;
                     }
                     if (pair[0].Equals("TouchTrace", StringComparison.OrdinalIgnoreCase))
@@ -1012,6 +1294,12 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"ToolPartsRide={setting != 0}");
                         continue;
                     }
+                    if (pair[0].Equals("ColbyCockpitRide", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Rendering.MotionExtrapolation.CockpitRideOff = setting == 0;
+                        applied.Add($"ColbyCockpitRide={setting != 0}");
+                        continue;
+                    }
                     if (pair[0].Equals("RenderScale", StringComparison.OrdinalIgnoreCase))
                     {
                         int percent = Math.Max(30, Math.Min(100, setting));
@@ -1029,6 +1317,19 @@ namespace SpaceEngineersVR.Rendering
                     {
                         EyeOffset.Off = setting == 0;
                         applied.Add($"EyeOffset={!EyeOffset.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("LensMaskMargin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LensMask.Margin = Math.Max(0, Math.Min(20, setting));
+                        applied.Add($"LensMaskMargin={LensMask.Margin}%");
+                        continue;
+                    }
+                    if (pair[0].Equals("DoubleClickRadius", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int thousandths = Math.Max(5, Math.Min(100, setting));
+                        Input.DoubleClickTolerance.Radius = thousandths / 1000f;
+                        applied.Add($"DoubleClickRadius={thousandths}/1000");
                         continue;
                     }
                 }

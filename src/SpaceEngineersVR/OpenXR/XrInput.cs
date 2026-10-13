@@ -630,7 +630,8 @@ namespace SpaceEngineersVR.OpenXR
         private static bool Down(bool wasDown, float value) => wasDown ? value > ReleaseAt : value >= PressAt;
 
         /// <summary>
-        /// The pose in the same space the head is in (LOCAL), through the same conversion. Left as it was when not valid.
+        /// The pose in the same space the head is in (LOCAL), through the same conversion. Left as it was when not valid, or when
+        /// the runtime calls it valid and it is not plausible (<see cref="Plausible"/>).
         /// An <paramref name="optional"/> pose (the palm) that fails to locate is not valid rather than an error.
         /// <paramref name="flags"/> is the location's valid and tracked bits, for the trace (<see cref="Hands.HeldTrace"/>).
         /// </summary>
@@ -646,9 +647,29 @@ namespace SpaceEngineersVR.OpenXR
             const ulong valid = XrConst.SpaceLocationOrientationValid | XrConst.SpaceLocationPositionValid;
             if ((location.LocationFlags & valid) != valid)
                 return false;
-            pose = EyeRenderer.ToMatrix(location.Pose);
+            Matrix located = EyeRenderer.ToMatrix(location.Pose);
+            if (!Plausible(located))
+            {
+                implausiblePoses++;
+                if (implausiblePoses == 1 || implausiblePoses % 1000 == 0)
+                    Log.Warn($"OpenXR: a controller pose flagged valid is not usable (translation {located.Translation}, forward length squared " +
+                             $"{located.Forward.LengthSquared():0.###}, up {located.Up.LengthSquared():0.###}); the last good pose is kept ({implausiblePoses} so far)");
+                return false;
+            }
+            pose = located;
             return true;
         }
+
+        /// <summary>How many poses flagged valid were refused by <see cref="Plausible"/>; for the log.</summary>
+        private int implausiblePoses;
+
+        /// <summary>
+        /// A dropped or waking controller can report a valid flag with an unusable pose: a matrix that is finite, with a translation
+        /// within a kilometre and a forward and up of near unit length (length squared within 0.1 of 1) is taken as one.
+        /// </summary>
+        // Adapted from ColbyJack1134's SpaceEngineersVR (Player/TrackedDevice.cs), with his permission.
+        internal static bool Plausible(in Matrix pose) => pose.IsValid() && pose.Translation.LengthSquared() < 1e6f &&
+            Math.Abs(pose.Forward.LengthSquared() - 1f) < 0.1f && Math.Abs(pose.Up.LengthSquared() - 1f) < 0.1f;
 
         private float GetFloat(ulong action, ulong subactionPath)
         {

@@ -92,6 +92,7 @@ namespace SpaceEngineersVR.Tracking
             {
                 Seated(__instance, frame, false);
                 GameHead.GameHeadShown(__instance.HeadLocalYAngle);
+                Cockpits.SeatFit.Head(__instance, ref __result);
                 return;
             }
             // Sitting down: a recentre onto the seat's eye, facing where the player looks (GameHead.SitDown).
@@ -124,6 +125,9 @@ namespace SpaceEngineersVR.Tracking
                 LastFrame = frame;
                 result.Translation += Vector3D.TransformNormal((Vector3D)offset, basis);
             }
+            // ColbyJack1134's seat fit (his SeatFitPatch's postfix, carried here so one patch owns the head): the seat's
+            // eye moved by the fit, whatever the head and its hold. Nothing unless his cockpit setting is on and his rig owns the seat.
+            Cockpits.SeatFit.Head(__instance, ref result);
             __result = result;
             GameHead.UsedForView();
         }

@@ -112,18 +112,50 @@ Proton the plugin is not offered: use native Pulsar.
   the hull or asteroid underfoot; your own turning is not slowed. Options > VR > **Comfort** also has:
   - smooth turn;
   - a comfort vignette;
+  - a comfort grid: on the jetpack in zero g, a faint grid at your real floor that stays still around you (off by default);
   - camera shake (off by default);
   - zero-g pitch and roll.
+- **Inside your helmet:** Options > VR > Display > **Helmet view** (on by default) puts you inside your astronaut's
+  helmet, on foot and in a seat.
+  - The helmet's padded inside and the visor's seal sit round the edge of your view, as close to your eyes as a real
+    helmet's. They are lit by the light through the visor and by your suit lamp. Looking ahead, they only cover the edge
+    your headset adds: everything a player without a headset sees stays in view. **Helmet interior** turns it off.
+  - The helmet sits on your suit's neck ring. It turns a little with your head, about 12 degrees each way. Turn your head
+    further and it turns inside the helmet, and the helmet's side comes into view, as in a real suit. Turn your body (the
+    stick) to look round freely.
+  - You look out through the visor's glass, tinted as real tinted glass is: it filters the light and never adds any.
+    **Visor tint colour** sets the colour: Neutral, Gold (an astronaut's sun visor), Blue, Green or Rose. **Visor tint**
+    sets how much light it takes, from clear to 60%; 13% is about the game's own glass.
+  - Everything outside the helmet is seen through the visor, the floating screens too: the external view, a camera's
+    or turret's view, menus, the wrist panel and the laser. Only the HUD on the glass and the helmet's inside are on your
+    side of it. The external view and camera screens also go dark with the world in a cut and under the comfort
+    vignette; menus and the wrist panel stay readable.
+  - The HUD is projected onto the glass (see below). It stays with the helmet, so glancing far round looks away from it;
+    **HUD fixed to the helmet** off makes it follow your head instead. It powers on with a flicker as the visor seals.
+  - **Sun visor:** grip the brow of your helmet and draw your hand down to lower its gold sun visor over the glass, and
+    push up to raise it. **Sun visor** sets how dark it is.
+  - **Glare:** look toward the sun through the closed visor and its light scatters in the glass, a glow and a haze. Lower
+    the sun visor to cut it. **Visor glare** sets how strong it is, down to none.
+  - Open the helmet and the air hisses out. The glass swings up, taking its tint and the HUD with it, and the helmet
+    stays round you. Close it and the air hisses back in.
+  - With the helmet closed you hear yourself breathe, harder after a sprint and more strained as your suit's air runs
+    low. **Breathing in the helmet** sets Off, Quiet (the default) or Normal. Only you hear it.
 - **Walls:** lean your head into a wall, a canopy or a dashboard and the view fades to black rather than going through
   it. It does so in third person and while you steer a remote control too.
 - **Menus:** point at them with your right hand. The trigger clicks, the grip right-clicks, the stick scrolls, and B goes
   back.
 - **The HUD is on your visor:** the toolbar, suit status, block info, notifications, chat and the rest of the HUD sit
-  toward the edges of your view, curved round your head like a helmet visor, with the middle of your view clear. Each
-  part keeps its side and corner, and turns to face your eyes. Markers and the crosshair stay where they point. To have
+  toward the edges of your view, curved round your head like a helmet visor, with the middle of your view clear. With
+  the helmet view on, the HUD is projected onto the glass as one display, laid out whole as the game lays it out. It is
+  light on the glass, so it hides little of the world behind it, and like a real helmet display it is focused at the
+  HUD distance, where your eyes can rest on it. Without the helmet view, each part keeps its side and corner and turns
+  to face your eyes. Markers and the crosshair stay where they point. In a cockpit, the artificial horizon lies on the
+  real horizon, and the altitude sits under the crosshair. To have
   the whole HUD on one flat panel ahead of you instead, turn off Options > VR > Interface > **HUD on the visor**. The
   desktop window shows the HUD flat either way.
 - **Settings:** everything is in **Options > VR**, on five tabs: Display, Comfort, Controls, Hands and Interface.
+- **For mod authors:** a mod that draws a HUD can find out where the VR HUD is through the plugin's API, so it reads
+  right in a headset. See [docs/MOD_API.md](docs/MOD_API.md).
   - Each setting's tooltip says what it does.
   - Every way out keeps your changes. **Undo changes** puts back what you had when you opened the screen.
   - The file is `SpaceEngineersVR.cfg` in the game's own folder beside `SpaceEngineers.cfg`: `%APPDATA%\SpaceEngineers\`
@@ -147,8 +179,8 @@ example "Press [Right grip] to open".
 | Right stick click | reload, with a hand weapon. Pointing at a container, or right hand on one: put the Build Planner in production; with the right grip held: deposit all | landing gear | - | large / small block |
 | Right trigger | primary: fire, weld, grind, drill (Left-handed with a gun or tool: secondary) | primary | fire | place the block |
 | Left trigger | secondary (with a gun: nothing; raise the gun to your eye to use its sight. Left-handed with a gun or tool: primary) | secondary | - | remove the block (creative; in survival the grinder removes blocks) |
-| Right grip | use, or grab what your hand is on; on your helmet: suit lamp. At a container the use waits until you let go of the grip | hold the flight stick: tilt it to roll or pitch, twist it to yaw (see below) | - | as on foot: use, or grab what your hand is on |
-| Left grip | in empty air: tools wheel; on something: grab; on your helmet: suit lamp; at its mouth: push to talk | hold the throttle; at the mouth: push to talk | at the mouth: push to talk | as on foot / jetpack |
+| Right grip | use, or grab what your hand is on; on the right of your helmet: open or close it; on the left: suit lamp. At a container the use waits until you let go of the grip | hold the flight stick: tilt it to roll or pitch, twist it to yaw (see below); on your helmet: as on foot | - | as on foot: use, or grab what your hand is on |
+| Left grip | in empty air: tools wheel; on something: grab; on the right of your helmet: open or close it; on the left: suit lamp; at its mouth: push to talk | hold the throttle; on your helmet: as on foot; at the mouth: push to talk | at the mouth: push to talk | as on foot / jetpack |
 | A | jump; jetpack: up | up | zoom in, held | jump; jetpack: up. With the left stick click held: the block's next stage |
 | B | jetpack on / off | down | zoom out, held | jetpack on / off. With the left stick click held: the previous stage |
 | X | tap: dampeners on / off; hold: ping what you point at (see Ping) | tap: dampeners on / off; hold: ping where you look | - | tap: symmetry on / off; hold: next symmetry plane (creative) |
@@ -294,8 +326,9 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
   Then reach to your other hand's hip, close the grip to take a fresh one, and push it up into the well under the gun until
   it clicks. The gun is loaded then, or when the game's own reload time is up if that is later: reloading by hand is never
   quicker than the game's (**Reload by hand**; off, the click reloads on the game's timer).
-- **Suit lamp:** grip your helmet, or tap the side of your head, to switch the suit lamp. The helmet itself is on the
-  wrist panel and the actions wheel.
+- **Helmet and suit lamp:** on foot or in a seat, grip the right side of your helmet, with either hand, to open or close
+  it, and the left side to switch the suit lamp (in a seat too it is your suit's lamp, not the ship's lights); or tap the side of your head with a fingertip for the lamp (**Helmet and lamp by hand**). With
+  **Helmet view** off, either side switches the lamp. The helmet and the lamp are also on the wrist panel and the actions wheel.
 - **Push to talk:** hold the left grip with your hand at your helmet's mouth.
 - **Fingertip buttons:** touch a button panel's button with your index fingertip.
 - **Grab to use:** close your hand on a seat, door, terminal, cargo container, medical room or anything else the Use key
@@ -334,11 +367,19 @@ This is **early access**. These are the known issues and limits:
   - typing amounts at a store block or ATM;
   - the actions wheel's Voxel material page (creative);
   - the wrist panel's Heal tile;
-  - the HUD on the visor, on foot and in a seat;
+  - the HUD on the visor, on foot and in a seat, and the HUD projected on the glass;
+  - the helmet's inside round the view and its travel, the visor tint, the sun visor, the glare, the HUD powering on, and
+    the breathing in the helmet;
+  - feeling the jetpack, the magnetic boots and hard landings in the hands;
+  - each gun's shot felt as that gun (pistol, rifle, launcher), the support hand feeling it too, and the click of an empty gun;
+  - the artificial horizon on the real horizon in a cockpit;
   - zero-g pitch and roll staying off while you are in gravity;
   - the view steadied on magnetic boots (on an asteroid your body and arms still rock; the view does not);
   - pitch and yaw from the held flight stick;
   - the Vive wand layout, not yet tried on real wands.
+- **Mod HUDs:** mods that draw their HUD through Text HUD API or Rich HUD Framework show it too close to read in a
+  headset. Those frameworks don't use the plugin's [mod API](docs/MOD_API.md) yet; the rest of the game's HUD is
+  unaffected.
 - **Multiplayer has not been tested.** Your arms and where you hold your tool are only shown on your own PC. Other players
   see your tool where their game animates it, but your shots still go where your hand points.
 - **Hands are for on foot.** In a seat your hands hold the stick and throttle, and cockpit buttons cannot be pressed
@@ -379,6 +420,12 @@ Before you report, check these:
 - [Harmony](https://github.com/pardeike/Harmony) by Andreas Pardeike (MIT), which the plugin uses to hook the game.
 - The [Khronos OpenXR loader](https://github.com/KhronosGroup/OpenXR-SDK-Source) (Apache 2.0). Its official release
   build ships in `lib/openxr/`, with its licence.
+- [ColbyJack1134](https://github.com/ColbyJack1134) and his [SpaceEngineersVR](https://github.com/ColbyJack1134/SpaceEngineersVR),
+  with his permission: the particle density setting, the double-click tolerance for lists and tables, the free mouse, the
+  controller pose guard, the lens-mask margin and the menu fallback when the VR view fails are adapted from his code, and
+  the cockpits are his: the moving sticks, throttles, wheels and handlebars, the touchable switches, covers and handles,
+  the seat panel and seat fit, and the per-cockpit flight settings. His description of the game's artificial horizon
+  layout was the reference for ours.
 
 This is a separate project from Math0424's earlier SpaceEngineersVR plugin, and is not related to it.
 

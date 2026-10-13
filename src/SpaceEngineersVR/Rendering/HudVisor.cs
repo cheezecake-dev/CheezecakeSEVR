@@ -21,12 +21,12 @@ using VRageRender.Messages;
 namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
-    /// The HUD's fixed parts on the helmet's visor, curved round the head, instead of on the flat panel
+    /// The HUD's fixed parts on the helmet's visor, as one display curved round the head, instead of on the flat panel
     /// (<see cref="HudPanel"/>): the toolbar, the status plates, block info, the notifications, chat, the quest log and the
-    /// rest, each kept on its side and in its corner but moved out toward that edge and turned to face the eyes, so the
-    /// middle of the view is clear and every part is as far away as the panel was. The markers - ore, antennas, target
-    /// locks, the selection box - and the crosshair stay on the flat panel, where <see cref="HudCamera"/> places them so
-    /// they point at what they mark.
+    /// rest, each where the game lays it out beside its neighbours, on one cylinder round the eyes, with the top row moved
+    /// up and the bottom row moved down to the visor's rim so the middle of the view is clear. The markers - ore,
+    /// antennas, target locks, the selection box - and the crosshair stay on the flat panel, where <see cref="HudCamera"/>
+    /// places them so they point at what they mark.
     /// <para>
     /// The parts are the game's own drawing, not redrawn. On the game thread each part's draw is bracketed by two render
     /// messages that draw nothing (a DrawString of scale 0, whose text is a string instance only this class has; the
@@ -36,11 +36,32 @@ namespace SpaceEngineersVR.Rendering
     /// indicator by the corner their definition aligns them to, the notifications, and the voice chat, objective line and
     /// performance warning. Before the renderer draws the GUI (<see cref="EyeRenderer"/>, MyRender11.RenderMainSprites),
     /// <see cref="Split"/> takes the messages between each pair of tags out of the main sprite queue, in their order;
-    /// the rest is drawn into the panel. Each part is drawn by the game's sprite renderer, exactly where the GUI
-    /// has it, into its own area of one visor image, which goes to the headset as one composition layer a part: a piece
-    /// of a cylinder round the head (XR_KHR_composition_layer_cylinder) or, without it, a flat quad facing the eyes;
+    /// the rest is drawn into the panel. Each part is drawn by the game's sprite renderer into one visor image, which goes
+    /// to the headset as one composition layer: a piece of a cylinder round the head (XR_KHR_composition_layer_cylinder),
     /// head-locked in the VIEW space at <see cref="VRSettings.HudDistance"/>, in the GUI's own pixels, sampled once by the
     /// runtime.
+    /// </para>
+    /// <para>
+    /// The display (<see cref="Lay"/>, <see cref="Measure"/>), with the helmet view on: the HUD projected onto the visor's glass
+    /// from inside the helmet, as one picture. The GUI is laid round the cylinder whole, at one scale, every part where the game
+    /// draws it beside its neighbours (the plates along the bottom with the toolbar between them, the quest log at the top
+    /// left), <see cref="VRSettings.HudWidthDegrees"/> wide, moved out to <see cref="Push"/> times that up to <see cref="SideMost"/>
+    /// each side; nothing is cut out of it or moved apart. <see cref="VRSettings.HudTextSize"/> grows each part away from the
+    /// edge or corner it belongs to. Like a helmet display it is collimated: it is seen at <see cref="VRSettings.HudDistance"/>,
+    /// where the eyes can rest on it, not on the glass a hand's width away. It is light projected onto the glass
+    /// (<see cref="Projected"/>): most of its light is added to the view and only a little of it hides what is behind, so
+    /// plates and shadows do not stand in front of the world. It rides on the glass: as the helmet opens the glass swings up
+    /// and the HUD with it (<see cref="HelmetHud.GlassCover"/>), until it goes at half-way (<see cref="HelmetHud.Hidden"/>), and
+    /// it comes down into place as the helmet closes. It is fixed to the helmet, not the head (<see cref="VRSettings.HudOnHelmet"/>):
+    /// the helmet gives only a little as the head turns (<see cref="HelmetTurn"/>), so looking far round looks away from it. With <see cref="VRSettings.HudTextBacking"/> above 0 a soft dark band runs
+    /// round the rim behind the rows and the sides (<see cref="DrawBand"/>), fading out before the display's edge and toward
+    /// the middle, instead of a plate behind each text. A cylinder layer, or a flat one where the runtime has no cylinders.
+    /// </para>
+    /// <para>
+    /// The zone layout, as before the helmet view (with it off, or with RenderDebug HudVisorZones=1): each part on a layer of its own, moved out toward its edge or corner by its own anchor and turned to face the
+    /// eyes both ways (<see cref="Pack"/>, <see cref="Place"/>), with a plate behind each text when backed. The anchors moved
+    /// the corners apart from the middles, which cut rows the game drew together into separate boxes: the reason for the one
+    /// display.
     /// </para>
     /// <para>
     /// What a part does not draw is not on the visor: the status bars the wrist has taken (<see cref="WristStatus"/>) and
@@ -57,14 +78,18 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Debug: the whole HUD back on the flat panel (<see cref="RenderDebug"/> HudVisor=0).</summary>
         public static bool Off { get; set; }
 
-        /// <summary>Debug: the parts on flat quads facing the eyes even where cylinder layers are offered (<see cref="RenderDebug"/> HudVisorCylinder=0).</summary>
+        /// <summary>Debug: the HUD on flat quads even where cylinder layers are offered (<see cref="RenderDebug"/> HudVisorCylinder=0): the one display on one, the zone layout's parts each facing the eyes.</summary>
         public static bool NoCylinder { get; set; }
 
+        /// <summary>Debug: the zone layout, each part on a layer of its own, as before the one display (<see cref="RenderDebug"/> HudVisorZones=1).</summary>
+        public static bool Zones { get; set; }
+
         /// <summary>
-        /// How far out a part is moved: the corner or edge it belongs to (its anchor) goes this many times as far from
-        /// straight ahead as the flat panel has it, but not past <see cref="SideMost"/>, <see cref="UpMost"/> and
-        /// <see cref="DownMost"/>; the part moves with its anchor. Parts of one anchor keep their places to each other,
-        /// and the outer ones move farther, so nothing that was apart on the panel comes together.
+        /// How far out the HUD is moved from straight ahead. The one display: its sides go this many times as far out as the
+        /// flat panel's, but not past <see cref="SideMost"/> (the GUI is widened with them, so nothing moves apart).
+        /// The zone layout: the corner or edge a part belongs to (its anchor) goes this many times as far, to the same limits;
+        /// the part moves with its anchor. Parts of one anchor keep their places to each other, and the outer ones move
+        /// farther, so nothing that was apart on the panel comes together.
         /// </summary>
         private const float Push = 1.25f;
 
@@ -79,13 +104,31 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Pixels of clear edge kept round a part's drawing in the visor image, and between parts.</summary>
         private const int Pad = 4, Gap = 2;
 
-        /// <summary>The visor image's side, pixels (less where the runtime's images are smaller). The GUI is 1920x1080.</summary>
+        /// <summary>The zone layout's visor image's side, pixels (less where the runtime's images are smaller). The GUI is 1920x1080.</summary>
         private const int ImageSide = 2048;
+
+        /// <summary>The one display's image at most, pixels each way (less where the runtime's images are smaller); larger, the zone layout is used.</summary>
+        private const int DisplaySide = 4096;
+
+        /// <summary>
+        /// Degrees of clear room round the GUI's frame on the display, so the band (<see cref="DrawBand"/>) fades out before the
+        /// layer's edge and a part's slack round its text is not cut.
+        /// </summary>
+        private const float Rim = 2f;
+
+        /// <summary>
+        /// The one display as light projected onto the glass: the share of its coverage (alpha) that is turned into added light,
+        /// so only the rest hides the world behind it. 0 would be a picture painted over the view; 1 pure light, which a bright
+        /// sky washes out. Live from RenderDebug HudVisorLight.
+        /// </summary>
+        public static float Projected { get; set; } = DefaultProjected;
+
+        public const float DefaultProjected = 0.6f;
 
         /// <summary>Frames whose HUD has to go on the flat panel (<see cref="Fault"/>) before it stays there for the run.</summary>
         private const int FaultsToStop = 3;
 
-        /// <summary>The layers each frame has before the visor's: the eyes, the external view and the flat panel.</summary>
+        /// <summary>The layers each frame has before the visor's: the eyes, the external view and the flat panel; and with the helmet view on, the helmet's glass and frame (<see cref="XrSession.HelmetLayerCount"/>).</summary>
         private const int OtherLayers = 3;
 
         private const string DefaultTarget = "DefaultOffscreenTarget";
@@ -169,6 +212,9 @@ namespace SpaceEngineersVR.Rendering
             /// <summary>Its drawing with <see cref="Pad"/> round it, in the GUI; and where that is in the visor image (no size: not on the visor).</summary>
             public Rectangle Rect, InImage;
 
+            /// <summary>Image pixels to a GUI pixel where it is drawn in the visor image.</summary>
+            public float Scale = 1f;
+
             /// <summary>Its place has been logged for the current settings.</summary>
             public bool Logged;
 
@@ -203,22 +249,22 @@ namespace SpaceEngineersVR.Rendering
 
         private static Vector2I gui, imageSize;
 
-        /// <summary>Image pixels to a GUI pixel in the parts on the visor this frame (<see cref="Pack"/>): the text size, or less where the image is full.</summary>
-        private static float drawScale = 1f;
         private static float uiScale = 1f;
         private static object image;
-        private static (float Distance, float Width, bool Cylinder, float Size) loggedFor;
+        private static (float Distance, float Width, bool Cylinder, float Size, bool Display) loggedFor;
 
-        // The game's renderer, reached through methods made at start (its types are internal).
-        private delegate void DrawSpritesCall(object renderer, object target, MyViewport bound, MyViewport full, Vector2 size);
+        /// <summary>This frame's parts are on the one display (<see cref="Lay"/>), not in zones (<see cref="Pack"/>).</summary>
+        private static bool display;
 
+        // The one display (Measure): image pixels to a radian round the cylinder, and to a unit of height over the distance
+        // (the same, so its pixels are square); where the GUI's top left is in the image; the image's row level with the eyes; and why it last
+        // did not fit, logged once.
+        private static float perRadian, centreRow;
+        private static Vector2 origin;
+        private static string displayRefused;
+
+        // The GUI's sprite queue, by target (its types are internal); drawing goes through GameSprites.
         private static FieldInfo spritesManager, drawQueue, queueMessages;
-        private static Func<object> getRenderer;
-        private static Action<object> returnRenderer, scissorPop;
-        private static Action<object, MyRenderMessageBase> process;
-        private static Action<object, Rectangle> scissorPush;
-        private static DrawSpritesCall drawSprites;
-        private static Func<int, string, float, Vector2> measure;
 
         static HudVisor()
         {
@@ -319,7 +365,8 @@ namespace SpaceEngineersVR.Rendering
         private static bool Wanted => VRSettings.HudVisor && !Off && !failed;
 
         /// <summary>Layers for the visor's parts: the runtime's most a frame (its maxLayerCount; ours is at most <see cref="XrSession.MostLayers"/>) less the others.</summary>
-        private static int Budget => Math.Min(XrRuntime.MaxLayerCount > 0 ? XrRuntime.MaxLayerCount : XrSession.MostLayers, XrSession.MostLayers) - OtherLayers;
+        private static int Budget => Math.Min(XrRuntime.MaxLayerCount > 0 ? XrRuntime.MaxLayerCount : XrSession.MostLayers, XrSession.MostLayers)
+            - OtherLayers - (HelmetView.On ? XrSession.HelmetLayerCount : 0);
 
         // ---- Game thread: tagging the HUD's parts ----
 
@@ -381,15 +428,16 @@ namespace SpaceEngineersVR.Rendering
         private static void Report(bool on)
         {
             bool curved = XrRuntime.HasCylinder && !NoCylinder;
-            int key = on ? (curved ? 1 : 2) : failed ? 3 : Off ? 4 : 5;
+            int key = on ? (curved ? (Zones ? 6 : 1) : 2) : failed ? 3 : Off ? 4 : 5;
             // On, it is told once the headset's runtime is there to say how many layers it takes; a failure has its own log.
             if (key == stateKey || on && !HeadsetShown)
                 return;
             stateKey = key;
             if (on)
             {
-                string layers = curved ? "cylinder layers (XR_KHR_composition_layer_cylinder)"
-                    : "flat layers facing the eyes" + (NoCylinder ? " (RenderDebug HudVisorCylinder=0)" : " (the runtime offers no cylinder layers)");
+                string layers = curved && !Zones ? "one display, a cylinder layer (XR_KHR_composition_layer_cylinder) round the head"
+                    : curved ? "cylinder layers (XR_KHR_composition_layer_cylinder), one a zone (RenderDebug HudVisorZones=1)"
+                    : "flat layers facing the eyes, one a zone" + (NoCylinder ? " (RenderDebug HudVisorCylinder=0)" : " (the runtime offers no cylinder layers)");
                 Log.Info($"HUD on the visor: on, its parts on {layers}, head-locked in the VIEW space; the runtime takes up to {XrRuntime.MaxLayerCount} layers a frame, " +
                          $"{Math.Max(Budget, 0)} of them for the visor; the markers and the crosshair stay on the flat panel");
             }
@@ -580,7 +628,7 @@ namespace SpaceEngineersVR.Rendering
                 foundFrames++;
                 bool take = false;
                 if (fault == null && wanted)
-                    take = Pack(out fault);
+                    take = Arrange(out fault);
                 if (fault != null)
                     Fault(fault);
                 Take(messages, take);
@@ -772,7 +820,7 @@ namespace SpaceEngineersVR.Rendering
                     if (string.IsNullOrEmpty(text.Text))
                         break;
                     // Aligned within TextureWidthInPx of its point: anywhere from its left to that width's right.
-                    Vector2 size = measure(text.FontIndex, text.Text, text.ScreenScale);
+                    Vector2 size = GameSprites.Measure(text.FontIndex, text.Text, text.ScreenScale);
                     float slack = TextSlack(size), x = text.ScreenCoord.X, y = text.ScreenCoord.Y;
                     Add(piece, x + Math.Min(0f, text.TextureWidthInPx - size.X) - slack, y - slack,
                         x + Math.Max(size.X, text.TextureWidthInPx) + slack, y + size.Y + slack, text.IgnoreBounds);
@@ -786,7 +834,7 @@ namespace SpaceEngineersVR.Rendering
                 {
                     if (string.IsNullOrEmpty(text.Text) || text.ScreenScale == 0f)
                         break;
-                    Vector2 size = measure(text.FontIndex, text.Text, text.ScreenScale);
+                    Vector2 size = GameSprites.Measure(text.FontIndex, text.Text, text.ScreenScale);
                     float slack = TextSlack(size), x = text.ScreenCoord.X, y = text.ScreenCoord.Y;
                     Add(piece, x - slack, y - slack, x + size.X + slack, y + size.Y + slack, text.IgnoreBounds);
                     Plate(piece, text, x, y, x + ShownWidth(size.X, text.ScreenMaxWidth), y + size.Y);
@@ -841,8 +889,101 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// Finds each part with something on screen a place in the visor image (shelves, tallest first). False, with the
-        /// reason, when they do not all have a layer and a place: then none of them goes on the visor this frame.
+        /// Lays this frame's parts out in the visor image: on the one display (<see cref="Lay"/>) with the helmet view on, where
+        /// the runtime offers cylinder layers and the image fits (<see cref="Measure"/>), else in zones (<see cref="Pack"/>). False, with the
+        /// reason, when they cannot all go on the visor: then none of them does this frame.
+        /// </summary>
+        private static bool Arrange(out string fault)
+        {
+            display = HelmetView.On && !Zones && Measure();
+            return display ? Lay(out fault) : Pack(out fault);
+        }
+
+        /// <summary>Sets a part's <see cref="Piece.Rect"/>, its drawing with <see cref="Pad"/> round it inside the GUI; false when it has nothing on screen.</summary>
+        private static bool Bound(Piece piece)
+        {
+            if (piece.Right <= piece.Left || piece.Bottom <= piece.Top)
+                return false;
+            int left = Math.Max((int)Math.Floor(piece.Left) - Pad, 0), top = Math.Max((int)Math.Floor(piece.Top) - Pad, 0);
+            int right = Math.Min((int)Math.Ceiling(piece.Right) + Pad, gui.X), bottom = Math.Min((int)Math.Ceiling(piece.Bottom) + Pad, gui.Y);
+            if (right <= left || bottom <= top)
+                return false;
+            piece.Rect = new Rectangle(left, top, right - left, bottom - top);
+            return true;
+        }
+
+        /// <summary>
+        /// The one display's size, and where the GUI goes on it, from the settings: <see cref="VRSettings.HudWidthDegrees"/>
+        /// wide, moved out (<see cref="Out"/>) to <see cref="SideMost"/> each side, one image pixel to a GUI pixel, the GUI whole;
+        /// and <see cref="Rim"/> clear all round. At the defaults (55 degrees, a 1920x1080 GUI) the GUI is 60 degrees wide at 32
+        /// pixels a degree, about 17.6 up and down, and the image 2048x1208 pixels. False (logged once) when the runtime's images
+        /// are too small for it: then the zone layout is used.
+        /// </summary>
+        private static bool Measure()
+        {
+            float halfWidth = Out(MathHelper.ToRadians(VRSettings.HudWidthDegrees / 2f), SideMost);
+            perRadian = gui.X / (2f * halfWidth);
+            float margin = MathHelper.ToRadians(Rim) * perRadian;
+            origin = new Vector2(margin, margin);
+            centreRow = origin.Y + gui.Y / 2f;
+            var size = new Vector2I((int)Math.Ceiling(gui.X + 2f * margin), (int)Math.Ceiling(gui.Y + 2f * margin));
+            int maxWidth = Math.Min(DisplaySide, XrRuntime.MaxImageWidth > 0 ? XrRuntime.MaxImageWidth : DisplaySide);
+            int maxHeight = Math.Min(DisplaySide, XrRuntime.MaxImageHeight > 0 ? XrRuntime.MaxImageHeight : DisplaySide);
+            if (size.X > maxWidth || size.Y > maxHeight)
+            {
+                string reason = $"the one display needs a {size.X}x{size.Y} px image and the headset's are at most {maxWidth}x{maxHeight}";
+                if (reason != displayRefused)
+                {
+                    displayRefused = reason;
+                    Log.Info("HUD on the visor: " + reason + "; its parts go on in zones instead");
+                }
+                return false;
+            }
+            imageSize = size;
+            return true;
+        }
+
+        /// <summary>
+        /// Finds each part with something on screen its place on the one display: where the GUI has it, grown by <see cref="VRSettings.HudTextSize"/> away
+        /// from the edge or corner it belongs to (its anchor), which stays where it was, and kept inside the image. The parts
+        /// are drawn at the text size, so a larger part is sharp, not sampled up. False, with the reason, when the runtime
+        /// has no layer for the display.
+        /// </summary>
+        private static bool Lay(out string fault)
+        {
+            fault = null;
+            float size = VRSettings.HudTextSize;
+            int count = 0;
+            for (int z = 0; z < ZoneCount; z++)
+            {
+                Piece piece = pieces[z];
+                if (!Bound(piece))
+                    continue;
+                count++;
+                float pivotX = Math.Max(piece.Rect.Left, Math.Min(piece.Rect.Right, Anchors[z].X * gui.X));
+                float pivotY = Math.Max(piece.Rect.Top, Math.Min(piece.Rect.Bottom, Anchors[z].Y * gui.Y));
+                int width = Math.Min((int)Math.Ceiling(piece.Rect.Width * size), imageSize.X);
+                int height = Math.Min((int)Math.Ceiling(piece.Rect.Height * size), imageSize.Y);
+                float left = origin.X + pivotX + (piece.Rect.X - pivotX) * size;
+                float top = origin.Y + pivotY + (piece.Rect.Y - pivotY) * size;
+                int x = Math.Max(0, Math.Min(imageSize.X - width, (int)Math.Round(left)));
+                int y = Math.Max(0, Math.Min(imageSize.Y - height, (int)Math.Round(top)));
+                piece.InImage = new Rectangle(x, y, width, height);
+                piece.Scale = size;
+            }
+            if (count == 0)
+                return false;
+            if (Budget < 1)
+            {
+                fault = "the runtime has no layer for the visor";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Finds each part with something on screen a place in the visor image (shelves, tallest first): the zone layout.
+        /// False, with the reason, when they do not all have a layer and a place: then none of them goes on the visor this frame.
         /// </summary>
         private static bool Pack(out string fault)
         {
@@ -851,13 +992,8 @@ namespace SpaceEngineersVR.Rendering
             for (int z = 0; z < ZoneCount; z++)
             {
                 Piece piece = pieces[z];
-                if (piece.Right <= piece.Left || piece.Bottom <= piece.Top)
+                if (!Bound(piece))
                     continue;
-                int left = Math.Max((int)Math.Floor(piece.Left) - Pad, 0), top = Math.Max((int)Math.Floor(piece.Top) - Pad, 0);
-                int right = Math.Min((int)Math.Ceiling(piece.Right) + Pad, gui.X), bottom = Math.Min((int)Math.Ceiling(piece.Bottom) + Pad, gui.Y);
-                if (right <= left || bottom <= top)
-                    continue;
-                piece.Rect = new Rectangle(left, top, right - left, bottom - top);
                 int at = count++;
                 while (at > 0 && pieces[order[at - 1]].Rect.Height < piece.Rect.Height)
                 {
@@ -879,7 +1015,8 @@ namespace SpaceEngineersVR.Rendering
             {
                 if (Shelve(count, scale, out fault))
                 {
-                    drawScale = scale;
+                    foreach (Piece piece in pieces)
+                        piece.Scale = scale;
                     return true;
                 }
                 if (scale <= 1f)
@@ -936,13 +1073,21 @@ namespace SpaceEngineersVR.Rendering
             }
             try
             {
-                DrawPlates();
+                if (!display)
+                    DrawPlates();
                 image = EyeRenderer.Borrow("VR HUD visor", imageSize);
                 EyeRenderer.Clear(image);
+                if (display)
+                    DrawBand(image);
                 foreach (Piece piece in pieces)
                 {
-                    if (piece.Messages.Count > 0)
+                    if (piece.Messages.Count > 0 && (!display || piece.InImage.Width > 0))
                         Draw(image, piece, true);
+                }
+                if (display)
+                {
+                    Project(image);
+                    PowerOn(image);
                 }
                 SharpDX.Direct3D11.Texture2D swapImage = XrSession.AcquireVisorImage(imageSize.X, imageSize.Y);
                 try
@@ -953,7 +1098,10 @@ namespace SpaceEngineersVR.Rendering
                 {
                     XrSession.ReleaseVisorImage();
                 }
-                Place();
+                if (display)
+                    PlaceDisplay();
+                else
+                    Place();
                 onHeadset = true;
                 visorFrames++;
                 return true;
@@ -966,13 +1114,52 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
+        /// <summary>
+        /// The one display as projected light: the image's alpha times 1 less <see cref="Projected"/>, its colour kept, so over the
+        /// view its light adds and its coverage hides less (<see cref="GameSprites.ScaleAlpha"/>). The band under it was drawn
+        /// that much stronger (<see cref="BandPixels"/>), so the backing hides as much as its setting says. Without the blend
+        /// state the display stays as drawn.
+        /// </summary>
+        private static void Project(object target)
+        {
+            float kept = 1f - MathHelper.Clamp(Projected, 0f, 1f);
+            if (kept >= 1f || GameSprites.ScaleAlpha == null)
+                return;
+            GameSprites.DrawTextures(target, imageSize, new Color(0f, 0f, 0f, kept), GameSprites.ScaleAlpha,
+                (Gui.GuiTextures.Blank, new RectangleF(0f, 0f, imageSize.X, imageSize.Y)));
+        }
+
+        /// <summary>How long the display takes to power on as the visor seals, seconds: short, so the HUD's information is not held back.</summary>
+        private const double PowerOnSeconds = 0.22;
+
+        /// <summary>
+        /// The projector powering on as the visor seals (<see cref="HelmetHud.RestoredAt"/>): for <see cref="PowerOnSeconds"/> the
+        /// display comes up from a third of its light with two quick flickers, its colour and its coverage dimmed alike (a multiply,
+        /// then an alpha scale), so it fades in as light and never as a dark sheet. Every part is there from the first frame.
+        /// Without the blend states it comes up at once.
+        /// </summary>
+        private static void PowerOn(object target)
+        {
+            long since = System.Diagnostics.Stopwatch.GetTimestamp() - HelmetHud.RestoredAt;
+            double t = since / (PowerOnSeconds * System.Diagnostics.Stopwatch.Frequency);
+            if (HelmetHud.RestoredAt == 0 || t >= 1.0 || t < 0.0 || GameSprites.Multiply == null || GameSprites.ScaleAlpha == null)
+                return;
+            float level = 0.35f + 0.65f * (float)t;
+            if ((t > 0.22 && t < 0.3) || (t > 0.52 && t < 0.58))
+                level *= 0.4f;
+            var whole = new RectangleF(0f, 0f, imageSize.X, imageSize.Y);
+            GameSprites.DrawTextures(target, imageSize, new Color(level, level, level, 1f), GameSprites.Multiply, (Gui.GuiTextures.Blank, whole));
+            GameSprites.DrawTextures(target, imageSize, new Color(0f, 0f, 0f, level), GameSprites.ScaleAlpha, (Gui.GuiTextures.Blank, whole));
+        }
+
+        /// <summary>The share of the display's coverage <see cref="Project"/> keeps this frame: 1 when it does not run.</summary>
+        private static float Kept => GameSprites.ScaleAlpha == null ? 1f : Math.Max(0.05f, 1f - MathHelper.Clamp(Projected, 0f, 1f));
+
         /// <summary>Room, pixels, a plate keeps round the text it backs; plates this close are one.</summary>
         private const float PlatePad = 4f;
 
-        private const string PlateTexture = "Textures\\GUI\\Blank.dds";
-
         /// <summary>
-        /// Puts a dark plate behind each block of text, first in its part so everything else draws over it. Texts whose plates
+        /// The zone layout's backing: puts a dark plate behind each block of text, first in its part so everything else draws over it. Texts whose plates
         /// touch share one, so overlapping lines do not darken each other twice. The plates are part of the part's messages
         /// and go when it does (<see cref="Discard"/>); the desktop window's copy of the panel has them too.
         /// </summary>
@@ -1003,7 +1190,7 @@ namespace SpaceEngineersVR.Rendering
                 for (int i = plates.Count - 1; i >= 0; i--)
                 {
                     MyRenderMessageDrawSprite sprite = MyRenderProxy.MessagePool.Get<MyRenderMessageDrawSprite>(MyRenderMessageEnum.DrawSprite);
-                    sprite.Texture = PlateTexture;
+                    sprite.Texture = Gui.GuiTextures.Blank;
                     sprite.DestinationRectangle = plates[i];
                     sprite.SourceRectangle = null;
                     sprite.Color = color;
@@ -1082,31 +1269,31 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         private static void Draw(object target, Piece piece, bool inImage)
         {
-            object renderer = getRenderer();
+            object renderer = GameSprites.Rent();
             try
             {
                 bool clip = inImage && uiScale == 1f;
                 if (clip)
-                    scissorPush(renderer, piece.Rect);
+                    GameSprites.ScissorPush(renderer, piece.Rect);
                 foreach (MySpriteDrawRenderMessage message in piece.Messages)
-                    process(renderer, message);
+                    GameSprites.Process(renderer, message);
                 for (int i = piece.Scissors + (clip ? 1 : 0); i > 0; i--)
-                    scissorPop(renderer);
-                // The renderer is given the GUI's size to write into its shaders and a viewport drawScale times larger.
-                float k = inImage ? drawScale : 1f;
+                    GameSprites.ScissorPop(renderer);
+                // The renderer is given the GUI's size to write into its shaders and a viewport the part's scale times larger.
+                float k = inImage ? piece.Scale : 1f;
                 float shiftX = inImage ? piece.InImage.X - piece.Rect.X * k : 0f, shiftY = inImage ? piece.InImage.Y - piece.Rect.Y * k : 0f;
                 var full = new MyViewport(shiftX, shiftY, gui.X * k, gui.Y * k);
                 var bound = new MyViewport(shiftX + gui.X * k * (1f - uiScale) / 2f, shiftY + gui.Y * k * (1f - uiScale) / 2f, gui.X * k * uiScale, gui.Y * k * uiScale);
-                drawSprites(renderer, target, bound, full, new Vector2(gui.X, gui.Y));
+                GameSprites.Draw(renderer, target, bound, full, new Vector2(gui.X, gui.Y));
             }
             finally
             {
-                returnRenderer(renderer);
+                GameSprites.Return(renderer);
             }
         }
 
         /// <summary>
-        /// Where each part on the visor goes, round the head in the VIEW space. Its middle is where the flat panel shows it,
+        /// The zone layout: where each part on the visor goes, round the head in the VIEW space. Its middle is where the flat panel shows it,
         /// seen from the head, moved out with its anchor (<see cref="Push"/>), at <see cref="VRSettings.HudDistance"/>, and
         /// turned to face the eyes both ways. It spans no more than the angles it spans on the flat panel, so it is the size
         /// it was there, and parts that did not overlap there do not overlap here: the anchors only move apart.
@@ -1118,9 +1305,9 @@ namespace SpaceEngineersVR.Rendering
             // Tangent of the angle a pixel spans in the middle of the flat panel, seen from the head.
             float perPixel = 2f * (float)Math.Tan(MathHelper.ToRadians(widthDegrees) / 2f) / gui.X;
             cylinder = XrRuntime.HasCylinder && !NoCylinder;
-            if (loggedFor != (distance, widthDegrees, cylinder, VRSettings.HudTextSize))
+            if (loggedFor != (distance, widthDegrees, cylinder, VRSettings.HudTextSize, false))
             {
-                loggedFor = (distance, widthDegrees, cylinder, VRSettings.HudTextSize);
+                loggedFor = (distance, widthDegrees, cylinder, VRSettings.HudTextSize, false);
                 foreach (Piece piece in pieces)
                     piece.Logged = false;
             }
@@ -1179,6 +1366,146 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
+        /// <summary>
+        /// The one display round the head in the VIEW space: the whole visor image on a cylinder of radius
+        /// <see cref="VRSettings.HudDistance"/> about the head, its middle straight ahead, <see cref="perRadian"/> pixels to a
+        /// radian round it and to a unit of height over the distance, so its pixels are square and the image's row
+        /// <see cref="centreRow"/> is level with the eyes. A cylinder layer's image is centred on its pose, so the pose is moved
+        /// up or down to where the image's middle row is. Without cylinder layers, a flat quad there, as wide as the cylinder's
+        /// arc. Turned up with the visor's glass as it swings (<see cref="GlassSwing"/>). Logs the display, and each part where
+        /// it is on it, once for the settings.
+        /// </summary>
+        private static void PlaceDisplay()
+        {
+            float distance = VRSettings.HudDistance;
+            cylinder = XrRuntime.HasCylinder && !NoCylinder;
+            float middleUp = (centreRow - imageSize.Y / 2f) / perRadian * distance;
+            // On the glass: swung up with it in the helmet's space, then with the helmet's turn from the head (row vectors).
+            Matrix onGlass = Matrix.CreateRotationX(GlassSwing);
+            if (VRSettings.HudOnHelmet)
+                onGlass *= HelmetTurn.FromHead();
+            Quaternion swing = Quaternion.CreateFromRotationMatrix(onGlass);
+            Vector3 centre = Vector3.Transform(new Vector3(0f, middleUp, 0f), onGlass);
+            Vector3 middle = Vector3.Transform(new Vector3(0f, middleUp, -distance), onGlass);
+            placed[0] = new XrSession.VisorPiece
+            {
+                Rect = new XrRect2Di { X = 0, Y = 0, Width = imageSize.X, Height = imageSize.Y },
+                Orientation = new XrQuaternionf { X = swing.X, Y = swing.Y, Z = swing.Z, W = swing.W },
+                Centre = new XrVector3f { X = centre.X, Y = centre.Y, Z = centre.Z },
+                Middle = new XrVector3f { X = middle.X, Y = middle.Y, Z = middle.Z },
+                Radius = distance,
+                Width = imageSize.X / perRadian * distance,
+                Height = imageSize.Y / perRadian * distance,
+            };
+            placedCount = 1;
+
+            float perDegree = perRadian * (float)Math.PI / 180f;
+            if (loggedFor != (distance, VRSettings.HudWidthDegrees, cylinder, VRSettings.HudTextSize, true))
+            {
+                loggedFor = (distance, VRSettings.HudWidthDegrees, cylinder, VRSettings.HudTextSize, true);
+                foreach (Piece piece in pieces)
+                    piece.Logged = false;
+                Log.Info($"HUD on the visor: projected on the glass as one display, {imageSize.X}x{imageSize.Y} px on a {(cylinder ? "cylinder" : "flat")} layer {distance:0.00} m out, " +
+                         $"{imageSize.X / perDegree:0.0} degrees wide (the GUI {gui.X / perDegree:0.0}, whole), from {Elevation(0f):0.0} up to {-Elevation(imageSize.Y):0.0} down, " +
+                         $"{perDegree:0.0} px a degree; parts at {VRSettings.HudTextSize:0.00}x; {Projected:P0} of its coverage as light " +
+                         $"({(GameSprites.ScaleAlpha != null ? "RenderDebug HudVisorLight" : "no blend state for it: drawn as painted")})");
+            }
+            for (int z = 0; z < ZoneCount; z++)
+            {
+                Piece piece = pieces[z];
+                if (piece.Logged || piece.Messages.Count == 0 || piece.InImage.Width == 0)
+                    continue;
+                piece.Logged = true;
+                Rectangle at = piece.InImage;
+                Log.Info($"HUD on the visor: the {Names[z]} part, {piece.Rect.Width}x{piece.Rect.Height} px of the GUI at ({piece.Rect.X}, {piece.Rect.Y}), " +
+                         $"{at.Width / perDegree:0.0} x {Elevation(at.Top) - Elevation(at.Bottom):0.0} degrees on the display; its middle " +
+                         $"{(at.X + at.Width / 2f - imageSize.X / 2f) / perDegree:0.0} degrees right and {Elevation(at.Y + at.Height / 2f):0.0} up");
+            }
+        }
+
+        /// <summary>
+        /// How far the visor's glass has swung up from closed, radians: helmet_open's swing times how far open it is
+        /// (<see cref="HelmetHud.GlassCover"/>). The HUD is projected on the glass, so it turns up with it. 0 without the helmet worn.
+        /// </summary>
+        private static float GlassSwing => HelmetHud.Worn ? (1f - HelmetHud.GlassCover) * HelmetHud.GlassSwingAngle : 0f;
+
+        /// <summary>The angle up from level to a row of the one display's image, degrees.</summary>
+        private static float Elevation(float row) => MathHelper.ToDegrees((float)Math.Atan((centreRow - row) / perRadian));
+
+        // ---- The band (the one display) ----
+
+        /// <summary>Texels each way of the band's texture, stretched over the whole display.</summary>
+        private const int BandSize = 256;
+
+        /// <summary>Degrees over which the band fades out inward, past its depth.</summary>
+        private const float BandSoft = 5f;
+
+        /// <summary>
+        /// How deep the band is at full strength, as a share of the GUI, from the GUI's frame inward: along the top and the bottom
+        /// a quarter of its height, about the depth of the quest log and of the plates and the toolbar; along the sides a fifth
+        /// of its width, about block info's.
+        /// </summary>
+        private const float BandRows = 0.25f, BandSides = 0.18f;
+
+        private static readonly GeneratedTexture band = new GeneratedTexture("VR HUD visor band", BandSize, BandPixels);
+
+        // What the band's texels were made for: the display's size, degrees, its depths, degrees, and the backing.
+        private static (float Wide, float High, float Rows, float Sides, float Backing) bandFor;
+
+        /// <summary>
+        /// The text backing on the one display (<see cref="VRSettings.HudTextBacking"/> above 0): one soft dark band round the
+        /// rim, under the parts, instead of a plate behind each text. As dark as the backing along the rows and the sides, to
+        /// <see cref="BandRows"/> and <see cref="BandSides"/> of the GUI in, fading out over <see cref="BandSoft"/> degrees past
+        /// that toward the middle, and fading in over <see cref="Rim"/> from the layer's edge, so no edge of it shows as a line.
+        /// The texture is made again when the display's size or the backing changes.
+        /// </summary>
+        private static void DrawBand(object target)
+        {
+            float backing = VRSettings.HudTextBacking;
+            if (backing <= 0f)
+                return;
+            float perDegree = perRadian * (float)Math.PI / 180f;
+            // Drawn as much stronger as the projection will take its coverage down (Project), so it backs as the setting says.
+            var wanted = (imageSize.X / perDegree, imageSize.Y / perDegree, Rim + BandRows * gui.Y / perDegree, Rim + BandSides * gui.X / perDegree, Math.Min(1f, backing / Kept));
+            if (wanted != bandFor)
+            {
+                bandFor = wanted;
+                band.Remake();
+            }
+            object texture = band.Get();
+            if (texture != null)
+                EyeRenderer.Blend(target, texture, new MyViewport(0f, 0f, imageSize.X, imageSize.Y));
+        }
+
+        /// <summary>The band's texels for <see cref="bandFor"/>: black, premultiplied, its alpha the band's strength.</summary>
+        private static byte[] BandPixels(int size)
+        {
+            var (wide, high, rows, sides, backing) = bandFor;
+            var texels = new byte[size * size * 4];
+            for (int j = 0; j < size; j++)
+            {
+                float top = (j + 0.5f) / size * high, bottom = high - top;
+                for (int i = 0; i < size; i++)
+                {
+                    float left = (i + 0.5f) / size * wide, right = wide - left;
+                    float edge = Math.Min(Math.Min(left, right), Math.Min(top, bottom));
+                    float deep = Math.Max(Math.Max(Within(top, rows), Within(bottom, rows)), Math.Max(Within(left, sides), Within(right, sides)));
+                    float alpha = backing * Smooth(edge / Rim) * deep;
+                    texels[(j * size + i) * 4 + 3] = (byte)Math.Round(Math.Min(1f, alpha) * 255f);
+                }
+            }
+            return texels;
+        }
+
+        /// <summary>1 within <paramref name="depth"/> degrees of an edge, fading to 0 over <see cref="BandSoft"/> past it.</summary>
+        private static float Within(float fromEdge, float depth) => 1f - Smooth((fromEdge - depth) / BandSoft);
+
+        private static float Smooth(float t)
+        {
+            t = t < 0f ? 0f : t > 1f ? 1f : t;
+            return t * t * (3f - 2f * t);
+        }
+
         /// <summary>The angle from straight ahead to a column of the flat panel, radians, right positive.</summary>
         private static float Across(float x, float perPixel) => (float)Math.Atan((x - gui.X / 2f) * perPixel);
 
@@ -1199,18 +1526,12 @@ namespace SpaceEngineersVR.Rendering
 
         // ---- The game's renderer ----
 
-        /// <summary>Finds the GUI's sprite queue, and makes the calls into the renderer's internal sprite renderer and fonts.</summary>
+        /// <summary>Finds the GUI's sprite queue, and reaches the game's sprite renderer (<see cref="GameSprites"/>).</summary>
         private static void Bind()
         {
             Assembly render11 = typeof(MyDX11Render).Assembly;
             Type managers = render11.GetType("VRage.Render11.Common.MyManagers", throwOnError: true);
-            Type render = render11.GetType("VRageRender.MyRender11", throwOnError: true);
-            Type sprites = render11.GetType("VRage.Render11.Sprites.MySpritesRenderer", throwOnError: true);
             Type messageData = render11.GetType("VRage.Render11.Sprites.MySpriteMessageData", throwOnError: true);
-            Type rtv = render11.GetType("VRage.Render11.Resources.IRtvBindable", throwOnError: true);
-            Type blend = render11.GetType("VRage.Render11.Resources.IBlendState", throwOnError: true);
-            Type context = render11.GetType("VRage.Render11.RenderContext.MyRenderContext", throwOnError: true);
-            Type renderFont = render11.GetType("VRageRender.MyRenderFont", throwOnError: true);
 
             // MyManagers.SpritesManager.m_drawQueue[target].Messages: the sprite messages waiting to be drawn, by target.
             spritesManager = AccessTools.Field(managers, "SpritesManager");
@@ -1219,83 +1540,7 @@ namespace SpaceEngineersVR.Rendering
             if (drawQueue == null || !typeof(IDictionary).IsAssignableFrom(drawQueue.FieldType)
                 || queueMessages == null || queueMessages.FieldType != typeof(MyList<MySpriteDrawRenderMessage>))
                 throw new MissingFieldException("MySpritesManager.m_drawQueue or MySpriteMessageData.Messages is not what it was");
-
-            // MyManagers.SpritesManager.GetSpritesRenderer() and Return(renderer).
-            ILGenerator il = ReflectionUtil.Begin("HudVisor.GetSpritesRenderer", typeof(object), Type.EmptyTypes, sprites, out DynamicMethod method);
-            il.Emit(OpCodes.Ldsfld, spritesManager);
-            il.Emit(OpCodes.Callvirt, AccessTools.Method(spritesManager.FieldType, "GetSpritesRenderer"));
-            il.Emit(OpCodes.Ret);
-            getRenderer = (Func<object>)method.CreateDelegate(typeof(Func<object>));
-
-            il = ReflectionUtil.Begin("HudVisor.ReturnSpritesRenderer", null, new[] { typeof(object) }, sprites, out method);
-            il.Emit(OpCodes.Ldsfld, spritesManager);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Castclass, sprites);
-            il.Emit(OpCodes.Callvirt, AccessTools.Method(spritesManager.FieldType, "Return", new[] { sprites }));
-            il.Emit(OpCodes.Ret);
-            returnRenderer = (Action<object>)method.CreateDelegate(typeof(Action<object>));
-
-            // renderer.ProcessDrawMessage(message, touchTextures: true, ignoreBounds: null), as the GUI's own pass adds its sprites.
-            il = ReflectionUtil.Begin("HudVisor.Process", null, new[] { typeof(object), typeof(MyRenderMessageBase) }, sprites, out method);
-            LocalBuilder noOverride = il.DeclareLocal(typeof(bool?));
-            il.Emit(OpCodes.Ldloca_S, noOverride);
-            il.Emit(OpCodes.Initobj, typeof(bool?));
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Castclass, sprites);
-            il.Emit(OpCodes.Ldarg_1);
-            il.Emit(OpCodes.Ldc_I4_1);
-            il.Emit(OpCodes.Ldloc, noOverride);
-            il.Emit(OpCodes.Callvirt, AccessTools.Method(sprites, "ProcessDrawMessage", new[] { typeof(MyRenderMessageBase), typeof(bool), typeof(bool?) }));
-            il.Emit(OpCodes.Ret);
-            process = (Action<object, MyRenderMessageBase>)method.CreateDelegate(typeof(Action<object, MyRenderMessageBase>));
-
-            // renderer.ScissorStackPush(rectangle) and ScissorStackPop().
-            il = ReflectionUtil.Begin("HudVisor.ScissorPush", null, new[] { typeof(object), typeof(Rectangle) }, sprites, out method);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Castclass, sprites);
-            il.Emit(OpCodes.Ldarg_1);
-            il.Emit(OpCodes.Callvirt, AccessTools.Method(sprites, "ScissorStackPush", new[] { typeof(Rectangle) }));
-            il.Emit(OpCodes.Ret);
-            scissorPush = (Action<object, Rectangle>)method.CreateDelegate(typeof(Action<object, Rectangle>));
-
-            il = ReflectionUtil.Begin("HudVisor.ScissorPop", null, new[] { typeof(object) }, sprites, out method);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Castclass, sprites);
-            il.Emit(OpCodes.Callvirt, AccessTools.Method(sprites, "ScissorStackPop", Type.EmptyTypes));
-            il.Emit(OpCodes.Ret);
-            scissorPop = (Action<object>)method.CreateDelegate(typeof(Action<object>));
-
-            // renderer.Draw(MyRender11.RC, target, ref bound, ref full, ref size, null, null): the default blend, premultiplied
-            // alpha, and no depth test, as the GUI is drawn.
-            il = ReflectionUtil.Begin("HudVisor.DrawSprites", null, new[] { typeof(object), typeof(object), typeof(MyViewport), typeof(MyViewport), typeof(Vector2) }, sprites, out method);
-            LocalBuilder noRegion = il.DeclareLocal(typeof(MyViewport?));
-            il.Emit(OpCodes.Ldloca_S, noRegion);
-            il.Emit(OpCodes.Initobj, typeof(MyViewport?));
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Castclass, sprites);
-            il.Emit(OpCodes.Call, AccessTools.PropertyGetter(render, "RC"));
-            il.Emit(OpCodes.Ldarg_1);
-            il.Emit(OpCodes.Castclass, rtv);
-            il.Emit(OpCodes.Ldarga_S, (byte)2);
-            il.Emit(OpCodes.Ldarga_S, (byte)3);
-            il.Emit(OpCodes.Ldarga_S, (byte)4);
-            il.Emit(OpCodes.Ldloc, noRegion);
-            il.Emit(OpCodes.Ldnull);
-            il.Emit(OpCodes.Callvirt, AccessTools.Method(sprites, "Draw",
-                new[] { context, rtv, typeof(MyViewport).MakeByRefType(), typeof(MyViewport).MakeByRefType(), typeof(Vector2).MakeByRefType(), typeof(MyViewport?), blend }));
-            il.Emit(OpCodes.Ret);
-            drawSprites = (DrawSpritesCall)method.CreateDelegate(typeof(DrawSpritesCall));
-
-            // MyRender11.GetFont(id).MeasureString(text, scale, useMyRenderGuiConstants: true): a text's size as it is drawn.
-            il = ReflectionUtil.Begin("HudVisor.MeasureString", typeof(Vector2), new[] { typeof(int), typeof(string), typeof(float) }, sprites, out method);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Call, AccessTools.Method(render, "GetFont", new[] { typeof(int) }));
-            il.Emit(OpCodes.Ldarg_1);
-            il.Emit(OpCodes.Ldarg_2);
-            il.Emit(OpCodes.Ldc_I4_1);
-            il.Emit(OpCodes.Callvirt, AccessTools.Method(renderFont, "MeasureString", new[] { typeof(string), typeof(float), typeof(bool) }));
-            il.Emit(OpCodes.Ret);
-            measure = (Func<int, string, float, Vector2>)method.CreateDelegate(typeof(Func<int, string, float, Vector2>));
+            GameSprites.Bind();
         }
     }
 }

@@ -71,6 +71,9 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         public static bool Trace { get; set; }
 
+        /// <summary>The hand's fingertip is down on a screen now (the cockpit's switches leave it alone meanwhile).</summary>
+        internal static bool Down(Hand hand) => hands[(int)hand].Key != null;
+
         /// <summary>The tip this near a screen's glass (either side) is traced.</summary>
         private const float TraceBand = 0.03f;
 
@@ -138,7 +141,7 @@ namespace SpaceEngineersVR.Hands
                 foreach (Hand hand in bothHands)
                 {
                     // A seated hand holding its stick or throttle is drawn on it, not where the controller is: it touches nothing.
-                    bool onControl = __instance.IsSitting && ControlGrip.Holds(hand);
+                    bool onControl = __instance.IsSitting && (ControlGrip.Holds(hand) || Cockpits.CockpitControls.HandBusy(hand));
                     bool may = live && !__instance.IsOnLadder && focused is MyGuiScreenGamePlay && !(holdsTool && hand == VRSettings.DominantHand) && !onControl;
                     Step(hand, __instance, may);
                 }

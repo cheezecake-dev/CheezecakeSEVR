@@ -64,5 +64,13 @@ namespace SpaceEngineersVR.Rendering
             }
             return texture;
         }
+
+        /// <summary>Lets the texture go, so the next <see cref="Get"/> makes it again from its pixels: for when what they show has changed.</summary>
+        public void Remake()
+        {
+            if (texture != null && manager != null)
+                discard.Invoke(manager, new[] { texture });
+            texture = null;
+        }
     }
 }

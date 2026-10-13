@@ -403,14 +403,35 @@ namespace SpaceEngineersVR.Rendering
         static partial void TestAidsFrameBegin(bool headset);
         static partial void TestAidsCapture(object target, int eye, Vector2I size, long frame);
 
-        /// <summary>Replaces MyRender11.DrawScene: both eyes, each with the game's 3D debug shapes, then the mirror, then the rest of the game's debug drawing.</summary>
+        /// <summary>
+        /// Replaces MyRender11.DrawScene: the eyes (<see cref="DrawBothEyes"/>). An exception of ours turns them off and leaves the
+        /// menus up instead (<see cref="MenuFallback"/>); any other goes on to the game, as it always did.
+        /// </summary>
         private static bool DrawEyes()
+        {
+            try
+            {
+                return DrawBothEyes();
+            }
+            catch (Exception e) when (!MenuFallback.Active && MenuFallback.Ours(e))
+            {
+                MenuFallback.Fail(e, "Drawing the eyes");
+                eyesDrawn = headsetEyes = false;
+                // This frame's GUI goes up as the menus do while the eyes are off (ShowPanel); a frame left to the game stays its own.
+                return !vrFrame;
+            }
+        }
+
+        /// <summary>Both eyes, each with the game's 3D debug shapes, then the mirror, then the rest of the game's debug drawing.</summary>
+        private static bool DrawBothEyes()
         {
             Trace(ref drawCalls, "DrawScene");
             if (!BeginFrame())
                 return true;
             if (XrSession.InFrame)
                 EndHeadsetFrame(false, null); // a frame the GUI step never finished
+            if (MenuFallback.Active)
+                return DrawNoEyes();
             PerfMeter.FrameBegin();
             FollowHeadset();
             DynamicResolution.Apply();
@@ -456,9 +477,17 @@ namespace SpaceEngineersVR.Rendering
                 // the head's turn round it and not its move, so nothing carries the view through a wall.
                 fromCamera = Matrix.CreateTranslation(-(headset ? ToMatrix(XrSession.Head) : desktopHead).Translation);
             else
+            {
                 // The wall fade's level is from the game frame the camera came from; when that frame is stale the head's move since
                 // is held back, so a stalled game thread cannot let the head lean through a wall the level does not know of.
-                fromCamera = WallFade.StallCap(headset ? ToMatrix(XrSession.Head) : desktopHead) * fromCamera;
+                Matrix now = headset ? ToMatrix(XrSession.Head) : desktopHead;
+                Matrix stall = WallFade.StallCap(now);
+                fromCamera = stall * fromCamera;
+                // With the helmet held off a wall (HelmetWalls) the head's move since that game frame is held along the wall as the
+                // frame held it, so pushing on into the wall does not shake the view at the headset's rate.
+                if (headInCamera.HasValue && HelmetWalls.LateHold(now.Translation + stall.Translation - headInCamera.Value.Translation, out Matrix held))
+                    fromCamera = held * fromCamera;
+            }
             object fullView = null;
 
             try
@@ -536,6 +565,8 @@ namespace SpaceEngineersVR.Rendering
                         Blend(eyeTargets[i], fullView, new MyViewport(eye.X, eye.Y));
                         FullView.Laid(eyeTargets[i], i);
                     }
+                    VisorGlare.DrawEye(eyeTargets[i], eye, EnvMatrices.ViewProjectionAt0(environmentMatrices));
+                    VisorGlass.DrawEye(eyeTargets[i], eye);
                     Vignette.Draw(eyeTargets[i], n, eye, Eyes[i].Projection);
                     CameraCut.Draw(eyeTargets[i], n, eye);
                     WallFade.Draw(eyeTargets[i], eye);
@@ -676,6 +707,22 @@ namespace SpaceEngineersVR.Rendering
             return true;
         }
 
+        /// <summary>
+        /// A frame while the eyes are off after a failure of ours (<see cref="MenuFallback"/>), drawn as the main menu's frame with no
+        /// scene: the GUI step follows the headset and <see cref="ShowPanel"/> draws the eyes, black with the panel and the laser's
+        /// beam. The game is given no head, so its own head angles hold the view as when the headset is lost. The game's debug
+        /// drawing goes on, as after the eyes, for its per-frame message queue.
+        /// </summary>
+        private static bool DrawNoEyes()
+        {
+            HeadTracker.Clear();
+            ForcedView.Drawing = false;
+            // The debug drawing releases the scene's ambient occlusion after it; this frame has none of its own to give.
+            object ambientOcclusion = borrowRtv.Invoke(texturesPool.GetValue(null), new object[] { "VR menu fallback AO", 8, 8, windowFormat, 1, 0 });
+            drawDebugScene.Invoke(null, new[] { ambientOcclusion });
+            return false;
+        }
+
         /// <summary>True when this frame goes to the headset.</summary>
         private static bool BeginHeadsetFrame()
         {
@@ -699,7 +746,7 @@ namespace SpaceEngineersVR.Rendering
                 return;
             try
             {
-                XrSession.EndFrame(eyes, panel, eyes ? ExternalView.TakeLayer() : null);
+                XrSession.EndFrame(eyes, panel, eyes ? ExternalView.TakeLayer() : null, eyes ? HelmetInterior.Show() : null);
             }
             catch (Exception e)
             {
@@ -791,9 +838,10 @@ namespace SpaceEngineersVR.Rendering
                 BeginHeadsetFrame();
             PerfMeter.GpuStart();
             PerfMeter.Mark(GpuPass.Gui, ScenePass.None);
-            // No scene (main menu): both eyes without one, so the panel is placed in each as in game (MainMenu).
+            // No scene (main menu, or the eyes off after a failure: MenuFallback): both eyes without one, so the panel is placed
+            // in each as in game (MainMenu).
             bool menu = false;
-            if (!eyes && HudPanel.Pending && MainMenu.Wanted)
+            if (!eyes && HudPanel.Pending && (MainMenu.Wanted || MenuFallback.Active))
                 menu = eyes = MainMenu.DrawEyes(out headset);
             XrSession.Panel? panel = null;
             try

@@ -15,6 +15,7 @@ namespace SpaceEngineersVR.Rendering
     /// <see cref="VRSettings.HudWidthDegrees"/> wide, and the HUD's fixed parts are on the visor round it in the headset
     /// (<see cref="HudVisor"/>); while a menu is open it stays where it was put when the menu
     /// opened (<see cref="WorldMenu"/>, <see cref="VRSettings.MenuDistance"/>, <see cref="VRSettings.MenuWidthDegrees"/>).
+    /// With the helmet view on and the helmet open the headset has no head-locked panel at all (<see cref="HelmetHud"/>).
     /// </summary>
     internal static class HudPanel
     {
@@ -99,6 +100,8 @@ namespace SpaceEngineersVR.Rendering
             {
                 Matrix head = EyeRenderer.Head;
                 bool locked = WorldMenu.Locked(head, out Matrix pose, out float fixedWidth);
+                // The helmet open with the helmet view on (HelmetHud): no HUD in the headset; menus and the wrist panel are world-locked and stay.
+                bool helmetOpen = !locked && HelmetHud.Hidden;
                 float distance = locked ? VRSettings.MenuDistance : VRSettings.HudDistance;
                 float widthDegrees = !locked ? VRSettings.HudWidthDegrees : MainMenu.Wanted ? VRSettings.MainMenuWidthDegrees : VRSettings.MenuWidthDegrees;
                 // The wrist panel has a size of its own, in metres (WorldMenu gives 0 for the others, which are an angle at a distance).
@@ -107,19 +110,26 @@ namespace SpaceEngineersVR.Rendering
 
                 // The panel's own space (x right, y up, facing +z) in the head's: ahead of it, or where it was left.
                 Matrix inHead = locked ? pose * Matrix.Invert(head) : Matrix.CreateTranslation(0f, 0f, -distance);
-                Place(locked ? pose : inHead * head, halfWidth, halfHeight);
+                if (!helmetOpen)
+                    Place(locked ? pose : inHead * head, halfWidth, halfHeight);
 
                 // The headset first: the HUD's fixed parts on the visor, when they were taken out (HudVisor), and the panel
-                // without them; any the visor cannot have are drawn back into the panel first.
+                // without them; any the visor cannot have are drawn back into the panel first (all of them with the helmet
+                // open, for the window, and no layer at all).
                 XrSession.Panel? layer = null;
                 bool headset = XrSession.InFrame && XrSession.ShouldRender;
-                bool visor = HudVisor.Show(shown, headset && !locked);
-                if (headset)
+                bool visor = HudVisor.Show(shown, headset && !locked && !helmetOpen);
+                if (headset && !helmetOpen)
                 {
                     SharpDX.Direct3D11.Texture2D image = XrSession.AcquirePanelImage(size.X, size.Y);
                     try
                     {
-                        EyeRenderer.CopyToImage(shown, image);
+                        // A menu or the wrist panel standing in the world is outside the helmet, seen through the visor; the HUD
+                        // ahead of the eyes is projected on the glass, inside it.
+                        if (locked)
+                            VisorGlass.CopyThrough(shown, size, image);
+                        else
+                            EyeRenderer.CopyToImage(shown, image);
                     }
                     finally
                     {

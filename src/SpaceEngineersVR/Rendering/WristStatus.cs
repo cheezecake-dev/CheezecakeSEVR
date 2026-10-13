@@ -218,7 +218,6 @@ namespace SpaceEngineersVR.Rendering
         // The sprite target and the generated texture's name (the game takes none with spaces, dots, slashes or brackets:
         // MyRenderProxy.IsValidGeneratedTextureName).
         private const string Target = "VRWristStatus";
-        private const string BlankTexture = "Textures\\GUI\\Blank.dds";
 
         // The screen's background: the HUD's left plate picture, the part behind its bars and icons.
         private const string PlateTexture = "Textures\\GUI\\Icons\\HUD 2017\\LeftPlate.png";

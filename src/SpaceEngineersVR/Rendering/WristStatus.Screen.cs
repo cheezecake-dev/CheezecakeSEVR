@@ -264,7 +264,7 @@ namespace SpaceEngineersVR.Rendering
         }
 
         private static void Sprite(RectangleF rectangle, Color color) =>
-            MyRenderProxy.DrawSprite(BlankTexture, ref rectangle, null, color, 0f, true, true, Target);
+            MyRenderProxy.DrawSprite(Gui.GuiTextures.Blank, ref rectangle, null, color, 0f, true, true, Target);
 
         /// <summary>A line when the screen's state changes; <paramref name="detail"/> is said with it, and is no change on its own.</summary>
         private static void State(string text, string detail = null)

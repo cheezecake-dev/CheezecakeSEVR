@@ -279,7 +279,7 @@ namespace SpaceEngineersVR.Rendering
         /// person from the seat it sits in. Also while a remote control is what the player steers: the controlled entity is
         /// the remote control then, but the camera is still the character's or its seat's.
         /// </summary>
-        private static bool OwnView(MyCharacter character)
+        internal static bool OwnView(MyCharacter character)
         {
             switch (MySession.Static.CameraController)
             {

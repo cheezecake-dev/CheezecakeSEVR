@@ -56,11 +56,19 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The mask is in the stencil and the patched passes test it. Read by the render jobs.</summary>
         private static volatile bool active;
 
-        private static int eye, fetchedChanges = -1, generation, reportedGeneration = -1, capacity;
+        /// <summary>
+        /// How far, in percent, the hidden area's edge is moved outward from the middle of the image, so a margin of the picture is
+        /// drawn inside the mask (RenderDebug LensMaskMargin=n, 0 to 20; 0, the default, is the runtime's mask as it is). A frame
+        /// shown again with the head moved on (reprojection) samples just outside the visible edge; with no margin that can be a
+        /// black corner. Read on the render thread for each eye's frame, so a change shows at once.
+        /// </summary>
+        public static volatile int Margin;
+
+        private static int eye, fetchedChanges = -1, generation, reportedGeneration = -1, reportedMargin = -1, capacity;
         private static readonly XrVector2f[][] hiddenVertices = { new XrVector2f[0], new XrVector2f[0] };
         private static readonly uint[][] hiddenIndices = { new uint[0], new uint[0] };
         private static readonly Vector2[][] screen = new Vector2[2][];
-        private static readonly int[] counts = new int[2], measured = { -1, -1 };
+        private static readonly int[] counts = new int[2], measured = { -1, -1 }, measuredMargin = { -1, -1 };
         private static readonly float[] shares = new float[2];
         private static string reported;
         private const string On = "on";
@@ -202,10 +210,11 @@ namespace SpaceEngineersVR.Rendering
                 return;
             }
 
+            int margin = Margin;
             try
             {
                 Fetch();
-                int count = ToScreen(hiddenVertices[eyeIndex], hiddenIndices[eyeIndex], projection, ref screen[eyeIndex]);
+                int count = ToScreen(hiddenVertices[eyeIndex], hiddenIndices[eyeIndex], projection, ref screen[eyeIndex], 1f + margin / 100f);
                 if (count < 0)
                 {
                     failed = true;
@@ -213,10 +222,11 @@ namespace SpaceEngineersVR.Rendering
                     return;
                 }
                 counts[eyeIndex] = count;
-                if (measured[eyeIndex] != generation)
+                if (measured[eyeIndex] != generation || measuredMargin[eyeIndex] != margin)
                 {
                     shares[eyeIndex] = Share(screen[eyeIndex], count);
                     measured[eyeIndex] = generation;
+                    measuredMargin[eyeIndex] = margin;
                 }
             }
             catch (Exception e)
@@ -226,16 +236,18 @@ namespace SpaceEngineersVR.Rendering
                 return;
             }
 
-            if (measured[0] == generation && measured[1] == generation)
+            if (measured[0] == generation && measured[1] == generation && measuredMargin[0] == margin && measuredMargin[1] == margin)
             {
                 if (counts[0] == 0 && counts[1] == 0)
                     Report("off, the runtime hides nothing");
-                else if (!ReferenceEquals(reported, On) || reportedGeneration != generation)
+                else if (!ReferenceEquals(reported, On) || reportedGeneration != generation || reportedMargin != margin)
                 {
                     reported = On;
                     reportedGeneration = generation;
-                    Log.Info($"Lens mask: on, the runtime's hidden area in the game's stereo stencil after the GBuffer clear; " +
-                        $"left {counts[0] / 3} triangles (about {shares[0] * 100f:F0}% of the image), right {counts[1] / 3} ({shares[1] * 100f:F0}%); " +
+                    reportedMargin = margin;
+                    Log.Info($"Lens mask: on, the runtime's hidden area in the game's stereo stencil after the GBuffer clear" +
+                        (margin > 0 ? $", its edge moved out {margin}% (RenderDebug LensMaskMargin)" : "") +
+                        $"; left {counts[0] / 3} triangles (about {shares[0] * 100f:F0}% of the image), right {counts[1] / 3} ({shares[1] * 100f:F0}%); " +
                         $"call sites testing it: {testedBy}");
                 }
             }
@@ -493,7 +505,12 @@ namespace SpaceEngineersVR.Rendering
         /// plane one metre ahead (z = -1) through the projection (row vectors, as VRageMath multiplies). The vertex count;
         /// -1 for a mesh that cannot be drawn (an index out of range, a point behind the eye). Can be checked without a game.
         /// </summary>
-        internal static int ToScreen(XrVector2f[] vertices, uint[] indices, in Matrix projection, ref Vector2[] buffer)
+        /// <param name="outward">
+        /// The points are scaled by this about the middle of the image after the projection: above 1 the hidden area's edge moves
+        /// outward, which leaves a margin of the picture drawn inside it (<see cref="Margin"/>); 1 is the runtime's mask as it is.
+        /// </param>
+        // The outward scale is adapted from ColbyJack1134's SpaceEngineersVR (Player/HiddenAreaMask.cs, OutwardScale), with his permission.
+        internal static int ToScreen(XrVector2f[] vertices, uint[] indices, in Matrix projection, ref Vector2[] buffer, float outward = 1f)
         {
             int count = indices.Length - indices.Length % 3;
             if (buffer == null || buffer.Length < count)
@@ -509,7 +526,7 @@ namespace SpaceEngineersVR.Rendering
                 float clipW = x * projection.M14 + y * projection.M24 - projection.M34 + projection.M44;
                 if (!(clipW > 1e-6f))
                     return -1;
-                buffer[k] = new Vector2(clipX / clipW, clipY / clipW);
+                buffer[k] = new Vector2(clipX / clipW * outward, clipY / clipW * outward);
             }
             return count;
         }

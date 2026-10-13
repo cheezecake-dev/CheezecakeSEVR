@@ -197,6 +197,28 @@ namespace SpaceEngineersVR.OpenXR
         public static void ReleaseVisorImage() => Release(visorSwapchain);
 
         /// <summary>
+        /// The swapchain image to copy one of the helmet's layers into (<see cref="HelmetInside"/>), made
+        /// again when the size changes. Pair with <see cref="ReleaseHelmetImage"/>.
+        /// </summary>
+        public static Texture2D AcquireHelmetImage(int which, int width, int height)
+        {
+            if (width != helmetWidths[which] || height != helmetHeights[which])
+            {
+                DestroySwapchain(ref helmetSwapchains[which], ref helmetImages[which]);
+                helmetSwapchains[which] = CreateSwapchain(width, height, out helmetImages[which]);
+                helmetWidths[which] = width;
+                helmetHeights[which] = height;
+                Log.Info($"OpenXR helmet layer {which} swapchain {width}x{height}");
+            }
+            return helmetImages[which][Acquire(helmetSwapchains[which])];
+        }
+
+        public static void ReleaseHelmetImage(int which) => Release(helmetSwapchains[which]);
+
+        /// <summary>The helmet layer's swapchain now (0 for none): a new one, after the session was made again, has no image released yet.</summary>
+        public static ulong HelmetSwapchain(int which) => helmetSwapchains[which];
+
+        /// <summary>
         /// On DXVK the runtime may submit to DXVK's queue in xrAcquireSwapchainImage, xrReleaseSwapchainImage, xrBeginFrame and
         /// xrEndFrame (the only calls the spec lets it), so DXVK is kept off the queue around them.
         /// </summary>

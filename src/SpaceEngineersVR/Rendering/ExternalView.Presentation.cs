@@ -148,7 +148,11 @@ namespace SpaceEngineersVR.Rendering
             SharpDX.Direct3D11.Texture2D image = XrSession.AcquireScreenImage(TextureWidth, TextureHeight);
             try
             {
-                EyeRenderer.CopyToImage(texture, image);
+                // Outside the helmet: seen through the visor. A window on the world, so it goes dark with the world in a camera cut
+                // and as the comfort vignette closes over where it stands (menus and the HUD are not, so they stay readable).
+                Vector3 inHead = Vector3.Transform(pose.Translation, Matrix.Invert(EyeRenderer.Head));
+                float light = (1f - CameraCut.Blackness) * (1f - Vignette.DarknessAt(inHead));
+                VisorGlass.CopyThrough(texture, new Vector2I(TextureWidth, TextureHeight), image, light);
             }
             finally
             {

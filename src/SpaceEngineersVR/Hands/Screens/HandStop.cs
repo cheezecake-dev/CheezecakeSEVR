@@ -181,7 +181,7 @@ namespace SpaceEngineersVR.Hands
                 if (s.Source != null)
                     Log.Info($"Hand stop: {hand} hand moved from {s.Name} to {best.Source}");
                 bool retouch = Equals(best.Source, s.LeftSource) && now - s.LeftAt < RetouchSeconds * second;
-                if (!retouch)
+                if (!retouch && !best.Silent)
                     Tick(hand);
                 s.Source = best.Source;
                 s.Name = best.Source.ToString();

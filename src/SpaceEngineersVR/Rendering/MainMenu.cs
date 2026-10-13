@@ -193,7 +193,6 @@ namespace SpaceEngineersVR.Rendering
                 for (int i = 0; i < 2; i++)
                 {
                     Clear(target, 0f, 0f, 0f, 1f);
-                    DrawBeam(target, i, head, whole, whole);
 
                     if (toHeadset)
                     {

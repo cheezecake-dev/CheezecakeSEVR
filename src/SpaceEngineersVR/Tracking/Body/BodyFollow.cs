@@ -11,17 +11,26 @@ namespace SpaceEngineersVR.Tracking
     /// On foot, the body turns to follow the head: when the head turns past the neck limit, and fully while walking,
     /// so walking goes where the player looks. The turn goes through the game's own rotation input, so it animates
     /// and syncs like any other turn, and <see cref="GameHead"/> is told how far the body actually turned so the view
-    /// does not move with it.
+    /// does not move with it. Not on the jetpack, in gravity or not: with nothing underfoot to turn it by, the body turns by the
+    /// sticks only, and the thrust goes where the head looks as far as it looks round. Nor floating free in zero g with the jetpack off,
+    /// standing on nothing: there is no friction to turn the body by, so it keeps its heading while the head looks round
+    /// (<see cref="Input.VRControls.FloatsFree"/>). On the magnetic boots or the ground and up a ladder, it follows.
     /// </summary>
     internal static class BodyFollow
     {
-        private static readonly float NeckLimit = MathHelper.ToRadians(50f);
+        /// <summary>On foot and standing, the head turns this far from the body before the body turns after it, radians; RenderDebug NeckLimit=n sets it, degrees, while the game runs.</summary>
+        internal static float NeckLimit { get; set; } = DefaultNeckLimit;
+
+        /// <summary>The default of <see cref="NeckLimit"/>, 50 deg.</summary>
+        internal static readonly float DefaultNeckLimit = MathHelper.ToRadians(50f);
         private static readonly float MaxTurnPerFrame = MathHelper.ToRadians(9f); // 540 deg/s at 60 Hz
 
         /// <summary>The turns are reported at most once a second (<see cref="Note"/>).</summary>
         private static readonly long NoteEvery = Stopwatch.Frequency;
 
         private static bool turning;
+        private static bool zeroGLogged;
+        private static bool floatLogged;
         private static float share;
         private static float followed;
         private static Vector3D forwardBefore;
@@ -56,6 +65,27 @@ namespace SpaceEngineersVR.Tracking
             float relative = GameHead.Yaw;
             float target = moveIndicator != Vector3.Zero ? 0f : MathHelper.Clamp(relative, -NeckLimit, NeckLimit);
             float turn = MathHelper.Clamp(relative - target, -MaxTurnPerFrame, MaxTurnPerFrame);
+            if (__instance.JetpackRunning)
+            {
+                // On the jetpack, in gravity or not, there is nothing underfoot to turn the body by: it turns by the sticks only,
+                // and the thrust goes where the head looks, as far as it looks round (VRControls.AddMovement, HeadThrust).
+                if (!zeroGLogged && Math.Abs(turn) >= 1e-4f)
+                {
+                    zeroGLogged = true;
+                    Log.Info($"Body follow: not on the jetpack, the head {MathHelper.ToDegrees(relative):F0} deg from the body; the body turns by the sticks only");
+                }
+                turn = 0f;
+            }
+            else if (Input.VRControls.FloatsFree(__instance))
+            {
+                // Floating free in zero g, the jetpack off and standing on nothing, there is no friction to turn the body by.
+                if (!floatLogged && Math.Abs(turn) >= 1e-4f)
+                {
+                    floatLogged = true;
+                    Log.Info($"Body follow: not while floating free in zero g with the jetpack off, the head {MathHelper.ToDegrees(relative):F0} deg from the body; the body turns by the sticks only (it follows again on the boots, the ground or a ladder)");
+                }
+                turn = 0f;
+            }
             float perUnit = __instance.RotationSpeed * 0.02f; // the game turns the body by -indicator.Y * this, radians
             if (Math.Abs(turn) < 1e-4f || perUnit <= 0f)
             {

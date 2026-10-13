@@ -177,6 +177,9 @@ namespace SpaceEngineersVR.Input
         private static int pageHeld, page;
         private static bool viewHeld, viewPressed;
 
+        /// <summary>The cockpit switch the fingertip was on when Y went down (ColbyJack1134's ToolbarGesture.Switch), or -1.</summary>
+        private static int yDownSwitch = -1;
+
         /// <summary>The wheel has the hands: the sticks and buttons are its, and the game is not given them.</summary>
         public static bool Owns => phase != Phase.Idle;
 
@@ -230,7 +233,10 @@ namespace SpaceEngineersVR.Input
             if (phase == Phase.Idle && seated && GameplayFocused())
             {
                 if (VRInput.IsNewPressed(Hand.Left, VRButtons.Y))
+                {
                     yDownAt = seconds;
+                    yDownSwitch = Cockpits.CockpitButtons.HoveredSwitch;
+                }
                 else if (!VRInput.IsPressed(Hand.Left, VRButtons.Y))
                 {
                     tapped = yDownAt >= 0d && VRInput.IsReleased(Hand.Left, VRButtons.Y) && seconds - yDownAt < VRControls.UseHoldSeconds;
@@ -247,6 +253,14 @@ namespace SpaceEngineersVR.Input
                         break;
                     if (walking && VRInput.IsNewPressed(Hand.Left, VRButtons.Grip) && Hands.GripClaim.Owner(Hand.Left) == null && GameplayFocused())
                         Begin(Gesture.Grip, seconds, leftStick);
+                    else if (seated && tapped && yDownSwitch >= 0)
+                    {
+                        // ColbyJack1134's AssignSwitch: Y tapped with a fingertip on one of his cockpit switches opens the game's
+                        // toolbar config screen on that switch, to assign, change or clear what it does. A fingertip that
+                        // moved to another switch before the release does nothing, rather than edit the wrong one.
+                        if (Cockpits.CockpitButtons.HoveredSwitch == yDownSwitch)
+                            Cockpits.CockpitActions.Configure(yDownSwitch);
+                    }
                     else if (seated && tapped)
                         Begin(Gesture.Tap, seconds, leftStick);
                     break;

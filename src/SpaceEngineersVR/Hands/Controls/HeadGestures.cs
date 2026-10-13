@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using HarmonyLib;
+using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
@@ -13,24 +14,39 @@ using VRageMath;
 namespace SpaceEngineersVR.Hands
 {
     /// <summary>
-    /// The suit lamp by hand, through the game's own call (the one the key makes), so the sound, the animation and the
-    /// multiplayer sync are the game's. The helmet itself is not by hand: it stays on the wrist panel and the actions wheel.
+    /// The helmet and the suit lamp by hand, through the game's own calls (the ones the keys make), so the sound, the
+    /// animation and the multiplayer sync are the game's. On foot and in a seat: seated, the helmet is switched through the seat
+    /// as the HELMET key does there, and the lamp is still the suit's own (never the ship's lights, which the L key switches
+    /// in a seat). The grip at the helmet asks before the cockpit's sticks and switches (priority 10, theirs 28 and up).
     /// <list type="bullet">
-    /// <item><b>Lamp, by grip.</b> A grip with either hand on the helmet (within <see cref="HelmetReach"/> of its shell)
-    /// toggles the suit lamp (<c>SwitchLights</c>, as the key does). Not the left hand at the helmet's mouth, the chin: that
-    /// is push to talk (<see cref="VoiceTalk"/>), which asks first.</item>
-    /// <item><b>Lamp, by tap.</b> A tap of a fingertip on the side of the head (the temple) toggles it the same way:
-    /// the tip touches, lifts within a second and a half, and no grip was pressed meanwhile (so reaching for the helmet
+    /// <item><b>Helmet, by grip on its right.</b> A grip with either hand on the right half of the helmet (within
+    /// <see cref="HelmetReach"/> of its shell, and right of the middle of the head, <see cref="OnRightHalf"/>) opens or closes
+    /// the helmet (<c>SwitchHelmet</c>, as the HELMET key does).</item>
+    /// <item><b>Lamp, by grip on its left.</b> A grip on the left half toggles the suit lamp (<c>SwitchLights</c>, as the key
+    /// does). Either hand works on either side. Not the left hand at the helmet's mouth, the chin: that is push to talk
+    /// (<see cref="VoiceTalk"/>), which asks first.</item>
+    /// <item><b>Sun visor, by grip on its brow.</b> With the helmet view on, a grip that starts on the helmet's brow (above the
+    /// eyes and in front, <see cref="OnBrow"/>) holds the sun visor (<see cref="Rendering.SunVisor"/>): drawn down
+    /// <see cref="SlideDistance"/> it lowers it over the glass, pushed up as far it raises it, each with a firm pulse. The brow
+    /// asks before the halves, so a grip there is never the helmet or the lamp.</item>
+    /// <item><b>Lamp, by tap.</b> A tap of a fingertip on the side of the head (the temple, either side) toggles it the same
+    /// way: the tip touches, lifts within a second and a half, and no grip was pressed meanwhile (so reaching for the helmet
     /// does not switch the lamp twice). Not with a tool in that hand.</item>
     /// </list>
+    /// With the helmet view off (<see cref="VRSettings.HelmetView"/>) the helmet is not by hand: a grip on either half
+    /// toggles the lamp, as it did before the helmet view.
     /// Only a grip that <b>starts</b> on the helmet counts: it is claimed through <see cref="GripClaim"/> at priority 10, so the
     /// grip's old meanings (Use on the right hand, the toolbar wheel on the left) are skipped for that press, and a grip
-    /// anywhere else keeps them. A light tick marks the hand reaching the helmet; the toggle is a firm pulse.
+    /// anywhere else keeps them. Which half it is on is settled as the grip starts. A light tick marks the hand reaching the
+    /// helmet; the toggle is a firm pulse.
     /// </summary>
     /// <remarks>
     /// Positions are in the character's model space (X to its right, Y up, Z back), from the eyes, placed from the head this
     /// frame (<see cref="HandWorld.TryGetTrackingToBody"/>, the placement the arms use), so they ride with the body at any speed.
-    /// The helmet's middle and the temples move with the eyes.
+    /// The helmet's middle and the temples move with the eyes. Its right and left halves are the body's right and left, as
+    /// the temples are: a head turned far round does not turn them. The hands are the controllers', the real hands: the drawn
+    /// hand is held off the helmet's shell by <see cref="HelmetStop"/>, and these go on reading where the real hand is, at the real
+    /// head, so a hand held to the helmet counts as before.
     /// </remarks>
     internal static class HeadGestures
     {
@@ -48,6 +64,12 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>The helmet or the lamp toggled: firm.</summary>
         public const float FirmAmplitude = 0.8f, FirmSeconds = 0.08f;
+
+        /// <summary>The brow: a grip at least this far above the middle of the head and this far in front of it, metres, along the helmet's own up and forward.</summary>
+        public const double BrowAbove = 0.05, BrowAhead = 0.02;
+
+        /// <summary>How far a hand on the brow is drawn down or pushed up to slide the sun visor, metres.</summary>
+        public const double SlideDistance = 0.05;
 
         /// <summary>A tap on the temple: lifted within this long, seconds.</summary>
         public const double TapSeconds = 1.5;
@@ -91,6 +113,13 @@ namespace SpaceEngineersVR.Hands
             /// <summary>This hand's grip is held by the helmet.</summary>
             public bool Holding;
 
+            /// <summary>The grip that the helmet took started on the right half of it (the helmet's), not the left (the lamp's); settled as the grip is claimed.</summary>
+            public bool GripOnRight;
+
+            /// <summary>The grip that the helmet took started on its brow: it holds the sun visor, and where the hand was when it last moved it.</summary>
+            public bool GripOnBrow;
+            public double BrowFromY;
+
             /// <summary>The hand is on the helmet now, for the tick.</summary>
             public bool Hover;
 
@@ -101,7 +130,7 @@ namespace SpaceEngineersVR.Hands
 
             public void Forget()
             {
-                Holding = Hover = LampTouching = LampLocked = false;
+                Holding = Hover = LampTouching = LampLocked = GripOnBrow = false;
             }
         }
 
@@ -123,19 +152,22 @@ namespace SpaceEngineersVR.Hands
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(HeadGestures), nameof(AfterSimulation)));
                 hooked = true;
-                Log.Info($"Suit lamp by hand: hooked (grip claim at priority {ClaimPriority}: a grip within {HelmetReach * 100:0} cm of the {HelmetShell * 100:0} cm helmet shell switches the lamp, as a fingertip tap on the temple does)");
+                Log.Info($"Helmet and lamp by hand: hooked (grip claim at priority {ClaimPriority}: a grip within {HelmetReach * 100:0} cm of the {HelmetShell * 100:0} cm helmet shell opens or closes the helmet on its right half and switches the lamp on its left, as a fingertip tap on either temple switches the lamp)");
             }
             catch (Exception e)
             {
                 hooked = false;
-                PatchRegistry.Lost(e, "The suit lamp gestures could not be hooked; the lamp stays on the key and the wrist panel");
+                PatchRegistry.Lost(e, "The helmet and lamp gestures could not be hooked; the helmet and the lamp stay on the keys and the wrist panel");
                 throw;
             }
         }
 
         // ---- The grip claim ----
 
-        /// <summary>A grip has just started on <paramref name="hand"/>: it is the helmet's when the hand is on the helmet right now.</summary>
+        /// <summary>
+        /// A grip has just started on <paramref name="hand"/>: it is the helmet's when the hand is on the helmet right now, and
+        /// the half it is on, right (the helmet) or left (the lamp), is settled here, from the hand's pose as the grip starts.
+        /// </summary>
         private static bool Take(Hand hand)
         {
             if (!hooked || !guard.On)
@@ -143,7 +175,11 @@ namespace SpaceEngineersVR.Hands
             MyCharacter character = MySession.Static?.LocalCharacter;
             if (!Live(character) || ToolbarWheel.Owns || !TryFrame(character, out Frame frame))
                 return false;
-            return TryHand(frame, hand, out Vector3D grip, out _) && OnHelmet(grip, frame.Head, false);
+            if (!TryHand(frame, hand, out Vector3D grip, out _) || !OnHelmet(grip, frame.Head, false))
+                return false;
+            runs[(int)hand].GripOnBrow = Rendering.HelmetView.On && OnBrow(grip, frame.Head);
+            runs[(int)hand].GripOnRight = OnRightHalf(grip, frame.Head);
+            return true;
         }
 
         // ---- The per-frame update ----
@@ -172,14 +208,30 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                guard.Failed(e, "The suit lamp gestures failed");
+                guard.Failed(e, "The helmet and lamp gestures failed");
             }
         }
 
-        /// <summary>Whether the gestures are in play: on foot, not up a ladder, and the game screen has the focus (no menu).</summary>
+        /// <summary>Whether the gestures are in play: on foot or in a seat, not up a ladder, and the game screen has the focus (no menu).</summary>
         private static bool Live(MyCharacter character) =>
-            !Off && VRSettings.HelmetAndLamp && VRInput.Active && character != null && HandTools.IsLocalOnFoot(character) && !character.IsOnLadder
+            !Off && VRSettings.HelmetAndLamp && VRInput.Active && character != null && Controlled(character) != null && !character.IsOnLadder
             && !character.Closed && character.PositionComp != null && MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay;
+
+        /// <summary>
+        /// What the local player controls with <paramref name="character"/> in it, the entity the game's HELMET key acts on: the
+        /// character on foot, or the seat it sits in. Null otherwise (dead, another character, a remote control, a turret).
+        /// </summary>
+        private static VRage.Game.ModAPI.Interfaces.IMyControllableEntity Controlled(MyCharacter character)
+        {
+            if (character.IsDead || character != MySession.Static?.LocalCharacter)
+                return null;
+            object controlled = MySession.Static.ControlledEntity;
+            if (ReferenceEquals(controlled, character))
+                return character;
+            if (controlled is MyShipController seat && seat.Pilot == character)
+                return seat;
+            return null;
+        }
 
         /// <summary>The model space this frame, placed as the arms are (from this frame's head).</summary>
         private static bool TryFrame(MyCharacter character, out Frame frame)
@@ -210,6 +262,30 @@ namespace SpaceEngineersVR.Hands
         internal static bool OnHelmet(in Vector3D grip, in Vector3D head, bool already) =>
             Vector3D.Distance(grip, head + (Vector3D)HeadCentre) <= (HelmetShell + HelmetReach) * (already ? Hysteresis : 1.0);
 
+        /// <summary>
+        /// The grip is on the right half of the helmet: right of the middle of the head (<see cref="HeadCentre"/>) along the
+        /// helmet's own right, which turns with the head as far as the helmet gives (<see cref="Rendering.HelmetTurn"/>), in the
+        /// character's model space (X to its right, Z back), so a head turned far round still has the helmet's right on its right.
+        /// </summary>
+        internal static bool OnRightHalf(in Vector3D grip, in Vector3D head)
+        {
+            Rendering.HelmetTurn.Look(out float yaw, out _);
+            Vector3D offset = grip - (head + (Vector3D)HeadCentre);
+            return offset.X * Math.Cos(yaw) - offset.Z * Math.Sin(yaw) > 0.0;
+        }
+
+        /// <summary>
+        /// The grip is on the helmet's brow: above the middle of the head by <see cref="BrowAbove"/> and in front of it by
+        /// <see cref="BrowAhead"/>, along the helmet's own forward (turned as <see cref="OnRightHalf"/> turns its right).
+        /// </summary>
+        internal static bool OnBrow(in Vector3D grip, in Vector3D head)
+        {
+            Rendering.HelmetTurn.Look(out float yaw, out _);
+            Vector3D offset = grip - (head + (Vector3D)HeadCentre);
+            double ahead = -(offset.X * Math.Sin(yaw) + offset.Z * Math.Cos(yaw));
+            return offset.Y >= BrowAbove && ahead >= BrowAhead;
+        }
+
         /// <summary>How far a fingertip is from the nearer temple, metres.</summary>
         internal static double TempleDistance(in Vector3D tip, in Vector3D head)
         {
@@ -231,12 +307,23 @@ namespace SpaceEngineersVR.Hands
             {
                 run.Holding = true;
                 changed = true;
-                ToggleLamp(hand, character, "grip on the helmet", "lamp grip");
+                if (run.GripOnBrow)
+                    run.BrowFromY = grip.Y;
+                else if (!Rendering.HelmetView.On)
+                    ToggleLamp(hand, character, "grip on the helmet", "lamp grip");
+                else if (run.GripOnRight)
+                    ToggleHelmet(hand, character, "grip on the right of the helmet", "helmet grip");
+                else
+                    ToggleLamp(hand, character, "grip on the left of the helmet", "lamp grip");
             }
             else if (!holds && run.Holding)
             {
                 run.Holding = false;
                 changed = true;
+            }
+            else if (holds && run.GripOnBrow)
+            {
+                Slide(hand, run, grip);
             }
 
             bool gripPressed = VRInput.IsPressed(hand, VRButtons.Grip);
@@ -249,7 +336,53 @@ namespace SpaceEngineersVR.Hands
             Lamp(hand, run, character, tip, frame, gripPressed, hand == VRSettings.DominantHand, now);
         }
 
-        /// <summary>The game's SwitchLights, as the key calls it; <paramref name="how"/> and <paramref name="check"/> name the gesture in the log.</summary>
+        /// <summary>
+        /// The game's SwitchHelmet, as the HELMET key calls it (MyGuiScreenGamePlay, on the controlled entity): the character on
+        /// foot, the seat when seated (MyShipController's, which switches its pilot's), raises the sync event, and every machine
+        /// plays the helmet's animation and sound (MyCharacter.OnSwitchHelmet, MyCharacterOxygenComponent.SwitchHelmet). <paramref name="how"/> and <paramref name="check"/> name the gesture in the log.
+        /// </summary>
+        private static void ToggleHelmet(Hand hand, MyCharacter character, string how, string check)
+        {
+            bool before = HelmetOn(character);
+            VRage.Game.ModAPI.Interfaces.IMyControllableEntity controlled = Controlled(character);
+            if (controlled == null)
+                return;
+            controlled.SwitchHelmet();
+            Haptics.Pulse(hand, FirmAmplitude, FirmSeconds);
+            Note($"Helmet: {hand} {how}: helmet {(before ? "on" : "off")} -> toggled");
+            Verify($"{hand} {check}", () => "helmet " + (HelmetOn(character) ? "on" : "off"));
+        }
+
+        /// <summary>
+        /// A hand holding the brow: drawn down <see cref="SlideDistance"/> since the visor last moved, it lowers the sun visor;
+        /// pushed up as far, it raises it. Only the way it is not already going counts, and the hand's place is taken again each time.
+        /// </summary>
+        private static void Slide(Hand hand, HandRun run, in Vector3D grip)
+        {
+            double moved = grip.Y - run.BrowFromY;
+            bool lower = moved <= -SlideDistance && !Rendering.SunVisor.Down;
+            bool raise = moved >= SlideDistance && Rendering.SunVisor.Down;
+            if (!lower && !raise)
+            {
+                // The way it already went: follow the hand, so the next slide is measured from where it turns back.
+                if (Rendering.SunVisor.Down ? moved < 0.0 : moved > 0.0)
+                    run.BrowFromY = grip.Y;
+                return;
+            }
+            run.BrowFromY = grip.Y;
+            Rendering.SunVisor.Move(lower);
+            Haptics.Pulse(hand, FirmAmplitude, FirmSeconds);
+            Note($"Sun visor: {hand} hand on the brow {(lower ? "drew it down" : "pushed it up")}");
+        }
+
+        /// <summary>The helmet is on (closed), as the game's HUD and the wrist panel read it.</summary>
+        private static bool HelmetOn(MyCharacter character) => character.OxygenComponent?.HelmetEnabled ?? false;
+
+        /// <summary>
+        /// The character's own SwitchLights, as the key calls it on foot: the suit lamp, in a seat too (there the key switches the
+        /// ship's lights instead; the suit lamp is switched and drawn seated as on foot, MyCharacter.EnableLights).
+        /// <paramref name="how"/> and <paramref name="check"/> name the gesture in the log.
+        /// </summary>
         private static void ToggleLamp(Hand hand, MyCharacter character, string how, string check)
         {
             bool before = character.LightEnabled;
@@ -367,7 +500,7 @@ namespace SpaceEngineersVR.Hands
                     continue;
                 Check check = checks[i];
                 checks.RemoveAt(i);
-                Log.Info($"Suit lamp by hand: {check.What} -> {check.Read()}");
+                Log.Info($"Helmet and lamp by hand: {check.What} -> {check.Read()}");
             }
         }
     }

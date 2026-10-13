@@ -62,6 +62,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(SharedShadows), SharedShadows.Patch);
             Feature(nameof(SceneOnce), SceneOnce.Patch);
             Feature(nameof(ParticlesOnce), ParticlesOnce.Patch);
+            Feature(nameof(ParticleDensity), ParticleDensity.Patch);
             Feature(nameof(ExposureOnce), ExposureOnce.Patch);
             Feature(nameof(OffCentreAO), OffCentreAO.Patch);
             Feature(nameof(CentredFlares), CentredFlares.Patch);
@@ -76,6 +77,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(HudToolbar), HudToolbar.Patch);
             Feature(nameof(WristStatus), WristStatus.Patch);
             Feature(nameof(HudVisor), HudVisor.Patch);
+            Feature(nameof(ConformalHorizon), ConformalHorizon.Patch);
             Feature(nameof(WorldMenu), WorldMenu.Patch);
             Feature(nameof(MainMenu), MainMenu.Patch);
             Feature(nameof(PanelCursor), PanelCursor.Patch);
@@ -104,11 +106,17 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(ExitUpright), ExitUpright.Patch);
             Feature(nameof(StandUpright), StandUpright.Patch);
             Feature(nameof(CameraCut), CameraCut.Patch);
+            Feature(nameof(ComfortGrid), ComfortGrid.Patch);
+            Feature(nameof(HelmetHead), HelmetHead.Patch);
+            Feature(nameof(HelmetHud), HelmetHud.Patch);
+            Feature(nameof(HelmetState), HelmetState.Patch);
             Feature(nameof(SuitLight), SuitLight.Patch);
             Feature(nameof(ChaseCamera), ChaseCamera.Patch);
             Feature(nameof(ThirdPersonGate), ThirdPersonGate.Patch);
             Feature(nameof(InputPatches), InputPatches.Patch);
             Feature(nameof(Laser), Laser.Patch);
+            Feature(nameof(DoubleClickTolerance), DoubleClickTolerance.Patch);
+            Feature(nameof(CursorClip), CursorClip.Patch);
             Feature(nameof(HandIK), HandIK.Patch);
             Feature(nameof(HandResidual), HandResidual.Patch);
             Feature(nameof(Hands.Haptics), Hands.Haptics.Patch);
@@ -117,6 +125,10 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(Hands.ScreenTouch), Hands.ScreenTouch.Patch);
             Feature(nameof(Gui.TouchToolbar), Gui.TouchToolbar.Patch);
             Feature(nameof(Hands.GrabUse), Hands.GrabUse.Patch);
+            Feature("ColbyCockpit", Cockpits.CockpitRenderPatch.Patch);
+            Feature("ColbySwitchAssignment", Cockpits.CockpitAssignment.Patch);
+            // Off with the piston and rotor handles (AnalogControl.Resolve): the per-frame drive and its save patch have nothing to drive.
+            // Feature("ColbyHandles", Cockpits.CockpitAnalogPatch.Patch);
             Feature(nameof(Hands.ShipModel), Hands.ShipModel.Patch);
             Feature(nameof(Hands.QuickInventory), Hands.QuickInventory.Patch);
             Feature(nameof(Hands.Ping), Hands.Ping.Patch);
@@ -126,6 +138,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(Hands.HullGrab), Hands.HullGrab.Patch);
             Feature(nameof(Hands.TwoHand), Hands.TwoHand.Patch);
             Feature(nameof(Hands.SurfaceStop), Hands.SurfaceStop.Patch);
+            Feature(nameof(Hands.HelmetStop), Hands.HelmetStop.Patch);
             Feature(nameof(Hands.Kickback), Hands.Kickback.Patch);
             Feature(nameof(Hands.Reload), Hands.Reload.Patch);
             Feature(nameof(WristButton), WristButton.Patch);
