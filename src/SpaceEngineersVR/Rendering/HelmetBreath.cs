@@ -1,202 +1,170 @@
-// HelmetBreath: hearing yourself breathe inside the closed helmet, calm at rest and harder after a sprint, from the game's own breathing sounds.
+// HelmetBreath: the game's own breathing in the closed helmet, as loud as the setting says, and straining as the suit's air runs low.
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Reflection;
+using HarmonyLib;
+using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Character;
+using Sandbox.Game.World;
 using VRage.Audio;
 using VRage.Data.Audio;
-using VRage.Game;
 
 namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
-    /// With the local character's helmet closed (<see cref="HelmetState"/>), the player hears their own breathing, flat inside the
-    /// head on an emitter of its own: calm at rest, heavy while sprinting and for <see cref="HeavyAfter"/> seconds after, and
-    /// heavy and louder as the suit's air runs low (<see cref="Common.SuitAir"/>, from the game's own low mark, as its HUD warns),
-    /// silent once the suit is empty, where the game's own suffocation and the heartbeat in the hands take over. Loud as
-    /// <see cref="VRSettings.HelmetBreathing"/> says (<see cref="LevelNames"/>), off with it at Off, with the helmet open, the
-    /// character dead or gone. Only this machine plays it, so it tells no one anything; it changes nothing in the game.
-    /// <para>
-    /// The sounds are the game's own, by cue id: the first of <see cref="CalmCues"/> and of <see cref="HeavyCues"/> the game has
-    /// loaded. A looped cue plays until the breathing changes; a one-shot is played again each time it ends. When the game has none
-    /// of them, nothing is played, and the log names each cue the game has loaded whose name has "breath" in it, to choose from.
-    /// RenderDebug HelmetBreath=0 turns it off whatever the setting.
-    /// </para>
+    /// The breathing heard inside the closed helmet is the game's own (MyCharacterBreath, for the local character only): calm at
+    /// rest, harder running and sprinting and for a while after, choking when the suit is empty, and silent with the helmet open in
+    /// air (MyCharacterSoundComponent.UpdateBreath and SelectSound set its state each frame; MyCharacterBreath.Update plays it,
+    /// flat). It is adapted, not played again beside it:
+    /// <list type="bullet">
+    /// <item>How loud, by <see cref="VRSettings.HelmetBreathing"/> (<see cref="LevelNames"/>): Normal is the game's own volume, Quiet
+    /// less (its breathing cues' volumes, MySoundData.Volume, scaled on this machine), and Off stops the breathing (its state to
+    /// NoBreath) but never the choking, which is the game's own warning that the suit is out of air.</item>
+    /// <item>Short of air (<see cref="Common.SuitAir"/>, from the game's own low mark, as its HUD warns): the breathing strains as the
+    /// suit runs low, as it does after a sprint (its state raised to Heated, then to VeryHeated from <see cref="StrainedFrom"/>).</item>
+    /// <item>Its sounds: the game asks for its breathing sounds but no longer defines them, so they are made from its own
+    /// recordings (<see cref="BreathCues"/>), recorded as heard inside the helmet, as its choking is, in any world's sound setting.</item>
+    /// </list>
+    /// Only this machine hears it, so it tells no one anything; it changes nothing in the game. RenderDebug HelmetBreath=0 leaves the
+    /// game's breathing as the game has it.
     /// </summary>
     internal static class HelmetBreath
     {
         /// <summary>The levels, in the options screen's order; <see cref="VRSettings.HelmetBreathing"/> is an index into it.</summary>
         public static readonly string[] LevelNames = { "Off", "Quiet", "Normal" };
 
-        /// <summary>Each level's share of the cue's own volume.</summary>
-        private static readonly float[] LevelVolumes = { 0f, 0.45f, 1f };
+        /// <summary>Each level's share of the game's own volume for its breathing (Off silences it by its state, so its share is unused).</summary>
+        private static readonly float[] LevelVolumes = { 1f, 0.45f, 1f };
 
-        /// <summary>The game's breathing cues, at rest and heavy, the first one loaded of each used.</summary>
-        private static readonly string[] CalmCues = { "PlayVocBreath1L", "PlayBreathCalm", "PlayVocBreathCalm" };
-        private static readonly string[] HeavyCues = { "PlayVocBreath2L", "PlayBreathHeavy", "PlayVocBreathHeavy" };
+        /// <summary>How short of air the suit is (<see cref="Common.SuitAir.Shortness"/>) from which the breathing is at its hardest.</summary>
+        private const float StrainedFrom = 0.5f;
 
-        /// <summary>Seconds the breathing stays heavy after a sprint ends.</summary>
-        private const double HeavyAfter = 6.0;
 
-        /// <summary>The strain as the suit's air runs low is taken in this many steps, so the sound is not started again every frame.</summary>
-        private const int StrainSteps = 4;
-
-        /// <summary>How much louder the breathing is with the suit all but empty: this much more than its level.</summary>
-        private const float StrainLouder = 0.6f;
-
-        /// <summary>Debug: no breathing, whatever the setting (<see cref="RenderDebug"/> HelmetBreath=0).</summary>
+        /// <summary>Debug: the game's breathing as the game has it, whatever the setting (<see cref="RenderDebug"/> HelmetBreath=0).</summary>
         public static bool Off { get; set; }
 
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(HelmetBreath));
 
-        // Game thread: the emitter and its character, the cue on it and at what volume, and when the last sprint was.
-        private static MyEntity3DSoundEmitter emitter;
-        private static MyCharacter emitterFor;
-        private static MyCueId playing;
-        private static float playingVolume;
-        private static long sprintAt;
+        // The game's breathing (MyCharacterBreath): the voice playing, and its sounds at rest, heavy, and choking as the suit's air
+        // runs out.
+        private static readonly AccessTools.FieldRef<MyCharacterBreath, IMySourceVoice> Voice =
+            AccessTools.FieldRefAccess<MyCharacterBreath, IMySourceVoice>("m_sound");
 
-        // The cues found, once: null for a breath the game has none of.
-        private static bool looked;
-        private static MyCueId? calm, heavy;
-        private static string calmName, heavyName;
+        private static readonly AccessTools.FieldRef<MyCharacterBreath, MySoundPair> BreathCalm = PairField("m_breathCalm"),
+            BreathHeavy = PairField("m_breathHeavy"), Choking = PairField("m_oxygenChokeNormal");
+
+        private static AccessTools.FieldRef<MyCharacterBreath, MySoundPair> PairField(string name) => AccessTools.FieldRefAccess<MyCharacterBreath, MySoundPair>(name);
+
+        // Game thread: each sound's own volume; the breathing given its share, and that share.
+        private static readonly Dictionary<MyCueId, float> ownVolumes = new Dictionary<MyCueId, float>();
+        private static MyCharacterBreath givenFor;
+        private static float givenShare = 1f;
+        private static bool logged;
+
+        public static void Patch(Harmony harmony)
+        {
+            harmony.Patch(AccessTools.Method(typeof(MyCharacterSoundComponent), "UpdateBreath")
+                    ?? throw new MissingMethodException(nameof(MyCharacterSoundComponent), "UpdateBreath"),
+                postfix: new HarmonyMethod(typeof(HelmetBreath), nameof(AfterUpdateBreath)));
+            BreathCues.Patch(harmony);
+            Log.Info("Helmet breathing: the game's own breathing, adapted (Options > VR > Display > Breathing in the helmet: Off, Quiet, Normal; it strains as the suit's air runs low; RenderDebug HelmetBreath=0 leaves it as the game has it)");
+        }
 
         /// <summary>
-        /// Game thread, every frame the game draws (<see cref="HelmetState"/>): breathes for <paramref name="character"/> while its
-        /// helmet is <paramref name="closed"/>, stops otherwise (a null character: none).
+        /// Postfix of MyCharacterSoundComponent.UpdateBreath, after the game set the local character's breathing for this frame (on
+        /// the game's parallel update): Off silences it, and short of air it strains. Choking and silence are left as they are.
         /// </summary>
-        public static void Update(MyCharacter character, bool closed)
+        private static void AfterUpdateBreath(MyCharacterSoundComponent __instance)
         {
-            if (!guard.On)
+            if (Off || !guard.On)
+                return;
+            try
+            {
+                if (!(__instance.Entity is MyCharacter character) || !ReferenceEquals(character, MySession.Static?.LocalCharacter))
+                    return;
+                MyCharacterBreath breath = character.Breath;
+                MyCharacterBreath.State state = breath?.CurrentState ?? MyCharacterBreath.State.NoBreath;
+                if (state != MyCharacterBreath.State.Calm && state != MyCharacterBreath.State.Heated && state != MyCharacterBreath.State.VeryHeated)
+                    return;
+                if (VRSettings.HelmetBreathing <= 0)
+                {
+                    breath.CurrentState = MyCharacterBreath.State.NoBreath;
+                    return;
+                }
+                float shortOfAir = Common.SuitAir.Shortness(character, out bool empty);
+                if (empty || shortOfAir <= 0f)
+                    return;
+                MyCharacterBreath.State strained = shortOfAir >= StrainedFrom ? MyCharacterBreath.State.VeryHeated : MyCharacterBreath.State.Heated;
+                if (strained > state)
+                    breath.CurrentState = strained;
+            }
+            catch (Exception e)
+            {
+                guard.Failed(e, "Helmet breathing failed; the game's breathing is as the game has it");
+            }
+        }
+
+        /// <summary>
+        /// Game thread, every frame the game draws (<see cref="HelmetState"/>): <paramref name="character"/>'s breathing (null: none)
+        /// at the setting's share of its sounds' own volume, with the breath playing now given it too; with RenderDebug
+        /// HelmetBreath=0, as the game has it.
+        /// </summary>
+        public static void Update(MyCharacter character)
+        {
+            MyCharacterBreath breath = character?.Breath;
+            if (!guard.On || breath == null || MyAudio.Static == null)
                 return;
             try
             {
                 int level = VRSettings.HelmetBreathing;
-                if (Off || character == null || !closed || level <= 0 || level >= LevelNames.Length || MyAudio.Static == null)
-                {
-                    Stop();
+                float share = Off || level < 0 || level >= LevelVolumes.Length ? 1f : LevelVolumes[level];
+                if (ReferenceEquals(breath, givenFor) && share == givenShare)
                     return;
+                givenFor = breath;
+                givenShare = share;
+                Scale(BreathCalm(breath), share);
+                Scale(BreathHeavy(breath), share);
+                // The breath playing now keeps the sound and volume it started with until it is played again: given the volume.
+                IMySourceVoice voice = Voice(breath);
+                if (voice != null && voice.IsPlaying)
+                {
+                    MySoundData data = MyAudio.Static.GetCue(voice.CueEnum);
+                    if (data != null)
+                        voice.SetVolume(data.Volume);
                 }
-                Find();
-                long now = Stopwatch.GetTimestamp();
-                if (character.CurrentMovementState == MyCharacterMovementEnum.Sprinting)
-                    sprintAt = now;
-                // Short of air: harder and louder as the suit runs low; with the suit empty, the game's own suffocation is heard instead.
-                float shortOfAir = Common.SuitAir.Shortness(character, out bool empty);
-                if (empty)
+                if (!logged)
                 {
-                    Stop();
-                    return;
-                }
-                float strain = (float)Math.Ceiling(shortOfAir * StrainSteps) / StrainSteps;
-                bool hard = strain > 0f || (sprintAt != 0 && now - sprintAt < (long)(HeavyAfter * Stopwatch.Frequency));
-                MyCueId? wanted = hard && heavy.HasValue ? heavy : calm;
-                if (!wanted.HasValue)
-                {
-                    Stop();
-                    return;
-                }
-                MySoundData data = MyAudio.Static.GetCue(wanted.Value);
-                if (data == null)
-                    return;
-                float volume = data.Volume * LevelVolumes[level] * (1f + StrainLouder * strain);
-                MyEntity3DSoundEmitter voice = EmitterFor(character);
-                if (playing.Equals(wanted.Value) && volume == playingVolume && voice.IsPlaying)
-                    return;
-                voice.CustomVolume = volume;
-                voice.PlaySoundWithDistance(wanted.Value, stopPrevious: true, skipIntro: false, force2D: true, useDistanceCheck: true,
-                    alwaysHearOnRealistic: false, skipToEnd: false, force3D: true);
-                playing = wanted.Value;
-                playingVolume = volume;
-            }
-            catch (Exception e)
-            {
-                guard.Failed(e, "Helmet breathing failed");
-            }
-        }
-
-        private static void Stop()
-        {
-            if (emitter != null && !playing.IsNull)
-                emitter.StopSound(forced: false);
-            playing = default;
-        }
-
-        /// <summary>The emitter for this character: one of its own, made again for a new character and the old one stopped.</summary>
-        private static MyEntity3DSoundEmitter EmitterFor(MyCharacter character)
-        {
-            if (emitter != null && ReferenceEquals(emitterFor, character))
-                return emitter;
-            emitter?.StopSound(forced: true, cleanUp: true, cleanupSound: true);
-            emitter = new MyEntity3DSoundEmitter(character);
-            emitterFor = character;
-            playing = default;
-            return emitter;
-        }
-
-        /// <summary>Finds the breathing cues the game has loaded, once, and logs what was found.</summary>
-        private static void Find()
-        {
-            if (looked)
-                return;
-            looked = true;
-            calm = First(CalmCues, out calmName);
-            heavy = First(HeavyCues, out heavyName);
-            if (calm.HasValue)
-            {
-                Log.Info($"Helmet breathing: at rest {calmName}, sprinting {heavyName ?? "the same"}; " +
-                         "flat inside the helmet while it is closed (Options > VR > Display > Breathing in the helmet; RenderDebug HelmetBreath=0)");
-                return;
-            }
-            Log.Warn($"Helmet breathing: the game has none of the breathing cues {string.Join(", ", CalmCues)} loaded, so there is no breathing; " +
-                     $"the cues it has with \"breath\" in their name: {string.Join(", ", LoadedBreathCues())}");
-        }
-
-        private static MyCueId? First(string[] names, out string found)
-        {
-            foreach (string name in names)
-            {
-                MyCueId id = MyAudio.Static.GetCueId(name);
-                if (!id.IsNull && MyAudio.Static.GetCue(id) != null)
-                {
-                    found = name;
-                    return id;
-                }
-            }
-            found = null;
-            return null;
-        }
-
-        /// <summary>The ids of the loaded cues with "breath" in their name, for the log (the sound engine's CueDefinitions); none when they cannot be read.</summary>
-        private static IEnumerable<string> LoadedBreathCues()
-        {
-            var found = new List<string>();
-            try
-            {
-                PropertyInfo cues = MyAudio.Static.GetType().GetProperty("CueDefinitions", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (cues?.GetValue(MyAudio.Static) is IEnumerable all)
-                {
-                    foreach (object cue in all)
-                    {
-                        // Its id by name through reflection: this list is for the log, and must not tie the build to the member.
-                        Type type = cue?.GetType();
-                        object id = type?.GetProperty("SubtypeId")?.GetValue(cue) ?? type?.GetField("SubtypeId")?.GetValue(cue);
-                        string name = id?.ToString();
-                        if (name != null && name.IndexOf("breath", StringComparison.OrdinalIgnoreCase) >= 0)
-                            found.Add(name);
-                    }
+                    logged = true;
+                    string mode = MySession.Static?.Settings == null ? "unknown" : MySession.Static.Settings.RealisticSound ? "realistic" : "arcade";
+                    Log.Info($"Helmet breathing: the game's own, in a world with {mode} sounds: at rest {Named(BreathCalm(breath))}, " +
+                             $"heavy {Named(BreathHeavy(breath))}, choking {Named(Choking(breath))}; {LevelNames[Math.Max(0, Math.Min(level, LevelNames.Length - 1))]} ({share * 100f:0} % of its volume)");
                 }
             }
             catch (Exception e)
             {
-                found.Add($"(could not be read: {e.Message})");
+                guard.Failed(e, "Helmet breathing: its sounds could not be set; the game's breathing is as the game has it");
             }
-            if (found.Count == 0)
-                found.Add("(none found)");
-            return found;
+        }
+
+        /// <summary>The sound the pair plays now, at <paramref name="share"/> of its own volume (its MySoundData, on this machine).</summary>
+        private static void Scale(MySoundPair pair, float share)
+        {
+            MyCueId cue = pair?.SoundId ?? default;
+            if (cue.IsNull)
+                return;
+            MySoundData data = MyAudio.Static.GetCue(cue);
+            if (data == null)
+                return;
+            if (!ownVolumes.TryGetValue(cue, out float own))
+                ownVolumes[cue] = own = data.Volume;
+            data.Volume = own * share;
+        }
+
+        /// <summary>For the log: the pair's cue and the sound it plays now, or that the game has none.</summary>
+        private static string Named(MySoundPair pair)
+        {
+            MyCueId cue = pair?.SoundId ?? default;
+            return cue.IsNull || MyAudio.Static.GetCue(cue) == null ? $"{pair?.GetCueName() ?? "none"} (no sound loaded)" : $"{pair.GetCueName()} ({cue})";
         }
     }
 }

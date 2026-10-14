@@ -67,6 +67,10 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(OffCentreAO), OffCentreAO.Patch);
             Feature(nameof(CentredFlares), CentredFlares.Patch);
             Feature(nameof(DebugShapes), DebugShapes.Patch);
+            Feature(nameof(VisorFilters), VisorFilters.Patch);
+            PatchRegistry.Apply(nameof(HelmetInterior), HelmetInterior.Register);
+            if (!Hands.Datapad.Shelved)
+                PatchRegistry.Apply(nameof(Hands.DatapadModel) + "Material", Hands.DatapadModel.Register);
             Feature(nameof(GpuPasses), GpuPasses.Patch);
             Feature(nameof(LensMask), LensMask.Patch);
             Feature(nameof(SoundFocus), SoundFocus.Patch);
@@ -110,6 +114,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(HelmetHead), HelmetHead.Patch);
             Feature(nameof(HelmetHud), HelmetHud.Patch);
             Feature(nameof(HelmetState), HelmetState.Patch);
+            Feature(nameof(HelmetBreath), HelmetBreath.Patch);
             Feature(nameof(SuitLight), SuitLight.Patch);
             Feature(nameof(ChaseCamera), ChaseCamera.Patch);
             Feature(nameof(ThirdPersonGate), ThirdPersonGate.Patch);
@@ -142,7 +147,12 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(Hands.Kickback), Hands.Kickback.Patch);
             Feature(nameof(Hands.Reload), Hands.Reload.Patch);
             Feature(nameof(WristButton), WristButton.Patch);
-            Feature(nameof(Hands.Datapad), Hands.Datapad.Patch);
+            // Shelved until it is reworked (Hands.Datapad.Shelved).
+            if (!Hands.Datapad.Shelved)
+            {
+                Feature(nameof(Hands.Datapad), Hands.Datapad.Patch);
+                Feature(nameof(Hands.DatapadModel), Hands.DatapadModel.Patch);
+            }
             Feature(nameof(VROptionsEntry), VROptionsEntry.Patch);
             Feature(nameof(VRKeyboardHook), VRKeyboardHook.Patch);
             Feature(nameof(Input.VRPrompts), Input.VRPrompts.Patch);

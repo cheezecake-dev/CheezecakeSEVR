@@ -3,6 +3,7 @@
 using System;
 using System.Globalization;
 using System.Linq;
+using SpaceEngineersVR.Common;
 using VRageMath;
 
 namespace SpaceEngineersVR.Rendering
@@ -46,10 +47,7 @@ namespace SpaceEngineersVR.Rendering
                 from = shownAnchor;
             }
             Matrix local = pose * Matrix.Invert(from);
-            Quaternion turn = Quaternion.CreateFromRotationMatrix(local);
-            Vector3 at = local.Translation;
-            VRSettings.ExternalViewPlace = string.Join(" ", new[] { at.X, at.Y, at.Z, turn.X, turn.Y, turn.Z, turn.W }
-                .Select(v => v.ToString("0.####", CultureInfo.InvariantCulture)));
+            VRSettings.ExternalViewPlace = string.Join(" ", PoseNumbers.Of(local).Select(v => v.ToString("0.####", CultureInfo.InvariantCulture)));
         }
 
         /// <summary>Any thread: forgets where the screen was moved by hand; it goes back on the dash from the next headset frame.</summary>
@@ -71,19 +69,14 @@ namespace SpaceEngineersVR.Rendering
             if (string.IsNullOrWhiteSpace(kept))
                 return false;
             string[] parts = kept.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 7)
+            if (parts.Length != PoseNumbers.Count)
                 return false;
-            var v = new float[7];
-            for (int i = 0; i < 7; i++)
+            var v = new float[PoseNumbers.Count];
+            for (int i = 0; i < v.Length; i++)
                 if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out v[i]) || float.IsNaN(v[i]) || float.IsInfinity(v[i]))
                     return false;
-            var at = new Vector3(v[0], v[1], v[2]);
-            var turn = new Quaternion(v[3], v[4], v[5], v[6]);
-            if (at.Length() > MaxPlaceDistance || turn.LengthSquared() < 0.5f)
+            if (!PoseNumbers.TryPose(v, MaxPlaceDistance, out Matrix local))
                 return false;
-            turn.Normalize();
-            Matrix local = Matrix.CreateFromQuaternion(turn);
-            local.Translation = at;
             pose = local * heading;
             return true;
         }

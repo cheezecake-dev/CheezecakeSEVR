@@ -43,9 +43,6 @@ namespace SpaceEngineersVR.OpenXR
         private static ulong visorSwapchain;
         private static Texture2D[] visorImages;
         private static int visorWidth, visorHeight;
-        private static readonly ulong[] helmetSwapchains = new ulong[HelmetLayerCount];
-        private static readonly Texture2D[][] helmetImages = new Texture2D[HelmetLayerCount][];
-        private static readonly int[] helmetWidths = new int[HelmetLayerCount], helmetHeights = new int[HelmetLayerCount];
         private static XrSessionState state;
         private static XrFrameState frame;
         private static readonly XrView[] views = new XrView[2];
@@ -81,24 +78,6 @@ namespace SpaceEngineersVR.OpenXR
             public bool VisorCylinder;
         }
 
-        /// <summary>The helmet's layers, a swapchain each (<see cref="AcquireHelmetImage"/>): its inside (<see cref="Rendering.HelmetInterior"/>).</summary>
-        public const int HelmetInside = 0, HelmetLayerCount = 1;
-
-        /// <summary>
-        /// One of the helmet's layers round the head, in the VIEW space: a cylinder centred on the head, turned by
-        /// <see cref="Orientation"/>; or, without cylinder layers, a flat quad <see cref="Radius"/> ahead along it. Metres.
-        /// </summary>
-        public struct HelmetLayer
-        {
-            /// <summary>Its turn from straight ahead of the eyes (all zero: none).</summary>
-            public XrQuaternionf Orientation;
-
-            /// <summary>How far it is from the head, the angle round the head it spans (radians), and how high it is.</summary>
-            public float Radius, CentralAngle, Height;
-
-            public bool Cylinder;
-        }
-
         /// <summary>
         /// One piece of the HUD on the visor: a part of the visor image, on a cylinder round the head or on a flat quad
         /// facing it. The VIEW space, metres.
@@ -121,7 +100,7 @@ namespace SpaceEngineersVR.OpenXR
             public float Radius, Width, Height;
         }
 
-        /// <summary>The most layers a frame here: the eyes, the external view, the helmet's glass and frame, the panel, the laser's beam and the visor's pieces.</summary>
+        /// <summary>The most layers a frame here: the eyes, the external view, the panel, the laser's beam and the visor's pieces.</summary>
         public const int MostLayers = 16;
 
         /// <summary>
@@ -129,13 +108,6 @@ namespace SpaceEngineersVR.OpenXR
         /// them; <see cref="Rendering.HudVisor"/> takes it and puts the HUD back on the panel. Render thread.
         /// </summary>
         public static string VisorRefused { get; set; }
-
-        /// <summary>
-        /// By helmet layer (<see cref="HelmetInside"/>): the runtime refused a frame with it in (the name of its result), and the
-        /// frame was sent again without the helmet's layers and the visor's pieces; the layer's owner
-        /// takes it and leaves the layer off. Render thread.
-        /// </summary>
-        public static readonly string[] HelmetRefused = new string[HelmetLayerCount];
 
         /// <summary>
         /// A picture on a flat screen standing in the tracking space (LOCAL): the external view
@@ -461,11 +433,6 @@ namespace SpaceEngineersVR.OpenXR
             screenWidth = screenHeight = 0;
             DestroySwapchain(ref visorSwapchain, ref visorImages);
             visorWidth = visorHeight = 0;
-            for (int i = 0; i < HelmetLayerCount; i++)
-            {
-                DestroySwapchain(ref helmetSwapchains[i], ref helmetImages[i]);
-                helmetWidths[i] = helmetHeights[i] = 0;
-            }
             XrInput.Destroy();
             if (stageSpace != 0)
                 Xr.xrDestroySpace(stageSpace);

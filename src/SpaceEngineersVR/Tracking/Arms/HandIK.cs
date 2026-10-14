@@ -222,8 +222,6 @@ namespace SpaceEngineersVR.Tracking
                     return;
                 }
                 HandResidual.Begin(__instance, HandWorld.LastBodySource);
-                // The seat's controls are where the animation holds the hands now, before the arms go to the controllers.
-                Input.ControlGrip.Capture(__instance, bones, leftChain, rightChain, trackingToModel);
                 bool holding = __instance.CurrentWeapon != null && !__instance.IsSitting;
                 // The held tool is placed again by the move the arms are solved by, so the hand on its grip and the controller
                 // share one frame. The weapon component places it earlier in the update (MyCharacterWeaponPositionComponent.Update)
@@ -462,7 +460,7 @@ namespace SpaceEngineersVR.Tracking
             Hands.HandStop.Apply(hand, body, state, trackingToModel, ref target);
             // The other hand on the held tool's grip settles there (Hands.TwoHand), and stays on it.
             float onTool = Hands.TwoHand.Settle(hand, ref target, out Vector3 grip);
-            // A hand on one of ColbyJack1134's cockpit sticks is drawn on the stick's palm, and its fingers close round it.
+            // A hand on one of ColbyJack1134's cockpit sticks is drawn on the stick's palm, and its fingers close round it (CockpitGrip).
             bool onStick = Cockpits.CockpitControls.PalmTarget(hand, body, ref target);
             // A hand on one of his dashboard switches, covers or levers stays on it; on a handle bar its fingers close round the bar.
             if (!onStick && Cockpits.CockpitTouch.PalmTarget(hand, body, ref target, out bool onBar))
@@ -473,10 +471,6 @@ namespace SpaceEngineersVR.Tracking
                 ArmSolver.SolveGame(bones, chain, target);
                 return;
             }
-            // A hand holding the seat's control is drawn on it as the animation has it, eased in and out.
-            float onControl = Input.ControlGrip.DrawShare(hand);
-            if (onControl > 0f)
-                Keep(bones, chain, fingers);
             ArmSolver.Settings use = settings;
             ArmSpan.Apply(ref use);
             use.HandSwivel = Mode != 3;
@@ -504,7 +498,7 @@ namespace SpaceEngineersVR.Tracking
                 EaseLog(hand, onTool, use.EaseFrom > 0f, result);
             HandResidual.Solved(hand, chain.Palm, target, bones[chain.Palm].AbsoluteTransform);
             if (Mode != 2 && onStick)
-                Cockpits.CockpitHand.StickFingers(bones, fingers, state.Trigger);
+                Cockpits.CockpitGrip.CloseFingers(hand, body, bones, fingers, chain.Palm, state.Trigger);
             else if (Mode != 2)
             {
                 ArmSolver.Curl(bones, fingers,
@@ -512,8 +506,6 @@ namespace SpaceEngineersVR.Tracking
                     RelaxedCurl + (1f - RelaxedCurl) * state.Squeeze,
                     ThumbCurl(hand, state));
             }
-            if (onControl > 0f)
-                BlendBack(bones, chain, onControl);
             Hands.FingerPress.NoteDrawnFinger(hand, bones, chain.Palm, fingers[2]);
             if (ArmJump.On)
                 ArmJump.Solved(body, bones, hand, frame, chain, palm, raw, target, shoulder, trackingToModel, result, onTool, false);
@@ -521,46 +513,6 @@ namespace SpaceEngineersVR.Tracking
             if (result.OutOfReach && NoteDue())
                 Note($"Hand IK: {hand} hand {result.Distance:F2} m from the shoulder, the arm reaches {result.Reach:F2} m " +
                      $"(stretched x{result.Stretch:F2}, collarbone {result.Shrug:F0} deg), {result.Short * 100f:F0} cm short{Shoulder(bones, chain, trackingToModel)}");
-        }
-
-        // The animated arm, kept before the solve so a hand on a seat's control can be drawn back onto it.
-        private static readonly int[] kept = new int[48];
-        private static readonly Quaternion[] keptRotation = new Quaternion[48];
-        private static readonly Vector3[] keptTranslation = new Vector3[48];
-        private static int keptCount;
-
-        /// <summary>Keeps the animation's own turn and place of the arm's bones and the fingers (<see cref="Input.ControlGrip"/>).</summary>
-        private static void Keep(MyCharacterBone[] bones, ArmSolver.Chain chain, int[] fingers)
-        {
-            keptCount = 0;
-            void One(int i)
-            {
-                if (i < 0 || i >= bones.Length || bones[i] == null || keptCount >= kept.Length)
-                    return;
-                kept[keptCount] = i;
-                keptRotation[keptCount] = bones[i].Rotation;
-                keptTranslation[keptCount] = bones[i].Translation;
-                keptCount++;
-            }
-            One(chain.Collar);
-            One(chain.Upper);
-            foreach (int i in chain.Fore)
-                One(i);
-            One(chain.Palm);
-            foreach (int i in fingers)
-                One(i);
-        }
-
-        /// <summary>Turns the solved arm back toward the animation's by <paramref name="share"/> (1: the animation's exactly), and carries it down the arm.</summary>
-        private static void BlendBack(MyCharacterBone[] bones, ArmSolver.Chain chain, float share)
-        {
-            for (int k = 0; k < keptCount; k++)
-            {
-                MyCharacterBone bone = bones[kept[k]];
-                bone.Rotation = share >= 1f ? keptRotation[k] : Quaternion.Slerp(bone.Rotation, keptRotation[k], share);
-                bone.Translation = share >= 1f ? keptTranslation[k] : Vector3.Lerp(bone.Translation, keptTranslation[k], share);
-            }
-            bones[chain.Collar].ComputeAbsoluteTransform();
         }
 
         /// <summary>

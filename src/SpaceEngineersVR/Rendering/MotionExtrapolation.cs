@@ -36,7 +36,7 @@ namespace SpaceEngineersVR.Rendering
     /// The camera alone cannot be moved: the vehicle or body carrying it is drawn from the same 60 Hz game frame, so
     /// moving only the camera would move that judder onto the cockpit, the body and the hands. So the camera and the
     /// carrier's render roots (every grid mechanically joined to a controlled seat's grid, by their cells' cull objects;
-    /// the pilot or the character on foot by its cull object; the held tool and its parts) move together by the carrier's velocity at
+    /// the pilot or the character on foot by its cull object; the held tool and its parts; the datapad's model, <see cref="Hands.DatapadModel"/>) move together by the carrier's velocity at
     /// the eye times how much older this frame's game frame is than the running mean (the mean is left out, so on
     /// average everything is where the simulation put it). The roots are put back after the eyes are drawn.
     /// </para>
@@ -204,6 +204,8 @@ namespace SpaceEngineersVR.Rendering
                 s.Add(cullRenderId(render));
             if (character.CurrentWeapon is MyEntity tool)
                 AddTool(s, tool);
+            // The datapad's model, a root of its own placed by the hands as the held tool is (uint.MaxValue while it is not drawn).
+            s.Add(Hands.DatapadModel.RenderId);
         }
 
         private static MyEntity loggedTool;

@@ -128,7 +128,7 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// Render thread, in an eye's pass after its scene, before the glass (<see cref="VisorGlass"/>): adds the glare to
+        /// Render thread, in an eye's pass, on the world's picture before the glass (<see cref="VisorFilters"/>, <see cref="VisorGlass"/>): adds the glare to
         /// <paramref name="eyeTarget"/> (an eye image <paramref name="eye"/> pixels) seen through <paramref name="viewProjection"/>
         /// (the eye's, at the camera). Never throws.
         /// </summary>

@@ -21,14 +21,16 @@ namespace SpaceEngineersVR.Cockpits
             float closed=finger==0 ? .45f:name.EndsWith("_2") ? 1.1f:name.EndsWith("_3") ? .85f:.8f;
             return Quaternion.CreateFromAxisAngle(Vector3.Backward,MathHelper.Lerp(.04f,closed,MathHelper.Clamp(curls[finger],0,1)));
         }
-        internal static Quaternion StickRotation(string name,float trigger)
+        internal static Quaternion StickRotation(string name,float trigger) => Quaternion.CreateFromAxisAngle(Vector3.Backward,StickAngle(name,trigger));
+        /// <summary>His stick curl for a finger joint, radians about the joint's Z: the index closing with the trigger.</summary>
+        internal static float StickAngle(string name,float trigger)
         {
-            if(!name.Contains("Index")) return Quaternion.CreateFromAxisAngle(Vector3.Backward,name.Contains("Thumb") ? .35f:.95f);
+            if(!name.Contains("Index")) return name.Contains("Thumb") ? .35f:.95f;
             float rest,pressed;
             if(name.EndsWith("_1")) { rest=.35f; pressed=.65f; }
             else if(name.EndsWith("_2")) { rest=.55f; pressed=1.1f; }
             else { rest=.45f; pressed=.85f; }
-            return Quaternion.CreateFromAxisAngle(Vector3.Backward,MathHelper.Lerp(rest,pressed,MathHelper.Clamp(trigger,0,1)));
+            return MathHelper.Lerp(rest,pressed,MathHelper.Clamp(trigger,0,1));
         }
         internal static Matrix FingerPose(MyCharacterBone palm,MyCharacterBone tip,bool pinch)
         {

@@ -321,20 +321,7 @@ namespace SpaceEngineersVR.Input
             if (seatSticks)
             {
                 seatMove = ShipStick.Move(flyLeft, up, down, feel);
-                // Holding the controls, the grips are the hold and the stick hand is a flight stick: its sideways tilt is the
-                // roll, its forward and back tilt the pitch and its twist the yaw (each yaw can be turned off), added to the
-                // right stick's turn (no more than a full push of it). The stick not held, Gate takes the turn away.
-                if (ControlGrip.Gates)
-                {
-                    seatRoll = ControlGrip.Roll(feel, sensitivity);
-                    if (!VRSettings.YawFromThumbstick)
-                        seatRotation.Y = 0f;
-                    seatRotation = ShipStick.LimitTurn(seatRotation + ControlGrip.PitchAndYaw(feel, sensitivity), feel, sensitivity);
-                }
-                else
-                    seatRoll = ShipStick.Roll(Squeeze(Hand.Left), Squeeze(Hand.Right), feel, sensitivity);
-                HandFlight.Apply(ref seatRotation, ref seatMove, ref seatRoll, up, down, feel);
-                ControlGrip.Gate(leftStick, rightStick, ref seatRotation, ref seatMove, ref seatRoll, ref fire, ref secondary, ref up, ref down);
+                seatRoll = ShipStick.Roll(Squeeze(Hand.Left), Squeeze(Hand.Right), feel, sensitivity);
                 // ColbyJack1134's cockpit: a held stick or throttle overrides the turn, roll and move (his ApplyFlight).
                 Cockpits.CockpitControls.ApplyFlight(Cockpits.CockpitControls.RotationSpeed, leftStick, rightStick, ref seatMove, ref seatRotation, ref seatRoll);
             }

@@ -242,8 +242,6 @@ namespace SpaceEngineersVR.Input
                 context = VRContext.None;
                 seatDriven = false;
                 cameraView = seatSticks = false;
-                ControlGrip.Frame(false);
-                HandFlight.Frame(false);
                 Cockpits.CockpitControls.Stop();
                 Cockpits.SeatFit.Reset();
                 Cockpits.CockpitButtons.Reset();
@@ -273,16 +271,13 @@ namespace SpaceEngineersVR.Input
             context = Resolve(out cameraView, out seatSticks, out string detail);
             LogContext(detail);
             VRPrompts.Frame(context);
-            // ColbyJack1134's cockpit sticks first: where his rig owns the seat, ControlGrip and HandFlight stand down.
+            // ColbyJack1134's cockpit sticks, throttles, wheels and handlebars, where his rig owns the seat.
             Cockpits.CockpitControls.Update(MenuScreen() != null);
-            bool colby = Cockpits.CockpitControls.Owns;
             // His seat fit, in the seat his rig owns (moved from the quick menu's Seat page, Cockpits.SeatPage).
             Cockpits.SeatFit.Update();
             // His dashboard switches and covers, touched by the fingertip and pressed with the trigger or grip.
             Cockpits.CockpitTouch.BeginFrame();
             Cockpits.CockpitButtons.Update();
-            ControlGrip.Frame(context == VRContext.Ship && seatSticks && !colby);
-            HandFlight.Frame(context == VRContext.Ship && seatSticks && !colby);
 
             leftStick = Dead(VRInput.Get(Hand.Left).Stick);
             rightStick = Dead(VRInput.Get(Hand.Right).Stick);
@@ -360,10 +355,10 @@ namespace SpaceEngineersVR.Input
         private static Vector3 Clamp(Vector3 v) => new Vector3(
             MathHelper.Clamp(v.X, -1f, 1f), MathHelper.Clamp(v.Y, -1f, 1f), MathHelper.Clamp(v.Z, -1f, 1f));
 
-        /// <summary>How far a grip is squeezed, 0 to 1; a source with only the button says all or nothing. Nothing while the grip holds something (a stick, a door reached from the seat).</summary>
+        /// <summary>How far a grip is squeezed, 0 to 1; a source with only the button says all or nothing. Nothing while the grip holds something (a cockpit stick, a door reached from the seat).</summary>
         private static float Squeeze(Hand hand)
         {
-            if (HandFlight.Holds(hand) || ControlGrip.Holds(hand) || Hands.GripClaim.Owner(hand) != null)
+            if (Hands.GripClaim.Owner(hand) != null)
                 return 0f;
             float squeeze = VRInput.Get(hand).Squeeze;
             return squeeze > 0f ? squeeze : VRInput.IsPressed(hand, VRButtons.Grip) ? 1f : 0f;

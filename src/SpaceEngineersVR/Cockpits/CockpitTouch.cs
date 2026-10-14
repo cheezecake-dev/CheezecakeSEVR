@@ -365,6 +365,21 @@ namespace SpaceEngineersVR.Cockpits
             blend=MathHelper.Clamp((float)(DateTime.UtcNow-h.Grabbed).TotalSeconds/.12f,0,1);
             return true;
         }
+        /// <summary>
+        /// The handle bar <paramref name="hand"/> holds, as drawn (<paramref name="pose"/>: its rest place to where it is now, in
+        /// the cockpit's space), the cockpit and its rig (<see cref="CockpitGrip"/>). False when it holds none.
+        /// </summary>
+        internal static bool TryHeldBar(Hand hand,out CockpitRig.Handle handle,out Matrix pose,out MyCockpit cockpit,out CockpitRig rig)
+        {
+            handle=null; pose=Matrix.Identity; cockpit=SeatFit.Seat; rig=null;
+            if(!HoldingBar(hand) || !SeatFit.Eligible(cockpit)) return false;
+            var h=hands[Index(hand)];
+            rig=CockpitRig.Find(cockpit.BlockDefinition.Id.SubtypeName);
+            handle=rig?.HandleAt(h.Target.Slot);
+            if(handle==null) return false;
+            pose=handle.Visual(CockpitButtons.SwitchPosition(h.Target.Slot));
+            return true;
+        }
         internal static bool TryAttachment(Hand hand,out MatrixD wrist,out Vector3D contact,out float blend)
         {
             var h=hands[Index(hand)];
@@ -402,7 +417,7 @@ namespace SpaceEngineersVR.Cockpits
             MatrixD toBody=body.PositionComp.WorldMatrixNormalizedInv;
             Matrix attached; float blend;
             if(TryBarPalm(hand,out var barPalm,out blend))
-            { attached=(Matrix)(barPalm*toBody); grip=true; }
+            { attached=(Matrix)(barPalm*toBody); grip=true; CockpitGrip.PushPalm(hand,ref attached); }
             else if(TryAttachment(hand,out var wrist,out var contact,out blend))
             {
                 HandState state=VRInput.Get(hand);

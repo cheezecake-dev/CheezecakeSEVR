@@ -76,6 +76,8 @@ namespace SpaceEngineersVR.Hands
             /// <summary>Model space, metres per whole UV along u and v (the picture's x and y).</summary>
             public Vector3 AlongU, AlongV;
             public float Flatness, Radius;
+            /// <summary>Square metres, model space.</summary>
+            public float Area;
         }
 
         private sealed class ModelGlass
@@ -88,7 +90,6 @@ namespace SpaceEngineersVR.Hands
 
         private static readonly Dictionary<string, ModelGlass> models = new Dictionary<string, ModelGlass>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>The sheets of a model's material, or null while it loads (or if it cannot).</summary>
         /// <summary>
         /// The sheets of a model's material, or null while it loads (or if it has none). Kept per model and set of screen
         /// materials, so an LCD turned to another rotation's area (another material of the same model) loads it again.
@@ -118,56 +119,22 @@ namespace SpaceEngineersVR.Hands
         {
             try
             {
-                var model = new MyModel(asset, false);
-                model.LoadUV = true;
-                model.LoadData(true);
-                List<MyMesh> meshes = model.GetMeshList();
-                MyTriangleVertexIndices[] triangles = model.Triangles;
-                HalfVector2[] uvs = model.TexCoords;
-                if (meshes == null || triangles == null || uvs == null)
-                    throw new InvalidDataException($"no {(meshes == null ? "meshes" : triangles == null ? "triangles" : "texture coordinates")}");
-                var byMaterial = new Dictionary<string, List<Tri>>(StringComparer.OrdinalIgnoreCase);
-                foreach (MyMesh mesh in meshes)
-                {
-                    string name = mesh.Material?.Name;
-                    if (name == null || !wanted.Contains(name))
-                        continue;
-                    if (!byMaterial.TryGetValue(name, out List<Tri> list))
-                        byMaterial[name] = list = new List<Tri>();
-                    for (int t = mesh.TriStart; t < mesh.TriStart + mesh.TriCount && t < triangles.Length; t++)
-                    {
-                        MyTriangleVertexIndices i = triangles[t];
-                        var tri = new Tri
-                        {
-                            A = model.GetVertex(i.I0) * scale, B = model.GetVertex(i.I1) * scale, C = model.GetVertex(i.I2) * scale,
-                            UA = uvs[i.I0].ToVector2(), UB = uvs[i.I1].ToVector2(), UC = uvs[i.I2].ToVector2(),
-                        };
-                        Vector3 n = Vector3.Cross(tri.B - tri.A, tri.C - tri.A);
-                        float length = n.Length();
-                        if (length < 1e-8f)
-                            continue;
-                        n /= length;
-                        // The face is the side the mesh's normals are on, whatever order the corners come in.
-                        Vector3 shading = model.GetVertexNormal(i.I0) + model.GetVertexNormal(i.I1) + model.GetVertexNormal(i.I2);
-                        tri.Normal = Vector3.Dot(n, shading) < 0f ? -n : n;
-                        list.Add(tri);
-                    }
-                }
+                Dictionary<string, List<Sheet>> byMaterial = ReadSheets(asset, scale, wanted.Contains);
                 var report = new StringBuilder();
                 foreach (string name in wanted)
                 {
-                    if (!byMaterial.TryGetValue(name, out List<Tri> list) || list.Count == 0)
+                    if (!byMaterial.TryGetValue(name, out List<Sheet> sheets))
                     {
                         report.Append($"{name} none; ");
                         continue;
                     }
-                    List<Sheet> sheets = Split(name, list);
                     into.Sheets[name] = sheets;
-                    report.Append($"{name} {list.Count} tris");
+                    int tris = 0;
                     foreach (Sheet sheet in sheets)
-                        report.Append($" [sheet {sheet.Index}: {sheet.Tris.Length} tris, {sheet.AlongU.Length() * (sheet.UVMax.X - sheet.UVMin.X) * 100f:F1} x " +
-                                      $"{sheet.AlongV.Length() * (sheet.UVMax.Y - sheet.UVMin.Y) * 100f:F1} cm, uv {sheet.UVMin.X:F2}-{sheet.UVMax.X:F2} by " +
-                                      $"{sheet.UVMin.Y:F2}-{sheet.UVMax.Y:F2}, faces {Fmt(sheet.Normal)}, centre {Fmt(sheet.Centre)}, flat to {sheet.Flatness * 1000f:F1} mm]");
+                        tris += sheet.Tris.Length;
+                    report.Append($"{name} {tris} tris");
+                    foreach (Sheet sheet in sheets)
+                        report.Append(" [").Append(DescribeSheet(sheet)).Append(']');
                     report.Append("; ");
                 }
                 into.Report = report.ToString().TrimEnd(' ', ';');
@@ -179,6 +146,64 @@ namespace SpaceEngineersVR.Hands
                 into.State = 2;
             }
         }
+
+        /// <summary>
+        /// The sheets of a model's materials that <paramref name="wanted"/> takes, by material name: the mesh's triangles, at
+        /// full detail with their texture coordinates and scaled by <paramref name="scale"/>, each material's split by the way
+        /// they face (<see cref="Split"/>). A material with no triangle is not in it. Worker thread: it loads the model's file.
+        /// Throws when the model has no mesh to read.
+        /// </summary>
+        internal static Dictionary<string, List<Sheet>> ReadSheets(string asset, float scale, Func<string, bool> wanted)
+        {
+            var model = new MyModel(asset, false);
+            model.LoadUV = true;
+            model.LoadData(true);
+            List<MyMesh> meshes = model.GetMeshList();
+            MyTriangleVertexIndices[] triangles = model.Triangles;
+            HalfVector2[] uvs = model.TexCoords;
+            if (meshes == null || triangles == null || uvs == null)
+                throw new InvalidDataException($"no {(meshes == null ? "meshes" : triangles == null ? "triangles" : "texture coordinates")}");
+            var byMaterial = new Dictionary<string, List<Tri>>(StringComparer.OrdinalIgnoreCase);
+            foreach (MyMesh mesh in meshes)
+            {
+                string name = mesh.Material?.Name;
+                if (name == null || !wanted(name))
+                    continue;
+                if (!byMaterial.TryGetValue(name, out List<Tri> list))
+                    byMaterial[name] = list = new List<Tri>();
+                for (int t = mesh.TriStart; t < mesh.TriStart + mesh.TriCount && t < triangles.Length; t++)
+                {
+                    MyTriangleVertexIndices i = triangles[t];
+                    var tri = new Tri
+                    {
+                        A = model.GetVertex(i.I0) * scale, B = model.GetVertex(i.I1) * scale, C = model.GetVertex(i.I2) * scale,
+                        UA = uvs[i.I0].ToVector2(), UB = uvs[i.I1].ToVector2(), UC = uvs[i.I2].ToVector2(),
+                    };
+                    Vector3 n = Vector3.Cross(tri.B - tri.A, tri.C - tri.A);
+                    float length = n.Length();
+                    if (length < 1e-8f)
+                        continue;
+                    n /= length;
+                    // The face is the side the mesh's normals are on, whatever order the corners come in.
+                    Vector3 shading = model.GetVertexNormal(i.I0) + model.GetVertexNormal(i.I1) + model.GetVertexNormal(i.I2);
+                    tri.Normal = Vector3.Dot(n, shading) < 0f ? -n : n;
+                    list.Add(tri);
+                }
+            }
+            var sheets = new Dictionary<string, List<Sheet>>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, List<Tri>> material in byMaterial)
+            {
+                if (material.Value.Count > 0)
+                    sheets[material.Key] = Split(material.Key, material.Value);
+            }
+            return sheets;
+        }
+
+        /// <summary>A sheet's measures in a few words, for the log: its size by its picture's u and v, where it is and which way it faces.</summary>
+        internal static string DescribeSheet(Sheet sheet) =>
+            $"sheet {sheet.Index}: {sheet.Tris.Length} tris, {sheet.AlongU.Length() * (sheet.UVMax.X - sheet.UVMin.X) * 100f:F1} x " +
+            $"{sheet.AlongV.Length() * (sheet.UVMax.Y - sheet.UVMin.Y) * 100f:F1} cm, uv {sheet.UVMin.X:F2}-{sheet.UVMax.X:F2} by " +
+            $"{sheet.UVMin.Y:F2}-{sheet.UVMax.Y:F2}, faces {Fmt(sheet.Normal)}, centre {Fmt(sheet.Centre)}, flat to {sheet.Flatness * 1000f:F1} mm";
 
         private static string Fmt(Vector3 v) => $"({v.X:F2},{v.Y:F2},{v.Z:F2})";
 
@@ -225,6 +250,7 @@ namespace SpaceEngineersVR.Hands
                 }
                 sheet.Normal = Vector3.Normalize(normal);
                 sheet.Centre = area > 0f ? centre / area : set[0].A;
+                sheet.Area = area;
                 foreach (Tri t in set)
                     foreach (Vector3 p in new[] { t.A, t.B, t.C })
                     {

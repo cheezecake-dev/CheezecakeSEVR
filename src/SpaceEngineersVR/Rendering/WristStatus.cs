@@ -266,7 +266,6 @@ namespace SpaceEngineersVR.Rendering
         private static readonly FieldInfo BindingsField = AccessTools.Field(typeof(MyStatControls), "m_bindings");
         private static readonly FieldInfo DefinitionField = AccessTools.Field(typeof(MyStatControls), "m_objectBuilder");
         private static readonly MethodInfo InitConditions = AccessTools.Method(typeof(MyStatControls), "InitConditions", new[] { typeof(ConditionBase) });
-        private static readonly MethodInfo CloneMethod = typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic);
         private static FieldInfo styleField, controlField, workMessageField;
 
         /// <summary>Never true: it names no stat (MyStatControls.InitConditions finds none, and Eval says no).</summary>

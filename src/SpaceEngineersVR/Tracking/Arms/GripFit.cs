@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text;
 using System.Threading;
+using SpaceEngineersVR.Common;
 using SpaceEngineersVR.Input;
 using VRageMath;
 
@@ -249,42 +249,21 @@ namespace SpaceEngineersVR.Tracking
                 return;
             parsed = text;
             fits.Clear();
-            foreach (string entry in (text ?? string.Empty).Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            var skipped = new List<string>();
+            foreach (KeyValuePair<string, float[]> entry in NumberTable.Parse(text, 6, skipped))
             {
-                int colon = entry.IndexOf(':');
-                string[] numbers = colon > 0 ? entry.Substring(colon + 1).Split(',') : null;
-                var values = new float[6];
-                bool good = numbers != null && numbers.Length == 6;
-                for (int i = 0; good && i < 6; i++)
-                    good = float.TryParse(numbers[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]) && !float.IsNaN(values[i]) && !float.IsInfinity(values[i]);
-                if (!good)
-                {
-                    Log.Warn($"Grip fit: '{entry.Trim()}' in the gripFit setting is not profile:pitch,roll,yaw,x,y,z; skipped");
-                    continue;
-                }
-                fits[entry.Substring(0, colon).Trim()] = new Fit(new Vector3(values[0], values[1], values[2]), new Vector3(values[3], values[4], values[5]));
+                float[] v = entry.Value;
+                fits[entry.Key] = new Fit(new Vector3(v[0], v[1], v[2]), new Vector3(v[3], v[4], v[5]));
             }
+            foreach (string entry in skipped)
+                Log.Warn($"Grip fit: '{entry}' in the gripFit setting is not profile:pitch,roll,yaw,x,y,z; skipped");
             Pick();
         }
 
-        private static string Render()
-        {
-            var keys = new List<string>(fits.Keys);
-            keys.Sort(StringComparer.OrdinalIgnoreCase);
-            var text = new StringBuilder();
-            foreach (string key in keys)
-            {
-                Fit fit = fits[key];
-                if (fit.IsNone)
-                    continue; // the same as nothing stored
-                if (text.Length > 0)
-                    text.Append(';');
-                text.Append(key).Append(':')
-                    .Append(Num(fit.Turn.X)).Append(',').Append(Num(fit.Turn.Y)).Append(',').Append(Num(fit.Turn.Z)).Append(',')
-                    .Append(Num(fit.Shift.X)).Append(',').Append(Num(fit.Shift.Y)).Append(',').Append(Num(fit.Shift.Z));
-            }
-            return text.ToString();
-        }
+        /// <summary>The stored fits as the setting's text; a fit of no turn and no shift is the same as nothing stored, and is left out.</summary>
+        private static string Render() =>
+            NumberTable.Format(fits.Where(pair => !pair.Value.IsNone).Select(pair => new KeyValuePair<string, float[]>(pair.Key,
+                new[] { pair.Value.Turn.X, pair.Value.Turn.Y, pair.Value.Turn.Z, pair.Value.Shift.X, pair.Value.Shift.Y, pair.Value.Shift.Z })));
 
         private static string Num(float value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     }

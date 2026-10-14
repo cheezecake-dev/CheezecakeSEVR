@@ -29,6 +29,7 @@ namespace SpaceEngineersVR.Rendering
         private static readonly Assembly Render11 = typeof(MyDX11Render).Assembly;
         private static readonly Type Render = Render11.GetType("VRageRender.MyRender11", throwOnError: true);
         private static readonly Type RtvBindable = Render11.GetType("VRage.Render11.Resources.IRtvBindable", throwOnError: true);
+        private static readonly Type SrvBindable = Render11.GetType("VRage.Render11.Resources.ISrvBindable", throwOnError: true);
         private static readonly Type BorrowedTexture = Render11.GetType("VRage.Render11.Resources.IBorrowedSrvTexture", throwOnError: true);
         private static readonly Type Managers = Render11.GetType("VRage.Render11.Common.MyManagers", throwOnError: true);
         private static readonly Type CopyToRT = Render11.GetType("VRageRender.MyCopyToRT", throwOnError: true);
@@ -44,6 +45,7 @@ namespace SpaceEngineersVR.Rendering
         private static MethodInfo copyResource;
         private static MethodInfo copySubresourceRegion;
         private static MethodInfo clearRtv;
+        private static MethodInfo generateMips;
         private static MethodInfo createScreenResources;
         private static PropertyInfo device;
         private static PropertyInfo renderContext;
@@ -187,6 +189,7 @@ namespace SpaceEngineersVR.Rendering
             copySubresourceRegion = AccessTools.Method(RenderContext, "CopySubresourceRegion",
                 new[] { Resource, typeof(int), typeof(SharpDX.Direct3D11.ResourceRegion?), typeof(SharpDX.Direct3D11.Resource), typeof(int), typeof(int), typeof(int), typeof(int) });
             clearRtv = AccessTools.Method(RenderContext, "ClearRtv", new[] { RtvBindable, typeof(SharpDX.Mathematics.Interop.RawColor4) });
+            generateMips = AccessTools.Method(RenderContext, "GenerateMips", new[] { SrvBindable });
             createScreenResources = AccessTools.Method(Render, "CreateScreenResources");
             device = AccessTools.Property(Render, "DeviceInstance");
             renderContext = AccessTools.Property(Render, "RC");
@@ -445,6 +448,7 @@ namespace SpaceEngineersVR.Rendering
             EnvMatrices.Snapshot head = EnvMatrices.Save(environmentMatrices);
             object debugAmbientOcclusion = null;
             int drawn = 0;
+            HelmetInterior.BeginFrame();
 
             // The head now goes to the game thread; the camera it sent already includes the head as it was then, so
             // the eyes are placed relative to that (eye pose now * inverse(head in camera)) - head motion since the
@@ -520,6 +524,8 @@ namespace SpaceEngineersVR.Rendering
                         eyeInHead[i] = inHead;
                     }
                 }
+                // The helmet's inside in the scene sits on the head the eyes are drawn from: the eye less its place in the head.
+                HelmetInterior.Prepare((MatrixD)(Matrix.Invert(eyeInHead[0]) * eyeFromHead[0]) * head.InvViewD);
                 SharedShadows.Fit(environmentMatrices, head, eyeFromHead, eyeFov);
                 SceneOnce.BeginFrame();
                 ParticlesOnce.BeginFrame();
@@ -532,6 +538,7 @@ namespace SpaceEngineersVR.Rendering
                 {
                     if (n > 0)
                         OnceBillboards.Rewind(billboards);
+                    HelmetInterior.AddToEye();
                     int i = RenderDebug.RightFirst ? 1 - n : n;
                     bool left = i == 0;
                     eyeTargets[i] = borrowRtv.Invoke(pool, new object[] { left ? "VR left eye" : "VR right eye", eye.X, eye.Y, windowFormat, 1, 0 });
@@ -539,6 +546,7 @@ namespace SpaceEngineersVR.Rendering
                     EnvMatrices.MakeEye(environmentMatrices, eyeFromHead[i], eyeFov[i]);
                     Eyes[i].InHead = eyeInHead[i];
                     Eyes[i].Projection = EnvMatrices.Projection(environmentMatrices);
+                    VisorFilters.BeginEye(eye, EnvMatrices.ViewProjectionAt0(environmentMatrices));
 
                     object[] args = { eyeTargets[i], null };
                     SharedShadows.BeginEye(n);
@@ -565,8 +573,7 @@ namespace SpaceEngineersVR.Rendering
                         Blend(eyeTargets[i], fullView, new MyViewport(eye.X, eye.Y));
                         FullView.Laid(eyeTargets[i], i);
                     }
-                    VisorGlare.DrawEye(eyeTargets[i], eye, EnvMatrices.ViewProjectionAt0(environmentMatrices));
-                    VisorGlass.DrawEye(eyeTargets[i], eye);
+                    VisorFilters.EndEye(eyeTargets[i]);
                     Vignette.Draw(eyeTargets[i], n, eye, Eyes[i].Projection);
                     CameraCut.Draw(eyeTargets[i], n, eye);
                     WallFade.Draw(eyeTargets[i], eye);
@@ -746,7 +753,7 @@ namespace SpaceEngineersVR.Rendering
                 return;
             try
             {
-                XrSession.EndFrame(eyes, panel, eyes ? ExternalView.TakeLayer() : null, eyes ? HelmetInterior.Show() : null);
+                XrSession.EndFrame(eyes, panel, eyes ? ExternalView.TakeLayer() : null);
             }
             catch (Exception e)
             {
@@ -901,6 +908,13 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Draws <paramref name="source"/> stretched over <paramref name="viewport"/> of <paramref name="target"/>, replacing what is there.</summary>
         internal static void CopyOpaque(object target, object source, MyViewport viewport) =>
             copy.Invoke(null, new object[] { target, source, false, viewport, true });
+
+        /// <summary>
+        /// The smaller copies of a texture made with mipmaps drawn again from its picture (MyRenderContext.GenerateMips), as the
+        /// game's offscreen renderer does after it draws an LCD's, so the picture stays smooth seen small.
+        /// </summary>
+        internal static void GenerateMips(object texture) =>
+            generateMips.Invoke(renderContext.GetValue(null), new[] { texture });
 
         /// <summary>Copies a texture bit for bit into a swapchain image of the same size.</summary>
         internal static void CopyToImage(object texture, SharpDX.Direct3D11.Texture2D image) =>

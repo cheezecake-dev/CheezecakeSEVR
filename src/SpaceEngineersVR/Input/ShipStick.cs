@@ -95,42 +95,6 @@ namespace SpaceEngineersVR.Input
         public static float Roll(float leftGrip, float rightGrip, GamepadFeel feel, float sensitivity) =>
             (Curve(GripLevel(rightGrip), feel) - Curve(GripLevel(leftGrip), feel)) * sensitivity;
 
-        /// <summary>Tilting or twisting the held stick (<see cref="ControlGrip"/>): no push up to this, a full push from this, degrees.</summary>
-        public const float TiltDeadzoneDegrees = 10f, TiltFullDegrees = 35f;
-
-        /// <summary>
-        /// What tilting the held stick sideways adds to MyInputExtensions.GetRoll, + right: the tilt past its deadzone, scaled
-        /// so <see cref="TiltFullDegrees"/> is a full push, through the pad's curve, as the grips' roll is.
-        /// </summary>
-        public static float TiltRoll(float tiltRadians, GamepadFeel feel, float sensitivity) =>
-            TiltPush(tiltRadians, feel) * sensitivity;
-
-        /// <summary>
-        /// What tilting the held stick forward and twisting it add to MyInputExtensions.GetRotation, as the pad's right stick
-        /// does (<see cref="Rotation"/>: x pitch, y yaw, + right, nose up is negative): a forward tilt pitches the nose down, as
-        /// a flight stick's does, whatever the player's "invert Y" says, and a twist to the right yaws right. Each is the tilt
-        /// past its deadzone through the pad's curve, so a full tilt is a full push of the stick.
-        /// </summary>
-        public static Vector2 TiltTurn(float tiltForwardRadians, float twistRightRadians, GamepadFeel feel, float sensitivity) =>
-            new Vector2(TiltPush(tiltForwardRadians, feel), TiltPush(twistRightRadians, feel)) * (RotationScale * sensitivity);
-
-        /// <summary>
-        /// A turn of the right stick's kind (x pitch, y yaw) kept to what the stick gives at a full push, with the direction
-        /// kept: the thumbstick and the held stick's tilt together never turn the ship harder than a pad pushed all the way.
-        /// </summary>
-        public static Vector2 LimitTurn(Vector2 turn, GamepadFeel feel, float sensitivity) =>
-            Vector2.ClampToSphere(turn, Curve(1f, feel) * RotationScale * sensitivity);
-
-        /// <summary>A tilt or twist past its deadzone put through the pad's curve, with its sign: 0 inside the deadzone, a full push from <see cref="TiltFullDegrees"/>.</summary>
-        private static float TiltPush(float tiltRadians, GamepadFeel feel)
-        {
-            float size = MathHelper.ToDegrees(Math.Abs(tiltRadians));
-            if (!(size > TiltDeadzoneDegrees))
-                return 0f;
-            float level = Math.Min(1f, (size - TiltDeadzoneDegrees) / (TiltFullDegrees - TiltDeadzoneDegrees));
-            return Math.Sign(tiltRadians) * Curve(level, feel);
-        }
-
         /// <summary>The squeeze past its deadzone, 0 to 1.</summary>
         private static float GripLevel(float squeeze) =>
             squeeze <= GripDeadzone ? 0f : (Math.Min(squeeze, 1f) - GripDeadzone) / (1f - GripDeadzone);

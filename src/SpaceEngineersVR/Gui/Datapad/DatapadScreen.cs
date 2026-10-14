@@ -46,7 +46,7 @@ namespace SpaceEngineersVR.Gui
         private DatapadPage page;
         private DatapadPage switchTo;
 
-        /// <param name="toChat">Open on the chat page (a line came in while it was stowed).</param>
+        /// <param name="toChat">Open on the chat page (a line came in while it was away).</param>
         public DatapadScreen(bool toChat)
             : base(new Vector2(0.5f, 0.5f), PanelColor, QuickActionsScreen.FullSize(), false, GuiTextures.Blank)
         {

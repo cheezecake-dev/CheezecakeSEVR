@@ -51,6 +51,9 @@ namespace SpaceEngineersVR.Rendering
 
         private static bool placed, onWrist, onWheel, onPad;
 
+        /// <summary>Render thread: the panel is on the datapad this frame (<see cref="Locked(in Matrix, out Matrix, out float)"/> put it there).</summary>
+        internal static bool OnPad => onPad;
+
         /// <summary>
         /// Where the head was and which way it faced (along the horizon) when the menu opened. The panel stands
         /// <see cref="VRSettings.MenuDistance"/> from the first along the second, worked out each frame, so dragging

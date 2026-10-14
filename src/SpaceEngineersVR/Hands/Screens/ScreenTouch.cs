@@ -140,8 +140,8 @@ namespace SpaceEngineersVR.Hands
                 bool holdsTool = (__instance.CurrentWeapon != null && !__instance.IsSitting) || building;
                 foreach (Hand hand in bothHands)
                 {
-                    // A seated hand holding its stick or throttle is drawn on it, not where the controller is: it touches nothing.
-                    bool onControl = __instance.IsSitting && (ControlGrip.Holds(hand) || Cockpits.CockpitControls.HandBusy(hand));
+                    // A seated hand on one of the cockpit's controls is drawn on it, not where the controller is: it touches nothing.
+                    bool onControl = __instance.IsSitting && Cockpits.CockpitControls.HandBusy(hand);
                     bool may = live && !__instance.IsOnLadder && focused is MyGuiScreenGamePlay && !(holdsTool && hand == VRSettings.DominantHand) && !onControl;
                     Step(hand, __instance, may);
                 }

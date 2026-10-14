@@ -113,7 +113,7 @@ namespace SpaceEngineersVR.Gui
             if (view)
                 AddViewSwitch();
             SwitchSection(toolbar.CurrentPage, forceStop: true);
-            VRRadialMenus.Relabel(this, tools: true, view ? VRRadialMenus.ToolsCentreView : null);
+            VRRadialMenus.Relabel(this, tools: true, view);
         }
 
         public override string GetFriendlyName() => "SlotWheel";

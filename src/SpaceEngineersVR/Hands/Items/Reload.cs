@@ -22,7 +22,7 @@ namespace SpaceEngineersVR.Hands
 {
     /// <summary>
     /// Reloading a hand weapon (rifles, pistols, launchers) from the hands: the other hand brought to the weapon's magazine
-    /// and its grip squeezed, or the right stick click while the weapon is held. Both only press the game's own RELOAD
+    /// and its trigger pulled, or the gun hand's stick click while the weapon is held. Both only press the game's own RELOAD
     /// control (<see cref="Wanted"/>, through <see cref="VRControls"/>), the question R answers on the keyboard, so the game's
     /// own reload runs as it does for R: MyCharacter.UpdateAfterSimulation asks for RELOAD only while the weapon's CanReload()
     /// is true, then reloads it (or asks the server to) and plays the reload animation and sound. Its timing, its ammo rules
@@ -36,11 +36,10 @@ namespace SpaceEngineersVR.Hands
     /// subpart's place now, because the reload animation carries the magazine to the left hand. A weapon whose model has no
     /// such dummy (a mod's) gets a zone of <see cref="ZoneRadius"/> under it, between the main grip and the game's left-hand
     /// spot.</para>
-    /// <para>The grip: claimed through <see cref="GripClaim"/> at <see cref="ClaimPriority"/>, after the two-handed hold (a hand
-    /// on the front grip is holding the weapon, not reloading it) and before the helmet, floating items, grab to use and
-    /// hulls (a hand under the weapon is reaching for the weapon). A hand within <see cref="TwoHand.GrabReach"/> of the
-    /// weapon's left-hand spot is never taken, whether or not two-handed holds are on. Nothing attaches: the claim only
-    /// keeps the grip from also opening the tools wheel until it is let go.</para>
+    /// <para>The trigger, not the grip: the other hand's trigger does nothing else while a hand weapon is held (its secondary
+    /// is the iron sight, the gun raised to the eye: <see cref="IronSight"/>), so a pull that misses the magazine costs nothing,
+    /// where a grip that missed opened the tools wheel. A pull counts where it starts (<see cref="Pull"/>): at the magazine, and
+    /// not within <see cref="TwoHand.GrabReach"/> of the weapon's left-hand spot (a hand on the front grip is holding the weapon).</para>
     /// <para>The button: B is the jetpack on foot, so the gun hand's stick click (<see cref="ButtonHandIn"/>). The right one does
     /// nothing on foot otherwise (and with a hand pointing at a container, or on one, it is the Build Planner's production, or
     /// its deposit with the right grip held: <see cref="QuickInventory"/>). Left-handed, the left click reloads and sprint moves
@@ -56,12 +55,6 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>Debug: a log line every frame the other hand is near a held weapon's magazine (<see cref="Rendering.RenderDebug"/> ReloadTrace=1).</summary>
         public static bool Trace { get; set; }
-
-        /// <summary>The name the grip is claimed under (<see cref="GripClaim"/>).</summary>
-        public const string ClaimName = "Reload";
-
-        /// <summary>After the two-handed hold (5): a hand on the front grip holds the weapon. Before the helmet (10): a hand at the magazine is at the weapon, not the head behind it.</summary>
-        public const int ClaimPriority = 7;
 
         /// <summary>The reload button on foot and on the jetpack, while a hand weapon is held: a stick click (<see cref="ButtonHandIn"/>).</summary>
         internal const VRButtons Button = VRButtons.StickClick;
@@ -82,10 +75,10 @@ namespace SpaceEngineersVR.Hands
 
         internal static Hand SprintHand => SprintHandIn(VRControls.Context);
 
-        /// <summary>A grip this close to the magazine's box (metres, from the other controller's grip) reloads: generous, the player cannot see under the weapon well.</summary>
+        /// <summary>The other hand's trigger pulled this close to the magazine's box (metres, from its controller's grip pose) reloads: generous, the player cannot see under the weapon well.</summary>
         internal const double MagazineReach = 0.08;
 
-        /// <summary>Without a magazine in the model: a grip this close to the zone's middle (metres) reloads.</summary>
+        /// <summary>Without a magazine in the model: a pull this close to the zone's middle (metres) reloads.</summary>
         internal const double ZoneRadius = 0.10;
 
         /// <summary>The zone's middle without a magazine in the model: this far from the main grip toward the left-hand spot, and this far below the weapon (metres).</summary>
@@ -98,7 +91,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The trace logs the other hand this near the magazine (metres).</summary>
         private const double TraceNear = 0.25;
 
-        /// <summary>A grip this near the magazine that is still out of reach is logged (metres beyond the reach).</summary>
+        /// <summary>A pull this near the magazine that is still out of reach is logged (metres beyond the reach).</summary>
         private const double DeclineNoted = 0.10;
 
         /// <summary>A press the game takes starts its reload in the same frame on a server; a client waits for the server this long (seconds).</summary>
@@ -125,6 +118,38 @@ namespace SpaceEngineersVR.Hands
             public IMyHandheldGunObject<MyDeviceBase> Gun;
         }
 
+        /// <summary>
+        /// The other hand's trigger pulled at a place: held from a pull that started where it counts until the trigger is let go,
+        /// and not again until the next pull. Game thread.
+        /// </summary>
+        private sealed class Pull
+        {
+            private bool was;
+
+            public bool Held { get; private set; }
+
+            /// <summary>This frame's trigger: a new pull is held when <paramref name="startsHere"/> says it started where it counts. True on the frame one is taken.</summary>
+            public bool Update(bool pressed, Func<bool> startsHere)
+            {
+                bool taken = false;
+                if (pressed && !was)
+                    Held = taken = startsHere();
+                else if (!pressed)
+                    Held = false;
+                was = pressed;
+                return taken;
+            }
+
+            /// <summary>Let go of the hold now: the trigger still pulled counts for nothing until it is let go and pulled again.</summary>
+            public void Release() => Held = false;
+        }
+
+        /// <summary>The other hand's trigger, pulled at the held weapon's magazine: the reload gesture.</summary>
+        private static readonly Pull magazinePull = new Pull();
+
+        /// <summary>The other hand's trigger is pulled now.</summary>
+        private static bool OffTrigger => VRInput.IsPressed(TwoHand.OffHand, VRButtons.Trigger);
+
         private static bool hooked;
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(Reload));
         private static int takeErrors;
@@ -141,7 +166,7 @@ namespace SpaceEngineersVR.Hands
 
         // ---- Hooks ----
 
-        /// <summary>Registers the grip claim and the check after the character's update, where the game reads RELOAD and starts its reload.</summary>
+        /// <summary>Registers the check after the character's update, where the game reads RELOAD and starts its reload.</summary>
         public static void Patch(Harmony harmony)
         {
             try
@@ -154,12 +179,11 @@ namespace SpaceEngineersVR.Hands
                 {
                     Log.Error(e, "Reload: the weapon's draw time could not be read; a refusal while drawing is logged without its reason");
                 }
-                GripClaim.Register(ClaimName, ClaimPriority, Take);
                 PatchMagazine(harmony);
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(Reload), nameof(AfterSimulation)));
                 hooked = true;
-                Log.Info($"Reload: hooked (grip claim at priority {ClaimPriority}, {MagazineReach * 100:0} cm round the magazine; button: the gun hand's stick click)");
+                Log.Info($"Reload: hooked (the other hand's trigger pulled within {MagazineReach * 100:0} cm of the magazine; button: the gun hand's stick click)");
             }
             catch (Exception e)
             {
@@ -188,12 +212,14 @@ namespace SpaceEngineersVR.Hands
                 if (!HandTools.IsLocalOnFoot(character) || !TryGun(character, out IMyHandheldGunObject<MyDeviceBase> gun, out _))
                 {
                     down = false;
+                    magazinePull.Release();
                     return false;
                 }
                 // The click taken for the Build Planner's production or deposit (QuickInventory) stays out of reload until it is let go.
                 Hand buttonHand = ButtonHandIn(VRControls.Context);
                 bool button = VRInput.IsPressed(buttonHand, Button) && !(buttonHand == Hand.Right ? QuickInventory.TakesClick : QuickInventory.TakesLeftClick);
-                bool gesture = GripClaim.Holds(TwoHand.OffHand, ClaimName);
+                magazinePull.Update(OffTrigger, () => AtMagazine(TwoHand.OffHand));
+                bool gesture = magazinePull.Held;
                 bool want = button || gesture;
                 if (want && !down)
                     Pressed(character, gun, button, gesture);
@@ -267,17 +293,17 @@ namespace SpaceEngineersVR.Hands
             }
         }
 
-        // ---- The grip claim ----
+        // ---- The gesture ----
 
-        /// <summary>A grip has just started: it is ours when it is the other hand, at the held weapon's magazine and not on its front grip.</summary>
-        private static bool Take(Hand hand)
+        /// <summary>A trigger pull has just started: it reloads when it is the other hand, at the held weapon's magazine and not on its front grip.</summary>
+        private static bool AtMagazine(Hand hand)
         {
-            if (Off || !hooked || hand != TwoHand.OffHand || takeErrors >= 3 || MagazineOut)
+            if (Off || !hooked || takeErrors >= 3 || MagazineOut)
                 return false;
             try
             {
                 MyCharacter character = MySession.Static?.LocalCharacter;
-                if (!VRInput.Active || !HandTools.IsLocalOnFoot(character) || ToolbarWheel.Owns
+                if (!VRInput.Active || !HandTools.IsLocalOnFoot(character)
                     || !(MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay)
                     || !TryGun(character, out _, out MyEntity weapon)
                     || !TryZone(weapon, character.HandItemDefinition, out Zone zone)
@@ -289,22 +315,22 @@ namespace SpaceEngineersVR.Hands
                 if (gap <= TwoHand.GrabReach)
                 {
                     if (d <= zone.Reach)
-                        Note($"Reload: {hand} grip on the {Name(character)}'s front grip ({gap * 100:0.0} cm from it, {d * 100:0.0} cm from the magazine): not a reload");
+                        Note($"Reload: {hand} trigger pulled on the {Name(character)}'s front grip ({gap * 100:0.0} cm from it, {d * 100:0.0} cm from the magazine): not a reload");
                     return false;
                 }
                 if (d > zone.Reach)
                 {
                     if (d <= zone.Reach + DeclineNoted)
-                        Note($"Reload: {hand} grip {d * 100:0.0} cm from the {Name(character)}'s magazine (reach {zone.Reach * 100:0} cm): not taken");
+                        Note($"Reload: {hand} trigger pulled {d * 100:0.0} cm from the {Name(character)}'s magazine (reach {zone.Reach * 100:0} cm): not a reload");
                     return false;
                 }
-                Note($"Reload: {hand} hand squeezed at the {Name(character)}'s magazine ({d * 100:0.0} cm from it, {Gap(gap)} from the front grip; {(zone.FromModel ? "the model's magazine" : "a zone")})");
+                Note($"Reload: {hand} trigger pulled at the {Name(character)}'s magazine ({d * 100:0.0} cm from it, {Gap(gap)} from the front grip; {(zone.FromModel ? "the model's magazine" : "a zone")})");
                 return true;
             }
             catch (Exception e)
             {
                 if (takeErrors++ < 3)
-                    Log.Error(e, "Reload could not decide on a grip");
+                    Log.Error(e, "Reload could not decide on a trigger pull");
                 return false;
             }
         }
@@ -426,7 +452,7 @@ namespace SpaceEngineersVR.Hands
             double gap = LeftGap(character.HandItemDefinition, weapon, off);
             string where = gap <= TwoHand.GrabReach ? "on the front grip" : d <= zone.Reach ? "in the zone" : "out of reach";
             Log.Info($"Reload trace: {hand} hand {d * 100:0.0} cm from the {Name(character)}'s magazine (reach {zone.Reach * 100:0}), {Gap(gap)} from the front grip: {where}; " +
-                     $"grip {(VRInput.IsPressed(hand, VRButtons.Grip) ? "down" : "up")}{(GripClaim.Holds(hand, ClaimName) ? ", held for reload" : string.Empty)}; {AmmoState(character.CurrentWeapon)}");
+                     $"trigger {(VRInput.IsPressed(hand, VRButtons.Trigger) ? "down" : "up")}{(magazinePull.Held ? ", held for reload" : string.Empty)}; {AmmoState(character.CurrentWeapon)}");
         }
 
         /// <summary>

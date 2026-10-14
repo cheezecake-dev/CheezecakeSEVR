@@ -106,8 +106,14 @@ namespace SpaceEngineersVR.Gui
 
         public const string PageLeft = "< Right stick";
         public const string PageRight = "Right stick >";
-        public const string ToolsCentre = "Left stick: choose\nClick it: game actions";
-        public const string ToolsCentreView = ToolsCentre + "\nRight stick down: external view";
+        /// <summary>
+        /// The toolbar wheel's centre line: its stick click opens the actions wheel, which in a seat is also the way to the
+        /// wrist panel (its Quick actions entry: Y is the tools wheel there), so it says so; <paramref name="view"/> adds the
+        /// external view's switch.
+        /// </summary>
+        internal static string ToolsCentre(bool view) =>
+            "Left stick: choose\n" + (VRControls.IsSeated(VRControls.Context) ? "Click it: game actions, Quick actions panel" : "Click it: game actions")
+            + (view ? "\nRight stick down: external view" : string.Empty);
         public const string ActionsCentre = "Left stick: choose";
 
         /// <summary>Whether the hands have no use for one of the game's system actions, so its entry is left out.</summary>
@@ -147,9 +153,9 @@ namespace SpaceEngineersVR.Gui
         /// <summary>
         /// Says the hands' controls on a wheel just made: the bottom line, the page hints and the centre.
         /// <paramref name="tools"/> is the toolbar's wheel (<see cref="SlotWheelScreen"/>), whose stick click opens the
-        /// game's actions wheel; <paramref name="toolsCentre"/> is its centre line (<see cref="ToolsCentre"/> when null).
+        /// game's actions wheel; <paramref name="view"/> puts the external view's switch in its centre line (<see cref="ToolsCentre"/>).
         /// </summary>
-        public static void Relabel(MyGuiControlRadialMenuBase screen, bool tools, string toolsCentre = null)
+        public static void Relabel(MyGuiControlRadialMenuBase screen, bool tools, bool view = false)
         {
             if (!Active || screen == null)
                 return;
@@ -161,7 +167,7 @@ namespace SpaceEngineersVR.Gui
                 SetText(screen, leftHint, PageLeft);
                 SetText(screen, rightHint, PageRight);
 
-                string centreText = tools ? toolsCentre ?? ToolsCentre : ActionsCentre;
+                string centreText = tools ? ToolsCentre(view) : ActionsCentre;
                 var centre = centerHint?.GetValue(screen) as MyGuiControlLabel;
                 if (centre != null)
                     centre.Text = centreText;

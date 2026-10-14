@@ -63,7 +63,7 @@ namespace SpaceEngineersVR.Cockpits
         private static Matrix trackingToSeat;
         private static readonly Stopwatch clock=Stopwatch.StartNew();
 
-        /// <summary>The seat is his: its sticks are drawn moving and our ControlGrip and HandFlight stand down.</summary>
+        /// <summary>The seat is his: its sticks are drawn moving and fly it.</summary>
         internal static bool Owns => seat!=null && Eligible(seat) && CockpitRender.Ready;
         /// <summary>His rig owns this seat (SeatFit and the quick menu's Seat page are his only there).</summary>
         internal static bool OwnsSeat(MyCockpit cockpit) => cockpit!=null && cockpit==seat && Owns;
@@ -235,6 +235,8 @@ namespace SpaceEngineersVR.Cockpits
             if (!IsSteering && (isLeft ? Rig?.Left : Rig?.Right)==null) return false;
             Matrix attached=(Matrix)((MatrixD)StickPalm(isLeft)*seat.WorldMatrix*body.PositionComp.WorldMatrixNormalizedInv);
             if (!attached.IsValid()) return false;
+            // Off the grip as far as the last frame found the knuckles in it (CockpitGrip).
+            CockpitGrip.PushPalm(hand,ref attached);
             float t=MathHelper.Clamp((float)(DateTime.UtcNow-(isLeft ? grabLeft : grabRight)).TotalSeconds/0.12f,0,1);
             Quaternion q=Quaternion.Slerp(Quaternion.CreateFromRotationMatrix(target),Quaternion.CreateFromRotationMatrix(attached),t);
             Matrix blended=Matrix.CreateFromQuaternion(q);
@@ -243,10 +245,25 @@ namespace SpaceEngineersVR.Cockpits
             return true;
         }
 
+        /// <summary>
+        /// The stick <paramref name="hand"/> holds, as drawn (<paramref name="pose"/>: its rest place to where it is now, in the
+        /// cockpit's space), the cockpit and its rig (<see cref="CockpitGrip"/>). False when it holds none of his sticks; a
+        /// steering wheel or yoke is not a stick.
+        /// </summary>
+        internal static bool TryHeldStick(Hand hand,out CockpitRig.Stick stick,out Matrix pose,out MyCockpit cockpit,out CockpitRig rig)
+        {
+            stick=null; pose=Matrix.Identity; cockpit=seat; rig=Rig;
+            if(!Held(hand) || seat==null || rig==null || IsSteering) return false;
+            bool isLeft=hand==Hand.Left;
+            stick=isLeft ? rig.Left:rig.Right;
+            pose=isLeft ? leftVisual:rightVisual;
+            return stick!=null;
+        }
+
         /// <summary>The VR controls are off this frame: let go of the seat.</summary>
         public static void Stop() { if (seat!=null) Reset(); }
 
-        /// <summary>Once per input frame (VRControls), before ControlGrip decides whether it is on.</summary>
+        /// <summary>Once per input frame (VRControls), before the seat's input is worked out.</summary>
         public static void Update(bool menu)
         {
             menuOpen=menu;

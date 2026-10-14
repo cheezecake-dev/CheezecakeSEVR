@@ -253,8 +253,8 @@ namespace SpaceEngineersVR.Hands
                 MatrixD bodyToWorld = MatrixD.Invert(bodyFromWorld);
                 foreach (Hand hand in bothHands)
                 {
-                    // A hand holding the seat's stick or throttle is drawn on it, not where the controller is: it presses nothing.
-                    bool onControl = __instance.IsSitting && (ControlGrip.Holds(hand) || Cockpits.CockpitControls.HandBusy(hand));
+                    // A seated hand on one of the cockpit's controls is drawn on it, not where the controller is: it presses nothing.
+                    bool onControl = __instance.IsSitting && Cockpits.CockpitControls.HandBusy(hand);
                     Step(hand, __instance, !onControl && MayPress(__instance.IsOnLadder, focused, holdsTool, hand, VRSettings.DominantHand), bodyFromWorld, bodyToWorld);
                 }
             }

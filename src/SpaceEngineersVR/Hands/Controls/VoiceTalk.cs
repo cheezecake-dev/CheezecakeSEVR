@@ -28,8 +28,8 @@ namespace SpaceEngineersVR.Hands
     /// <para>
     /// The mouth is a point in the head's own frame (<see cref="Mouth"/>, turning with the head), from the tracked head and the
     /// hand's grip pose in the same tracking space, so it is the same in a seat as on foot. Only a grip that <b>starts</b> there
-    /// counts, claimed through <see cref="GripClaim"/> at priority 8: after the held weapon's own grips (two hands at 5, the
-    /// magazine at 7) and before the helmet (10), so the left grip's other meanings that start at the mouth (the helmet, the
+    /// counts, claimed through <see cref="GripClaim"/> at priority 8: after the held weapon's own grip (two hands at 5) and
+    /// before the helmet (10), so the left grip's other meanings that start at the mouth (the helmet, the
     /// toolbar wheel on foot, a seat's roll and its controls) are skipped for that press. Once started it talks until the grip
     /// is let go, wherever the hand goes.
     /// </para>

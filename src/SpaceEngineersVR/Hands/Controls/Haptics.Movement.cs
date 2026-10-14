@@ -11,7 +11,7 @@ namespace SpaceEngineersVR.Hands
     {
         // ---- Movement: felt in both hands, from what the character's body does (its velocity, its boots, its footing) ----
 
-        /// <summary>The jetpack's rumble at full thrust, and the thrust (m/s², gravity taken off) that is full.</summary>
+        /// <summary>The jetpack's rumble at full thrust, and the thrust (m/s², the jetpack's own over the body's mass) that is full.</summary>
         public const float JetpackAmplitude = 0.35f, JetpackFullThrust = 12f;
 
         /// <summary>Thrust under this (m/s²) is not felt: the drift of a body at rest.</summary>
@@ -40,8 +40,8 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// One frame of the movement felt in the hands, for the local character (from the character update the heartbeat uses):
-        /// the jetpack's rumble while it runs, by the thrust the body takes (its change of velocity less gravity's, smoothed), so
-        /// it rumbles under the dampeners' braking too, as thrusters do; a clunk as the magnetic boots lock on and a click as they
+        /// the jetpack's rumble while it runs, by the thrust its thrusters give (the jetpack's own FinalThrust over the body's
+        /// mass, smoothed), so it rumbles under the dampeners' braking too, and not at all in a fall with the thrusters idle; a clunk as the magnetic boots lock on and a click as they
         /// let go; a jolt as the feet come down hard in gravity. Off with "Movement" (<see cref="VRSettings.HapticMovement"/>);
         /// nothing seated, dead or for a new character's first frame.
         /// </summary>
@@ -58,9 +58,12 @@ namespace SpaceEngineersVR.Hands
 
             if (feel)
             {
-                // The jetpack: the thrust the body takes, gravity's pull taken off.
-                Vector3 thrust = (velocity - lastVelocity) / seconds - character.Gravity;
-                float target = character.JetpackRunning ? thrust.Length() : 0f;
+                // The jetpack: the thrust its thrusters give, as the game has it. The body's own change of velocity was read
+                // before, and a fall at the game's speed limit (no change, gravity still pulling) felt like full thrust.
+                float mass = physics.Mass;
+                float target = character.JetpackRunning && character.JetpackComp != null && mass > 0f
+                    ? character.JetpackComp.FinalThrust.Length() / mass
+                    : 0f;
                 feltThrust += (target - feltThrust) * Math.Min(1f, ThrustFollow * seconds);
                 if (character.JetpackRunning && feltThrust > JetpackLeast)
                 {

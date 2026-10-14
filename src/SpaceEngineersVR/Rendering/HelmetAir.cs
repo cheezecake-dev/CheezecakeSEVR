@@ -82,18 +82,17 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// A looped cue's loop runs this long, milliseconds, before its end part fades it away: the start (0.6 and 0.9 s) plays through
-        /// and the sound is about two seconds in all, the time the air takes to settle without outlasting the visor's third of a second
-        /// by much.
+        /// and the sound is two and a half seconds or so in all, a helmet's worth of air rushing out or in.
         /// </summary>
-        public const int DefaultMilliseconds = 800;
+        public const int DefaultMilliseconds = 1300;
 
         /// <summary>
-        /// The cues' own volumes (0.8) are as loud as a vent beside the player; inside a helmet the hiss is an accent on the latch
-        /// (about 0.03 in the same units), not a sound of its own, so half of that.
+        /// How loud the hiss is, percent of the cue's own volume (0.8, a vent beside the player), as the setting
+        /// <see cref="VRSettings.HelmetAirVolume"/> gives it: inside the helmet, at the ear, the air is the loudest thing heard.
         /// </summary>
-        public const int DefaultVolumePercent = 50;
+        public const int DefaultVolumePercent = 150;
 
-        private const int MostMilliseconds = 8000, MostVolumePercent = 200;
+        private const int MostMilliseconds = 8000, MostVolumePercent = 300;
 
         /// <summary>Debug: no air sounds, whatever the helmet view setting (<see cref="RenderDebug"/> HelmetAir=0).</summary>
         public static bool Off { get; set; }
@@ -107,8 +106,14 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Debug: how long a looped cue's loop runs before it fades, milliseconds (<see cref="RenderDebug"/> HelmetAirMs=n).</summary>
         public static int Milliseconds { get; set; } = DefaultMilliseconds;
 
-        /// <summary>Debug: the volume, percent of the cue's own (<see cref="RenderDebug"/> HelmetAirVol=n).</summary>
-        public static int VolumePercent { get; set; } = DefaultVolumePercent;
+        /// <summary>The volume, percent of the cue's own: the setting, or RenderDebug HelmetAirVol=n in its place while it is set.</summary>
+        public static int VolumePercent
+        {
+            get => volumeOverride ?? (int)Math.Round(VRSettings.HelmetAirVolume * 100f);
+            set => volumeOverride = value;
+        }
+
+        private static int? volumeOverride;
 
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(HelmetAir));
 
@@ -130,7 +135,7 @@ namespace SpaceEngineersVR.Rendering
             OpenCue = DefaultOpenCue;
             CloseCue = DefaultCloseCue;
             Milliseconds = DefaultMilliseconds;
-            VolumePercent = DefaultVolumePercent;
+            volumeOverride = null;
         }
 
         /// <summary>A cue number held to the list (0, none, for a number outside it).</summary>

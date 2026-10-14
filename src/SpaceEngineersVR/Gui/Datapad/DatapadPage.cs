@@ -19,6 +19,7 @@ namespace SpaceEngineersVR.Gui
         {
             () => new DatapadChatPage(),
             () => new DatapadGpsPage(),
+            () => new DatapadShipPage(),
             () => new DatapadTerminalPage(),
         };
 

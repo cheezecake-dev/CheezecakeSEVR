@@ -12,7 +12,8 @@ namespace SpaceEngineersVR.Gui
     /// <item>"Model overlays" (a page, while the model is out): thrusters, power, doors and weapons, each switched on and off
     /// with the wheel left up for the next, as the game's own switches are.</item>
     /// </list>
-    /// Not on the wheel with the ship model setting off (<see cref="VRSettings.ShipModel"/>).
+    /// Not on the wheel with the ship model setting off (<see cref="VRSettings.ShipModel"/>). The overlays' switches are the
+    /// datapad's Ship page's too (<see cref="DatapadShipPage"/>).
     /// </summary>
     internal static class ShipModelEntries
     {
@@ -21,6 +22,33 @@ namespace SpaceEngineersVR.Gui
         private const string PowerIcon = "Textures\\GUI\\Icons\\Cubes\\Battery.dds";
         private const string DoorIcon = "Textures\\GUI\\Icons\\Cubes\\door.dds";
         private const string WeaponIcon = "Textures\\GUI\\Icons\\Cubes\\gatling_turret.dds";
+
+        /// <summary>One of the model's overlays: its setting, as its switch shows it.</summary>
+        internal sealed class Overlay
+        {
+            public string Name, Icon;
+            public Func<bool> Get;
+            public Action<bool> Set;
+        }
+
+        /// <summary>The overlays, in the order their switches are shown.</summary>
+        internal static readonly Overlay[] Overlays =
+        {
+            new Overlay { Name = "Thrusters", Icon = ThrusterIcon, Get = () => VRSettings.ShipModelThrusters, Set = on => VRSettings.ShipModelThrusters = on },
+            new Overlay { Name = "Power", Icon = PowerIcon, Get = () => VRSettings.ShipModelPower, Set = on => VRSettings.ShipModelPower = on },
+            new Overlay { Name = "Doors", Icon = DoorIcon, Get = () => VRSettings.ShipModelDoors, Set = on => VRSettings.ShipModelDoors = on },
+            new Overlay { Name = "Weapons", Icon = WeaponIcon, Get = () => VRSettings.ShipModelWeapons, Set = on => VRSettings.ShipModelWeapons = on },
+        };
+
+        /// <summary>An overlay switched on or off: the model is built again with it, and the setting kept.</summary>
+        internal static void Switch(Overlay overlay)
+        {
+            bool on = !overlay.Get();
+            overlay.Set(on);
+            ShipModel.OverlaysChanged();
+            ExternalViewSource.QueueSave();
+            Log.Info($"Ship model: {overlay.Name.ToLowerInvariant()} overlay {(on ? "on" : "off")}");
+        }
 
         /// <summary>Adds the entries to the end of the top ring. Game thread, as the wheel opens.</summary>
         internal static void AddTo(List<ActionsWheel.Entry> top)
@@ -36,36 +64,25 @@ namespace SpaceEngineersVR.Gui
             });
             if (ShipModel.ShownName == null)
                 return;
+            var page = new List<ActionsWheel.Entry> { new ActionsWheel.Entry { Name = "Back", Icon = GuiTextures.Back, IsBack = true } };
+            foreach (Overlay overlay in Overlays)
+                page.Add(Entry(overlay));
             top.Add(new ActionsWheel.Entry
             {
                 Name = "Model overlays",
                 Icon = ModelIcon,
-                Page = new List<ActionsWheel.Entry>
-                {
-                    new ActionsWheel.Entry { Name = "Back", Icon = GuiTextures.Back, IsBack = true },
-                    Overlay("Thrusters", ThrusterIcon, () => VRSettings.ShipModelThrusters, on => VRSettings.ShipModelThrusters = on),
-                    Overlay("Power", PowerIcon, () => VRSettings.ShipModelPower, on => VRSettings.ShipModelPower = on),
-                    Overlay("Doors", DoorIcon, () => VRSettings.ShipModelDoors, on => VRSettings.ShipModelDoors = on),
-                    Overlay("Weapons", WeaponIcon, () => VRSettings.ShipModelWeapons, on => VRSettings.ShipModelWeapons = on),
-                },
+                Page = page,
                 StateText = () => "Thrusters, power, doors, weapons",
             });
         }
 
-        private static ActionsWheel.Entry Overlay(string name, string icon, Func<bool> get, Action<bool> set) => new ActionsWheel.Entry
+        private static ActionsWheel.Entry Entry(Overlay overlay) => new ActionsWheel.Entry
         {
-            Name = name,
-            Icon = icon,
+            Name = overlay.Name,
+            Icon = overlay.Icon,
             Stays = true,
-            StateText = () => get() ? "Shown" : "Hidden",
-            Run = () =>
-            {
-                bool on = !get();
-                set(on);
-                ShipModel.OverlaysChanged();
-                ExternalViewSource.QueueSave();
-                Log.Info($"Ship model: {name.ToLowerInvariant()} overlay {(on ? "on" : "off")}");
-            },
+            StateText = () => overlay.Get() ? "Shown" : "Hidden",
+            Run = () => Switch(overlay),
         };
     }
 }

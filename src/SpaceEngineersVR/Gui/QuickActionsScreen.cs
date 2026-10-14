@@ -48,6 +48,10 @@ namespace SpaceEngineersVR.Gui
     /// it straight onto that page (<see cref="OpenExternalViewPage"/>).
     /// </para>
     /// <para>
+    /// Beside it, on foot and in a seat, is the Datapad tile (<see cref="DatapadTile"/>): the panel closes and the datapad
+    /// comes out where it was, in the same hand (<see cref="Hands.Datapad"/>).
+    /// </para>
+    /// <para>
     /// In a seat the actions are the seat's instead (<see cref="ShipActions"/>, <see cref="PilotActions"/>): the ship's switches
     /// the game gives a seated player and VR has no button for, each the game's own control as its key presses it, with the
     /// grid's state read as the HUD reads it, greyed where the game would refuse it from this seat (a passenger seat, a cockpit
@@ -236,6 +240,22 @@ namespace SpaceEngineersVR.Gui
             "The external view screen: on or off, its camera round you or your ship, and its size.", ExternalViewPage.PageIcon,
             null, state: () => ExternalView.On, canUse: () => ExternalView.Usable);
 
+        /// <summary>The game's own datapad item's picture, once the definitions have given it; null until then.</summary>
+        private static string datapadIcon;
+
+        /// <summary>
+        /// The tile that takes the datapad out (<see cref="Hands.Datapad"/>): the game's datapad item's picture (the terminal's
+        /// glyph until the definitions are loaded), and under its name a chat line that came in while it was away.
+        /// </summary>
+        private static QuickAction DatapadTile()
+        {
+            if (datapadIcon == null)
+                datapadIcon = GuiTextures.DefinitionIcon<Sandbox.Definitions.MyDatapadDefinition>();
+            return new QuickAction("Datapad", "Takes out your datapad, in this hand: chat, your GPS list and the terminal.",
+                datapadIcon ?? TerminalIcon, Hands.Datapad.Open, stateText: () => Hands.Datapad.Unread ? "New message" : null,
+                canUse: () => Hands.Datapad.CanOpen, whiteIcon: datapadIcon == null, closesPanel: true);
+        }
+
         // ---- In a seat ----
 
         /// <summary>The seat the player is in: a cockpit, a passenger seat, a cryo chamber or a remote control; null on foot and in a turret.</summary>
@@ -380,6 +400,8 @@ namespace SpaceEngineersVR.Gui
             if (VRSettings.ThirdPerson)
                 pilot.Add(Camera);
             pilot.Add(ExternalViewTile);
+            if (!Hands.Datapad.Shelved)
+                pilot.Add(DatapadTile());
             // ColbyJack1134's seat panel, as a page: only in a seat his rig owns.
             if (Cockpits.SeatPage.Available)
                 pilot.Add(Cockpits.SeatPage.Tile);
@@ -535,6 +557,9 @@ namespace SpaceEngineersVR.Gui
                         icons.Add(action.Icon);
                 if (!icons.Contains(Cockpits.SeatPage.Tile.Icon))
                     icons.Add(Cockpits.SeatPage.Tile.Icon);
+                string padIcon = Hands.Datapad.Shelved ? null : DatapadTile().Icon;
+                if (padIcon != null && !icons.Contains(padIcon))
+                    icons.Add(padIcon);
                 MyRenderProxy.PreloadTextures(icons, TextureType.GUI);
             }
             RecreateControls(constructor: true);
@@ -605,9 +630,11 @@ namespace SpaceEngineersVR.Gui
                 }
                 else
                 {
-                    tiles = new QuickAction[Actions.Length + 1];
+                    tiles = new QuickAction[Actions.Length + (Hands.Datapad.Shelved ? 1 : 2)];
                     Actions.CopyTo(tiles, 0);
                     tiles[Actions.Length] = ExternalViewTile;
+                    if (!Hands.Datapad.Shelved)
+                        tiles[Actions.Length + 1] = DatapadTile();
                     hint = Hint;
                 }
                 Vector2[] centres = Layout(size, tiles.Length, plain, out Vector2 cell);

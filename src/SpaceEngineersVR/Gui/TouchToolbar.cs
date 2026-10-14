@@ -128,7 +128,7 @@ namespace SpaceEngineersVR.Gui
         // The laser, worked out in the seat's input and drawn in the frame's draw (from the hand where that draw has it).
         private static bool laserHit, laserDown;
         private static Claim laserOn, laserAt;
-        private static string laserOwner; // who had the hand when last logged: null (the laser), "stick" or "touch"
+        private static string laserOwner; // who had the hand when last logged: null (the laser), "control" or "touch"
         private static long laserOwnerLoggedAt;
 
         public static void Patch(Harmony harmony)

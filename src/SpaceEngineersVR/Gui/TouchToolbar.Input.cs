@@ -217,17 +217,18 @@ namespace SpaceEngineersVR.Gui
         }
 
         /// <summary>
-        /// Who has the dominant hand instead of the laser, or null: the stick it holds (<see cref="ControlGrip.Holds"/>; the
-        /// hand is drawn on the stick, not where the controller points from, and its trigger fires), or the screen its
-        /// fingertip or palm is at (<see cref="TouchOwns"/>: it touches that). A change of owner is logged, at most once a second.
+        /// Who has the dominant hand instead of the laser, or null: the cockpit's control it is on (a stick, a throttle or a
+        /// switch, <see cref="Cockpits.CockpitControls.HandBusy"/>: the hand is drawn on it, not where the controller points
+        /// from, and its trigger is the control's), or the screen its fingertip or palm is at (<see cref="TouchOwns"/>: it
+        /// touches that). A change of owner is logged, at most once a second.
         /// </summary>
         private static string LaserOwner(Hand hand)
         {
             string owner = null, kind = null;
-            if (ControlGrip.Holds(hand))
+            if (Cockpits.CockpitControls.HandBusy(hand))
             {
-                owner = "it holds the stick, whose trigger fires";
-                kind = "stick";
+                owner = "it is on one of the cockpit's controls, whose trigger is the control's";
+                kind = "control";
             }
             else if (MySession.Static?.LocalCharacter is MyCharacter pilot && HandWorld.TryGetNow(pilot, hand, out MatrixD grip, out _, out _))
             {

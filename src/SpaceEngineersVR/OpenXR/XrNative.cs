@@ -24,6 +24,7 @@ namespace SpaceEngineersVR.OpenXR
         public const int ErrorSessionNotRunning = -16;
         public const int ErrorSessionLost = -17;
         public const int ErrorSessionNotReady = -28;
+        public const int ErrorCallOrderInvalid = -37;
         public const int ErrorFormFactorUnavailable = -35;
         public const int ErrorRuntimeUnavailable = -51;
     }

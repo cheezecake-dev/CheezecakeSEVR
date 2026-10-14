@@ -9,8 +9,7 @@ namespace SpaceEngineersVR.OpenXR
         /// <param name="eyesDrawn">Both eye images were filled this frame.</param>
         /// <param name="panel">The panel image was filled this frame; it is shown ahead of the eyes, or where a menu put it.</param>
         /// <param name="screen">The external view's image was filled this frame; it is shown between the eyes and the panel.</param>
-        /// <param name="helmet">The helmet's inside was drawn into its image this frame (<see cref="Rendering.HelmetInterior"/>); it is shown over everything, nearest the eyes.</param>
-        public static void EndFrame(bool eyesDrawn, Panel? panel, Screen? screen = null, HelmetLayer? helmet = null)
+        public static void EndFrame(bool eyesDrawn, Panel? panel, Screen? screen = null)
         {
             if (!InFrame)
                 return;
@@ -71,8 +70,6 @@ namespace SpaceEngineersVR.OpenXR
             int limit = Math.Min(XrRuntime.MaxLayerCount > 0 ? XrRuntime.MaxLayerCount : 16, MostLayers);
 
             Panel shown = panel ?? default;
-            // The helmet's inside goes last; its slot is kept out of the visor pieces' share.
-            bool helmetWanted = eyesDrawn && helmet.HasValue && helmetSwapchains[HelmetInside] != 0 && helmet.Value.Radius > 0f && helmet.Value.Height > 0f;
 
             // Premultiplied alpha, as the game's sprites are drawn. In the VIEW space it stays ahead of the head; a menu's
             // panel is in the LOCAL space, where it was put.
@@ -107,7 +104,7 @@ namespace SpaceEngineersVR.OpenXR
             // part of the one visor image. No more than the runtime takes (its maxLayerCount) with the layers above.
             int piecesFrom = (int)layerCount;
             int pieces = panel.HasValue && !shown.WorldLocked && shown.Visor != null && visorSwapchain != 0
-                ? Math.Max(0, Math.Min(Math.Min(shown.VisorCount, shown.Visor.Length), limit - (int)layerCount - (helmetWanted ? 1 : 0)))
+                ? Math.Max(0, Math.Min(Math.Min(shown.VisorCount, shown.Visor.Length), limit - (int)layerCount))
                 : 0;
             XrCompositionLayerCylinderKHR* cylinders = stackalloc XrCompositionLayerCylinderKHR[Math.Max(pieces, 1)];
             XrCompositionLayerQuad* flats = stackalloc XrCompositionLayerQuad[Math.Max(pieces, 1)];
@@ -148,55 +145,6 @@ namespace SpaceEngineersVR.OpenXR
                 }
             }
 
-            // The helmet's inside, nearest the eyes, so over everything: in the VIEW space, premultiplied alpha, centred on the
-            // head. A cylinder round the head; a flat quad ahead where the runtime has no cylinders.
-            XrCompositionLayerCylinderKHR helmetCylinder = default;
-            XrCompositionLayerQuad helmetFlat = default;
-            bool helmetShown = false;
-            if (helmetWanted && (int)layerCount < limit)
-            {
-                HelmetLayer inside = helmet.Value;
-                var helmetImage = new XrSwapchainSubImage
-                {
-                    Swapchain = helmetSwapchains[HelmetInside],
-                    ImageRect = new XrRect2Di { Width = helmetWidths[HelmetInside], Height = helmetHeights[HelmetInside] },
-                };
-                XrQuaternionf turn = inside.Orientation;
-                if (turn.X == 0f && turn.Y == 0f && turn.Z == 0f && turn.W == 0f)
-                    turn.W = 1f;
-                if (inside.Cylinder)
-                {
-                    helmetCylinder = new XrCompositionLayerCylinderKHR
-                    {
-                        Type = XrStructureType.CompositionLayerCylinderKHR,
-                        LayerFlags = XrConst.LayerBlendTextureSourceAlpha,
-                        Space = viewSpace,
-                        EyeVisibility = XrEyeVisibility.Both,
-                        SubImage = helmetImage,
-                        Pose = new XrPosef { Orientation = turn },
-                        Radius = inside.Radius,
-                        CentralAngle = inside.CentralAngle,
-                        AspectRatio = inside.Radius * inside.CentralAngle / inside.Height,
-                    };
-                    layers[layerCount++] = (IntPtr)(&helmetCylinder);
-                }
-                else
-                {
-                    helmetFlat = new XrCompositionLayerQuad
-                    {
-                        Type = XrStructureType.CompositionLayerQuad,
-                        LayerFlags = XrConst.LayerBlendTextureSourceAlpha,
-                        Space = viewSpace,
-                        EyeVisibility = XrEyeVisibility.Both,
-                        SubImage = helmetImage,
-                        Pose = new XrPosef { Orientation = turn, Position = Ahead(turn, inside.Radius) },
-                        Size = new XrExtent2Df { Width = 2f * inside.Radius * (float)Math.Tan(inside.CentralAngle / 2f), Height = inside.Height },
-                    };
-                    layers[layerCount++] = (IntPtr)(&helmetFlat);
-                }
-                helmetShown = true;
-            }
-
             var endInfo = new XrFrameEndInfo
             {
                 Type = XrStructureType.FrameEndInfo,
@@ -210,22 +158,18 @@ namespace SpaceEngineersVR.OpenXR
             try
             {
                 result = Xr.xrEndFrame(session, ref endInfo);
-                if (result < 0 && (pieces > 0 || helmetShown))
+                if (result < 0 && pieces > 0)
                 {
-                    // Refused with the visor's pieces or the helmet's inside in it (the last layers): sent again without them, so
-                    // the headset keeps its picture; taken without them, the HUD goes back on the panel and the helmet's inside
-                    // stays off from the next frame (HudVisor, HelmetInterior).
+                    // Refused with the visor's pieces in it (the last layers): sent again without them, so the headset keeps its
+                    // picture, and the HUD goes back on the panel (HudVisor). A runtime that ends the frame even as it refuses it
+                    // (Meta's) answers the second call out of order: that frame is dropped, and the refusal stands the same.
                     int refused = result;
                     endInfo.LayerCount = (uint)piecesFrom;
                     result = Xr.xrEndFrame(session, ref endInfo);
+                    if (result == XrResult.ErrorCallOrderInvalid)
+                        result = XrResult.Success;
                     if (result >= 0)
-                    {
-                        string name = Xr.ResultName(XrRuntime.Instance, refused);
-                        if (pieces > 0)
-                            VisorRefused = name;
-                        if (helmetShown)
-                            HelmetRefused[HelmetInside] = name;
-                    }
+                        VisorRefused = Xr.ResultName(XrRuntime.Instance, refused);
                 }
             }
             finally
@@ -234,19 +178,6 @@ namespace SpaceEngineersVR.OpenXR
             }
             Xr.Check(result, "xrEndFrame", XrRuntime.Instance);
             Rendering.PerfMeter.Submitted();
-        }
-
-        /// <summary>The point <paramref name="distance"/> ahead (-z) turned by <paramref name="turn"/>.</summary>
-        private static XrVector3f Ahead(XrQuaternionf turn, float distance)
-        {
-            // q (0, 0, -d) q*, worked out.
-            float x = turn.X, y = turn.Y, z = turn.Z, w = turn.W;
-            return new XrVector3f
-            {
-                X = -distance * 2f * (x * z + w * y),
-                Y = -distance * 2f * (y * z - w * x),
-                Z = -distance * (1f - 2f * (x * x + y * y)),
-            };
         }
     }
 }

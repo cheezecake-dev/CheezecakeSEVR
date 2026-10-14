@@ -5,7 +5,7 @@ using VRageMath;
 
 namespace SpaceEngineersVR.Rendering
 {
-    /// <summary>The headset's field of view this frame, as both eyes see it together, for what is fitted to it (<see cref="HelmetInterior"/>, <see cref="Vignette.DarknessAt"/>).</summary>
+    /// <summary>The headset's field of view this frame, as both eyes see it together, for what is fitted to it (<see cref="Vignette.DarknessAt"/>).</summary>
     internal static class HeadsetFov
     {
         /// <summary>Taken while the runtime has not given the eyes' views yet, radians each way.</summary>

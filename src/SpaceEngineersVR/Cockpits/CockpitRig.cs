@@ -27,6 +27,8 @@ namespace SpaceEngineersVR.Cockpits
                 Frame=CockpitStickMath.ShaftFrame(Shaft);
             }
             internal Matrix Visual(Vector3 axes) => CockpitStickMath.Visual(Pivot,axes,Frame);
+            /// <summary>The line the hand closes round: through <see cref="Contact"/>, along the grip (rest space).</summary>
+            internal Vector3 GripShaft => gripShaft;
             public Matrix Palm(bool left) => CockpitStickMath.RaiseGrip(
                 CockpitStickMath.GripPalm(left,Contact,gripShaft)*CockpitStickMath.Around(Contact,Matrix.CreateRotationX(gripPitch)),gripShaft,GripLift,GripInset);
         }
@@ -132,6 +134,8 @@ namespace SpaceEngineersVR.Cockpits
                     grip*Matrix.CreateTranslation(Vector3.Transform(Center,Visual(position)));
             }
             internal float GripOffset => Math.Min(.02f,Math.Max(0,HalfWidth-.035f));
+            /// <summary>The line the hand closes round: through <see cref="Center"/>, along the bar (rest space).</summary>
+            internal Vector3 Line => frame.Right;
             internal MatrixD TouchPose => MatrixD.CreateWorld(Center+frame.Up*Radius,-frame.Up,frame.Forward);
         }
         internal sealed class Lever

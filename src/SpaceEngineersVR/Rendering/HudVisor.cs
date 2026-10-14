@@ -50,7 +50,8 @@ namespace SpaceEngineersVR.Rendering
     /// edge or corner it belongs to. Like a helmet display it is collimated: it is seen at <see cref="VRSettings.HudDistance"/>,
     /// where the eyes can rest on it, not on the glass a hand's width away. It is light projected onto the glass
     /// (<see cref="Projected"/>): most of its light is added to the view and only a little of it hides what is behind, so
-    /// plates and shadows do not stand in front of the world. It rides on the glass: as the helmet opens the glass swings up
+    /// plates and shadows do not stand in front of the world. The game's backing plates are left off the glass entirely, and each
+    /// part's light glows a little round it as a projection's does (<see cref="Glow"/>). It rides on the glass: as the helmet opens the glass swings up
     /// and the HUD with it (<see cref="HelmetHud.GlassCover"/>), until it goes at half-way (<see cref="HelmetHud.Hidden"/>), and
     /// it comes down into place as the helmet closes. It is fixed to the helmet, not the head (<see cref="VRSettings.HudOnHelmet"/>):
     /// the helmet gives only a little as the head turns (<see cref="HelmetTurn"/>), so looking far round looks away from it. With <see cref="VRSettings.HudTextBacking"/> above 0 a soft dark band runs
@@ -128,7 +129,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Frames whose HUD has to go on the flat panel (<see cref="Fault"/>) before it stays there for the run.</summary>
         private const int FaultsToStop = 3;
 
-        /// <summary>The layers each frame has before the visor's: the eyes, the external view and the flat panel; and with the helmet view on, the helmet's glass and frame (<see cref="XrSession.HelmetLayerCount"/>).</summary>
+        /// <summary>The layers each frame has before the visor's: the eyes, the external view and the flat panel.</summary>
         private const int OtherLayers = 3;
 
         private const string DefaultTarget = "DefaultOffscreenTarget";
@@ -366,7 +367,7 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>Layers for the visor's parts: the runtime's most a frame (its maxLayerCount; ours is at most <see cref="XrSession.MostLayers"/>) less the others.</summary>
         private static int Budget => Math.Min(XrRuntime.MaxLayerCount > 0 ? XrRuntime.MaxLayerCount : XrSession.MostLayers, XrSession.MostLayers)
-            - OtherLayers - (HelmetView.On ? XrSession.HelmetLayerCount : 0);
+            - OtherLayers;
 
         // ---- Game thread: tagging the HUD's parts ----
 
@@ -1086,6 +1087,7 @@ namespace SpaceEngineersVR.Rendering
                 }
                 if (display)
                 {
+                    Glow(image);
                     Project(image);
                     PowerOn(image);
                 }
@@ -1127,6 +1129,61 @@ namespace SpaceEngineersVR.Rendering
                 return;
             GameSprites.DrawTextures(target, imageSize, new Color(0f, 0f, 0f, kept), GameSprites.ScaleAlpha,
                 (Gui.GuiTextures.Blank, new RectangleF(0f, 0f, imageSize.X, imageSize.Y)));
+        }
+
+        /// <summary>
+        /// How strong the projection's glow is round the HUD's light, near (a quarter of the image's size, a tight halo) and wide
+        /// (an eighth, a soft bloom): shares of the HUD's own light added back round it. Live from RenderDebug HudVisorGlow (a scale on both).
+        /// </summary>
+        private const float GlowNear = 0.35f, GlowWide = 0.22f;
+
+        public static float GlowScale { get; set; } = 1f;
+
+        /// <summary>
+        /// The light of a projection on glass: each part's light scatters a little round it, in its own colour. The display is
+        /// drawn smaller (a quarter, then an eighth of its size), which blurs it; each is made pure light (its alpha taken to none,
+        /// <see cref="GameSprites.ScaleAlpha"/>) and dimmed (<see cref="GameSprites.Multiply"/>), then drawn back over the display at
+        /// full size, where with no alpha it adds. Before <see cref="Project"/>, so the display's own coverage is turned to light
+        /// after. Without the blend states, no glow.
+        /// </summary>
+        private static void Glow(object target)
+        {
+            float scale = Math.Max(0f, GlowScale);
+            if (scale <= 0f || GameSprites.Multiply == null || GameSprites.ScaleAlpha == null)
+                return;
+            var near = new Vector2I(Math.Max(8, imageSize.X / 4), Math.Max(8, imageSize.Y / 4));
+            var wide = new Vector2I(Math.Max(4, imageSize.X / 8), Math.Max(4, imageSize.Y / 8));
+            object nearImage = null, wideImage = null;
+            try
+            {
+                nearImage = EyeRenderer.Borrow("VR HUD glow near", near);
+                wideImage = EyeRenderer.Borrow("VR HUD glow wide", wide);
+                EyeRenderer.Clear(nearImage);
+                EyeRenderer.Clear(wideImage);
+                EyeRenderer.Blend(nearImage, target, new MyViewport(0f, 0f, near.X, near.Y));
+                EyeRenderer.Blend(wideImage, nearImage, new MyViewport(0f, 0f, wide.X, wide.Y));
+                AsLight(nearImage, near, GlowNear * scale);
+                AsLight(wideImage, wide, GlowWide * scale);
+                var whole = new MyViewport(0f, 0f, imageSize.X, imageSize.Y);
+                EyeRenderer.Blend(target, nearImage, whole);
+                EyeRenderer.Blend(target, wideImage, whole);
+            }
+            finally
+            {
+                if (nearImage != null)
+                    EyeRenderer.Release(nearImage);
+                if (wideImage != null)
+                    EyeRenderer.Release(wideImage);
+            }
+        }
+
+        /// <summary>An image made pure light: its alpha taken to none, its colour times <paramref name="strength"/>.</summary>
+        private static void AsLight(object image, Vector2I size, float strength)
+        {
+            var whole = new RectangleF(0f, 0f, size.X, size.Y);
+            GameSprites.DrawTextures(image, size, new Color(0f, 0f, 0f, 0f), GameSprites.ScaleAlpha, (Gui.GuiTextures.Blank, whole));
+            float k = MathHelper.Clamp(strength, 0f, 1f);
+            GameSprites.DrawTextures(image, size, new Color(k, k, k, 1f), GameSprites.Multiply, (Gui.GuiTextures.Blank, whole));
         }
 
         /// <summary>How long the display takes to power on as the visor seals, seconds: short, so the HUD's information is not held back.</summary>
@@ -1275,8 +1332,16 @@ namespace SpaceEngineersVR.Rendering
                 bool clip = inImage && uiScale == 1f;
                 if (clip)
                     GameSprites.ScissorPush(renderer, piece.Rect);
+                // On the glass only light is projected: the game's backing plates stay on the flat window, not on the visor.
+                bool light = inImage && display;
                 foreach (MySpriteDrawRenderMessage message in piece.Messages)
+                {
+                    if (light && message is MyRenderMessageDrawSprite sprite && Backing(sprite.Texture))
+                        continue;
+                    if (light)
+                        NoteTexture(message);
                     GameSprites.Process(renderer, message);
+                }
                 for (int i = piece.Scissors + (clip ? 1 : 0); i > 0; i--)
                     GameSprites.ScissorPop(renderer);
                 // The renderer is given the GUI's size to write into its shaders and a viewport the part's scale times larger.
@@ -1290,6 +1355,29 @@ namespace SpaceEngineersVR.Rendering
             {
                 GameSprites.Return(renderer);
             }
+        }
+
+        /// <summary>
+        /// A texture the game draws behind the HUD's parts as their backing plate (Textures\GUI\Icons\HUD 2017\...Plate.png:
+        /// LeftPlate, RightPlate and the like). On the glass a plate would be a dark panel stuck on the view, so the one display
+        /// leaves them out (<see cref="Draw"/>); the parts' text, bars and icons are the light the visor projects.
+        /// </summary>
+        private static bool Backing(string texture) =>
+            texture != null && texture.IndexOf("HUD 2017", StringComparison.OrdinalIgnoreCase) >= 0
+            && texture.EndsWith("Plate.png", StringComparison.OrdinalIgnoreCase);
+
+        private static readonly HashSet<string> texturesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The most textures <see cref="NoteTexture"/> logs in a run.</summary>
+        private const int TexturesLogged = 80;
+
+        /// <summary>Logs each texture the first time it is drawn on the glass (up to <see cref="TexturesLogged"/>): for choosing what else to leave off it.</summary>
+        private static void NoteTexture(MySpriteDrawRenderMessage message)
+        {
+            if (texturesSeen.Count >= TexturesLogged || !(message is MyRenderMessageDrawSprite sprite) || string.IsNullOrEmpty(sprite.Texture))
+                return;
+            if (texturesSeen.Add(sprite.Texture))
+                Log.Info("HUD on the visor: drawn on the glass: " + sprite.Texture);
         }
 
         /// <summary>

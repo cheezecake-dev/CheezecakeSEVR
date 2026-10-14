@@ -36,9 +36,6 @@ namespace SpaceEngineersVR.Rendering
     /// while it eases onto or off a tool's grip (<see cref="Tracking.HandIK"/>); HandIKCap=130 the most any arm is drawn stretched, % (0: no cap);
     /// HandIKJump=N logs every frame an arm's reach changes by more than N cm beyond what the hand did against the head, split into its causes,
     /// and the 20 frames after (<see cref="Tracking.ArmJump"/>).
-    /// ControlGrip=0/1 turns "Hands on the controls to fly" off or on whatever the setting says; ControlGripLog=1 logs what the hands
-    /// ask of a pilot seat and what reaches the game each time it changes (<see cref="Input.ControlGrip"/>); ControlGripTake=14 how
-    /// close to the pose's palm a grip takes a stick or throttle, cm.
     /// HandResidual=1 logs once a second how far the drawn palms are from the controllers; HandGhost=1 draws each controller's
     /// grip pose as a small axis triad, with a dot where the palm belongs (<see cref="Tracking.HandResidual"/>); HandGhost=2 also draws
     /// the handle as an orange bar and a cyan dot where the finger press takes the index fingertip to be.
@@ -59,14 +56,17 @@ namespace SpaceEngineersVR.Rendering
     /// air leak, a one-shot hiss of 2.4 s), 4 PlayChokeInitiate (the game's air-escape gasp, 0.5 s; left to the game when it plays its own in vacuum),
     /// 5 ArcPlayHelmetOn and 6 ArcPlayHelmetOff (the game's own helmet cues in the Arcade sound setting, a thin hiss recorded very quietly),
     /// 7 RealPlayHelmetOn and 8 RealPlayHelmetOff (its Realistic sound setting's latches). HelmetAirMs=n is how long a looped cue's loop runs
-    /// before it fades away, milliseconds (800 as built, 0 to 8000); HelmetAirVol=n its volume, percent of the cue's own (50 as built, 0 to 200).
+    /// before it fades away, milliseconds (1300 as built, 0 to 8000); HelmetAirVol=n its volume, percent of the cue's own, in place of the
+    /// Helmet air setting (150% by default, 0 to 300).
     /// VisorGlass=0 takes away the visor's glass, the tint filtering the view while the helmet is closed (its colour and strength are
     /// settings; <see cref="VisorGlass"/>). HelmetInterior=0 takes away the helmet's inside round the view (<see cref="HelmetInterior"/>).
     /// ConformalHorizon=0 gives back the game's own artificial horizon in a cockpit (<see cref="ConformalHorizon"/>).
     /// VisorGlare=0 takes away the sun's glare in the visor's glass (<see cref="VisorGlare"/>).
-    /// HelmetBreath=0 stops the breathing in the closed helmet, whatever its setting (<see cref="HelmetBreath"/>).
+    /// HelmetBreath=0 leaves the game's breathing at its own volume and unstrained, whatever the setting (<see cref="HelmetBreath"/>; its sounds stay, <see cref="BreathCues"/>).
     /// HelmetTravelYaw=d, HelmetTravelUp=d and HelmetTravelDown=d, live: how far the helmet turns with the head, degrees, before the
-    /// head turns on inside it (12, 6 and 10 as built; <see cref="HelmetTurn"/>).
+    /// head turns on inside it (12, 6 and 25 as built; <see cref="HelmetTurn"/>). HelmetLag=s, live: how long the helmet takes to
+    /// come round after a turning head, seconds (0.22 as built, 0 none).
+    /// HudVisorGlow=x, live: how much the HUD on the glass glows round its light (1 as built, 0 none; <see cref="HudVisor.Glow"/>).
     /// HudVisorLight=x, live: how much of the HUD projected on the glass is added light rather than painted over the view (0.6 as
     /// built, 0 painted, 1 all light; <see cref="HudVisor.Projected"/>).
     /// Haptics=0 turns off the controllers' buzzing (<see cref="Hands.Haptics"/>).
@@ -82,7 +82,10 @@ namespace SpaceEngineersVR.Rendering
     /// GpuPasses=1 puts the per-pass GPU timestamps back, for the Perf line's GPU time by pass (<see cref="PerfMeter.PassMarks"/>; off by default: with them the game ended in NVIDIA's driver).
     /// ChaseCamera=0 gives the game's own third-person ship camera (<see cref="Tracking.ChaseCamera"/>).
     /// WristPanel=0 turns off the wrist button and the wrist panel (<see cref="WristButton"/>).
-    /// Datapad=0 turns off the datapad on the forearm (<see cref="Hands.Datapad"/>).
+    /// Datapad=0 greys out the wrist panel's Datapad tile and puts the datapad away (<see cref="Hands.Datapad"/>).
+    /// DatapadModel=0 shows the datapad as the flat panel instead of the game's datapad model (<see cref="Hands.DatapadModel"/>).
+    /// DatapadSheet=N puts the datapad's picture on sheet N of the model, as the "Datapad model" log line numbers them (-1, the default, chooses).
+    /// DatapadTurn=N turns the datapad's picture N quarter turns on the model's screen.
     /// WristStatus=0 gives the HUD its status bars and suit icons back and takes the screen off the gauntlet (<see cref="WristStatus"/>).
     /// WristStatusBright=N scales the gauntlet screen's brightness to N percent (100 as built, and at most), to judge it in the headset.
     /// WristStatusAll=1 draws the gauntlet screen's parts that show only at times (radiation panel, medicine, cryo and bottle marks) all the time, to check their place.
@@ -124,7 +127,7 @@ namespace SpaceEngineersVR.Rendering
     /// says; KickbackTrace=1 logs it every frame while an item is in use or settling (<see cref="Hands.Kickback"/>). These three take
     /// fractions: KickScale=x multiplies all of the kick (1 as built), KickAir=x is the share of a grinder's or drill's kick left
     /// spinning in the air (0.8 as built), KickTwoHand=x the share of the one-handed kick left with both hands on the item (0.33 as built).
-    /// Reload=0 turns off reloading a hand weapon from the hands, both the grip at the magazine and the right stick click (<see cref="Hands.Reload"/>); ReloadTrace=1 logs every frame the other hand is within 25 cm of the held weapon's magazine.
+    /// Reload=0 turns off reloading a hand weapon from the hands, both the other hand's trigger at the magazine and the gun hand's stick click (<see cref="Hands.Reload"/>); ReloadTrace=1 logs every frame the other hand is within 25 cm of the held weapon's magazine.
     /// InputLog=0 stops the log line for each headset button press and release, and the menu focus lines beside them (<see cref="InputLog"/>; on by default, at most 10 lines a second).
     /// VRPrompts=0 gives the game's prompts their keyboard names back (<see cref="VRPrompts"/>); VRRadial=0 gives back the game's gamepad radial menus, labels and entries (<see cref="Gui.VRRadialMenus"/>); ActionsWheel=0 has the left stick click on the tools wheel open the game's radial screen instead of the wheel at the hand (<see cref="Gui.ActionsWheel"/>); HudToolbar=1 shows the HUD's bottom toolbar on foot too (<see cref="HudToolbar"/>).
     /// BodyClearance=0 lets the eye go into the character's own body (<see cref="Tracking.BodyGuard"/>), CrouchWithHead=0 stops the head's crouch crouching
@@ -301,6 +304,7 @@ namespace SpaceEngineersVR.Rendering
             VisorGlare.Off = false;
             ConformalHorizon.Off = false;
             HudVisor.Projected = HudVisor.DefaultProjected;
+            HudVisor.GlowScale = 1f;
             HelmetTurn.TravelYaw = HelmetTurn.DefaultTravelYaw;
             HelmetTurn.TravelUp = HelmetTurn.DefaultTravelUp;
             HelmetTurn.TravelDown = HelmetTurn.DefaultTravelDown;
@@ -317,6 +321,9 @@ namespace SpaceEngineersVR.Rendering
             Tracking.ChaseCamera.Off = false;
             WristButton.Off = false;
             Hands.Datapad.Off = false;
+            Hands.DatapadModel.Off = false;
+            Hands.DatapadModel.SheetChoice = -1;
+            Hands.DatapadModel.Turns = 0;
             WristStatus.Off = false;
             WristStatus.Brightness = 1f;
             WristStatus.ShowAll = false;
@@ -386,9 +393,6 @@ namespace SpaceEngineersVR.Rendering
             Tracking.MagBootsSmoothing.Off = false;
             Tracking.MagBootsSmoothing.SmoothSeconds = Tracking.MagBootsSmoothing.DefaultSmoothSeconds;
             Input.VRControls.MenuHoldOff = false;
-            Input.ControlGrip.Debug = null;
-            Input.ControlGrip.LogInputs = false;
-            Input.ControlGrip.TakeDebug = null;
             VRSettings.ColbyCockpitOverride = null;
             Cockpits.CockpitHand.Convert = true;
             Cockpits.CockpitHand.Nudge = VRageMath.Vector3.Zero;
@@ -419,6 +423,18 @@ namespace SpaceEngineersVR.Rendering
                         else
                             HelmetTurn.TravelDown = travel;
                         applied.Add($"{pair[0]}={factor:0.#}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HelmetLag", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HelmetTurn.LagSeconds = (float)Math.Max(0.0, Math.Min(2.0, factor));
+                        applied.Add($"HelmetLag={HelmetTurn.LagSeconds:0.##}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HudVisorGlow", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HudVisor.GlowScale = (float)Math.Max(0.0, Math.Min(4.0, factor));
+                        applied.Add($"HudVisorGlow={HudVisor.GlowScale:0.##}");
                         continue;
                     }
                     if (pair[0].Equals("HudVisorLight", StringComparison.OrdinalIgnoreCase))
@@ -608,24 +624,6 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Tracking.ExitUpright.Trace = setting != 0;
                         applied.Add($"ExitUprightTrace={Tracking.ExitUpright.Trace}");
-                        continue;
-                    }
-                    if (pair[0].Equals("ControlGrip", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Input.ControlGrip.Debug = setting != 0;
-                        applied.Add($"ControlGrip={setting != 0}");
-                        continue;
-                    }
-                    if (pair[0].Equals("ControlGripLog", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Input.ControlGrip.LogInputs = setting != 0;
-                        applied.Add($"ControlGripLog={setting != 0}");
-                        continue;
-                    }
-                    if (pair[0].Equals("ControlGripTake", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Input.ControlGrip.TakeDebug = Math.Max(1, Math.Min(60, setting)) / 100f;
-                        applied.Add($"ControlGripTake={Input.ControlGrip.TakeRadius * 100f:0} cm");
                         continue;
                     }
                     if (pair[0].Equals("MenuHoldRecentre", StringComparison.OrdinalIgnoreCase))
@@ -950,6 +948,24 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Hands.Datapad.Off = setting == 0;
                         applied.Add($"Datapad={!Hands.Datapad.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("DatapadModel", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.DatapadModel.Off = setting == 0;
+                        applied.Add($"DatapadModel={!Hands.DatapadModel.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("DatapadSheet", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.DatapadModel.SheetChoice = Math.Max(-1, setting);
+                        applied.Add($"DatapadSheet={Hands.DatapadModel.SheetChoice}");
+                        continue;
+                    }
+                    if (pair[0].Equals("DatapadTurn", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.DatapadModel.Turns = setting;
+                        applied.Add($"DatapadTurn={setting}");
                         continue;
                     }
                     if (pair[0].Equals("WristStatus", StringComparison.OrdinalIgnoreCase))

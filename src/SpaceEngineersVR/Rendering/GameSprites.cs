@@ -12,8 +12,8 @@ namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
     /// The game's sprite renderer (VRage.Render11.Sprites.MySpritesRenderer), as the GUI draws with it, for drawing into images
-    /// of our own: the HUD's parts on the visor (<see cref="HudVisor"/>), the visor's tint (<see cref="VisorGlass"/>) and the
-    /// helmet's inside (<see cref="HelmetInterior"/>). Its types are internal, so the calls are dynamic methods made once in
+    /// of our own: the HUD's parts on the visor (<see cref="HudVisor"/>), the visor's tint (<see cref="VisorGlass"/>) and its
+    /// glare (<see cref="VisorGlare"/>). Its types are internal, so the calls are dynamic methods made once in
     /// <see cref="Bind"/>; a game update that renamed a member fails there, loudly, and every user stays off.
     /// <para>
     /// Blend states (<see cref="Multiply"/>): the renderer's draw takes the blend state to draw with, the game's premultiplied

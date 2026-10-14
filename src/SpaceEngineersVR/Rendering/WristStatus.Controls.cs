@@ -126,7 +126,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>A copy of one of the HUD's styles, with the condition the game gave it (not ours, if it is left out of the HUD now).</summary>
         private static T Clone<T>(T style) where T : MyObjectBuilder_StatVisualStyle
         {
-            var copy = (T)CloneMethod.Invoke(style, null);
+            T copy = Common.ShallowCopy.Of(style);
             copy.VisibleCondition = OriginalCondition(style);
             return copy;
         }

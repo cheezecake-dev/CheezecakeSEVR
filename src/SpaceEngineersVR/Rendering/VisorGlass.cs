@@ -17,8 +17,8 @@ namespace SpaceEngineersVR.Rendering
     /// pixels times the transmission, channel by channel, through the game's sprite renderer with a multiply blend state
     /// (<see cref="GameSprites.Multiply"/>). It only takes light away, never adds any, so it can never show more than the game
     /// shows a player without a headset (fairness, docs/DEVELOPMENT.md); and the HUD, projected onto the glass from inside
-    /// (<see cref="HudVisor"/>), and the helmet's inside (<see cref="HelmetInterior"/>) are layers of their own over the eyes, not
-    /// behind the glass, so they are not tinted.
+    /// (<see cref="HudVisor"/>), is a layer of its own over the eyes, and the helmet's inside (<see cref="HelmetInterior"/>) is
+    /// drawn after the glass goes on (<see cref="VisorFilters"/>): neither is behind the glass, so neither is tinted.
     /// </para>
     /// <para>
     /// What is outside the helmet but goes to the headset as a layer of its own (the external view's screen, a menu or the wrist
@@ -105,7 +105,7 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// Render thread, in an eye's pass after its scene: multiplies the part of <paramref name="eyeTarget"/> (an eye image
+        /// Render thread, in an eye's pass, on the world's picture (<see cref="VisorFilters"/>): multiplies the part of <paramref name="eyeTarget"/> (an eye image
         /// <paramref name="eye"/> pixels) the glass covers by its transmission, and then the part the sun visor covers by its
         /// own (<see cref="SunVisor"/>). Never throws.
         /// </summary>

@@ -10,6 +10,7 @@ namespace SpaceEngineersVR.Hands
         // ---- Holding it ----
         // The model stands in the tracking space, so it stays with the player in a seat and on foot. It rides above the off
         // hand until a hand grips it; a grip turns and moves it with the hand, two grips also scale it, and let go it stays.
+        // On the datapad the hands turn and scale it the same way, and the pad keeps it (ShipModel.Pad).
 
         private const string ClaimName = "ship model";
 
@@ -61,6 +62,7 @@ namespace SpaceEngineersVR.Hands
         private static void StartHolding()
         {
             following = true;
+            onPad = false;
             heading = HeadingNow(0f);
             pose = Matrix.Identity;
             Follow(0f, snap: true);
@@ -99,6 +101,8 @@ namespace SpaceEngineersVR.Hands
             }
             else if (following)
                 Follow(dt, snap: false);
+            if (onPad)
+                KeepOnPad();
         }
 
         private static void Grip(Hand hand)
@@ -129,7 +133,9 @@ namespace SpaceEngineersVR.Hands
                 }
                 twoHanded = false;
                 Vector3 at = pose.Translation;
-                Log.Info($"Ship model: let go by the {Name(hand)} hand; it stays at ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}), {scale * longest * 100:0} cm long");
+                Log.Info(onPad
+                    ? $"Ship model: let go by the {Name(hand)} hand; it stays on the datapad as it was turned, {scale * longest * 100:0} cm long"
+                    : $"Ship model: let go by the {Name(hand)} hand; it stays at ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}), {scale * longest * 100:0} cm long");
             }
         }
 
@@ -197,12 +203,13 @@ namespace SpaceEngineersVR.Hands
             else
                 return;
             pose = turn;
-            pose.Translation = at + Vector3.Up * (PalmGap + HalfHeight(turn));
+            pose.Translation = at + Vector3.Up * (PalmGap + HalfAlong(turn, Vector3.Up));
         }
 
-        /// <summary>Half the model's height in the tracking space as it is turned: what it needs above the hand.</summary>
-        private static float HalfHeight(in Matrix turn) =>
-            (Math.Abs(turn.Right.Y) * halfExtent.X + Math.Abs(turn.Up.Y) * halfExtent.Y + Math.Abs(turn.Backward.Y) * halfExtent.Z) * scale;
+        /// <summary>Half the model's reach along <paramref name="axis"/> (a unit direction in the tracking space) as it is turned: what it needs above the hand or the pad.</summary>
+        private static float HalfAlong(in Matrix turn, Vector3 axis) =>
+            (Math.Abs(Vector3.Dot(turn.Right, axis)) * halfExtent.X + Math.Abs(Vector3.Dot(turn.Up, axis)) * halfExtent.Y
+             + Math.Abs(Vector3.Dot(turn.Backward, axis)) * halfExtent.Z) * scale;
 
         /// <summary>The way the head faces, as a turn about the tracking space's up (0 looks along -Z); <paramref name="keep"/> while looking straight up or down.</summary>
         private static float HeadingNow(float keep)

@@ -19,8 +19,6 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         public static void Patch(Harmony harmony)
         {
-            PatchRegistry.Apply(nameof(ControlGrip), () => ControlGrip.Patch(harmony));
-            PatchRegistry.Apply(nameof(HandFlight), () => HandFlight.Patch(harmony));
             PatchTestAids(harmony);
 
             // The game's input update, once per frame on the game thread, just before the screens read the controls.

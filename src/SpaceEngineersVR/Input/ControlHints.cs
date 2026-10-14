@@ -158,9 +158,6 @@ namespace SpaceEngineersVR.Input
             }
         }
 
-        /// <summary>A reminder from elsewhere, now (the seat's "take hold of the stick", <see cref="ControlGrip"/>), under the Control hints setting; false when not shown.</summary>
-        internal static bool ShowNow(string text) => VRSettings.ControlHints && !broken && Show(text);
-
         private static bool Show(string text)
         {
             if (ShowOverride != null)

@@ -1,70 +1,71 @@
 using System;
 using System.Diagnostics;
 using HarmonyLib;
-using Sandbox.Game.Gui;
-using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Gui;
 using SpaceEngineersVR.Input;
 using SpaceEngineersVR.Rendering;
-using SpaceEngineersVR.Tracking;
 using VRageMath;
 
 namespace SpaceEngineersVR.Hands
 {
     /// <summary>
-    /// A datapad stowed on the left forearm, just above the gauntlet's screen: the right hand's grip there pulls it off into
-    /// that hand, where it is held up to read and touched with the other hand's fingertip (<see cref="PanelTouch"/>) or pointed
-    /// at with its laser (<see cref="Laser"/>). What it shows is <see cref="DatapadScreen"/>: chat, the GPS list and the
-    /// terminal. Letting go near the forearm puts it back; letting go elsewhere leaves it standing in the air for
-    /// <see cref="FloatSeconds"/> (touched meanwhile, it stays), after which it flies back to the forearm. The free hand's grip
-    /// on it takes it into that hand. A chat line that arrives while it is stowed lights the forearm and ticks the controller
-    /// (<see cref="Datapad"/>'s indicator).
+    /// A datapad, taken out from the wrist panel's Datapad tile (<see cref="QuickActionsScreen"/>, on foot and in a seat): the
+    /// panel turns into the pad in the hand it was on (<see cref="OutHand"/>), where it stays without the grip held, and is
+    /// touched with the other hand's fingertip (<see cref="PanelTouch"/>) or pointed at with its laser (<see cref="Laser"/>).
+    /// What it shows is <see cref="DatapadScreen"/>: chat, the GPS list, the ship (a hologram of it standing on the pad,
+    /// <see cref="ShipModel"/>) and the terminal. The other hand's grip on it takes it into that hand; a hand that grips it
+    /// and lets go leaves it standing in the air for <see cref="FloatSeconds"/> (touched meanwhile, it stays), after which it
+    /// is put away; in a seat it stays where it was let go, fixed to the seat. Y, B or its screen closing put it away too: it
+    /// goes back into the wrist it came from. A chat line that arrives while it is away ticks that hand's controller and
+    /// marks the tile (<see cref="Unread"/>).
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The pad is the GUI panel (<see cref="HudPanel"/>), the same OpenXR layer menus use, so its text is the panel's own
-    /// resolution and the laser's beam layer still draws over it: while it is out, <see cref="WorldMenu"/> poses the panel at
-    /// the pad (<see cref="TryGetPanel"/>), whatever screen has the focus (the pad's own, the keyboard over it, or the terminal
-    /// opened from it). The pad faces the eyes with its top toward the top of the head, held by its outer edge: it does not
-    /// depend on how the controller is rolled, and it reads the same wherever it is held.
+    /// The pad is the game's own datapad (<see cref="DatapadModel"/>), its screen showing the GUI panel (<see cref="HudPanel"/>)
+    /// that the pad's screens are drawn into; until the model is read, or without it, the pad is that panel itself, the same
+    /// OpenXR layer menus use. Either way, while it is out <see cref="WorldMenu"/> poses the panel at the pad
+    /// (<see cref="TryGetPanel"/>), whatever screen has the focus (the pad's own, the keyboard over it, or the terminal opened
+    /// from it). The pad faces the eyes with its top toward the top of the head, held by its outer edge: it does not depend on
+    /// how the controller is rolled, and it reads the same wherever it is held.
     /// </para>
     /// <para>
-    /// The game has no such thing, so its place is the player's own arm, in the tracking space: <see cref="ForearmFromPalm"/>
-    /// back along the forearm of the hand that does not hold the tool (<see cref="StowHand"/>) from the grip pose. The grip there is claimed through <see cref="GripClaim"/> at
-    /// <see cref="ClaimPriority"/>: after push to talk at the mouth, before the helmet, floating items and grab to use.
+    /// In a seat the pad let go stays where it was let go, for as long as the player sits there: it is kept in the pilot's
+    /// own space, which the seat carries, and placed in the tracking space from it each frame by the move the arms are solved
+    /// by (<see cref="HandWorld.TryGetTrackingToBody"/>), so it rides with the ship and stays put in the cockpit when the view
+    /// is recentred. Each kind of seat (its block's subtype) remembers the spot in the settings file
+    /// (<see cref="VRSettings.DatapadSeatSpots"/>): taken out again in that kind of seat, the pad comes out to it. Put away
+    /// from the hand there instead, it comes out into the hand again. Leaving the seat sends a pad standing in it back into
+    /// the wrist.
+    /// </para>
+    /// <para>
+    /// Nothing is kept on the arm: the left forearm carries the gauntlet's status screen (<see cref="WristStatus"/>), which a
+    /// pad there would cover. The grip on the pad is claimed through <see cref="GripClaim"/> at <see cref="ClaimPriority"/>,
+    /// and only while it is out, so a grip anywhere else keeps its own job.
     /// </para>
     /// </remarks>
     internal static partial class Datapad
     {
+        /// <summary>
+        /// The datapad is shelved until it is reworked (it could not be used in the world as the gauntlet's status screen can,
+        /// and the menus drew over the hands): nothing of it is patched, the wrist panel has no Datapad tile, and it does
+        /// nothing each frame. False turns it all back on.
+        /// </summary>
+        internal static readonly bool Shelved = true;
+
         /// <summary>Debug: no datapad (<see cref="RenderDebug"/> Datapad=0).</summary>
         public static bool Off { get; set; }
-
-        /// <summary>The setting is on and the debug file has not turned it off.</summary>
-        public static bool Enabled => !Off && VRSettings.Datapad;
 
         /// <summary>The name the grip is claimed under.</summary>
         public const string ClaimName = "Datapad";
 
-        /// <summary>After push to talk (8), before the helmet (10): a grip on the forearm is not a grip on the head.</summary>
+        /// <summary>After push to talk (8), before the helmet (10): a grip on the pad held up to the face is the pad's, not the helmet's.</summary>
         public const int ClaimPriority = 9;
 
-        /// <summary>
-        /// The arm it is stowed on: the one that does not hold the tool, so the hand that holds a gun or welder takes it. The
-        /// left, with the gauntlet's screen (<see cref="WristButton.WristHand"/>); left-handed, the right.
-        /// </summary>
-        public static Hand StowHand => VRSettings.DominantHand == Hand.Left ? Hand.Right : Hand.Left;
+        /// <summary>The hand it comes out into: the one the wrist panel is on.</summary>
+        public static Hand OutHand => WristButton.WristHand;
 
         // ---- Where it is and how it moves; metres and seconds ----
-
-        /// <summary>The stowed pad's middle, back along the forearm from the grip pose: on the left arm, just above the gauntlet's screen.</summary>
-        public const float ForearmFromPalm = 0.17f;
-
-        /// <summary>A grip within this of the stowed pad takes it.</summary>
-        public const float ForearmReach = 0.09f;
-
-        /// <summary>Let go within this of the stowed place, it goes back there.</summary>
-        public const float StowReach = 0.12f;
 
         /// <summary>A grip this far round the pad's edges, and this near its plane, takes it.</summary>
         public const float EdgeReach = 0.04f, PlaneReach = 0.06f;
@@ -72,27 +73,28 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The holding hand's grip is this far in from the pad's outer edge, and this far below its middle.</summary>
         public const float HoldInset = 0.015f, HoldDrop = 0.02f;
 
-        /// <summary>How wide the stowed pad is drawn as it comes off the arm and goes back.</summary>
-        public const float StowWidth = 0.05f;
+        /// <summary>How wide it is drawn as it goes back into the wrist.</summary>
+        public const float AwayWidth = 0.05f;
 
-        public const double PullSeconds = 0.18, ReturnSeconds = 0.25, FloatSeconds = 6.0;
+        public const double ComeSeconds = 0.18, GoSeconds = 0.25, FloatSeconds = 6.0;
 
         public const float TickAmplitude = HeadGestures.TickAmplitude, TickSeconds = HeadGestures.TickSeconds;
 
         internal enum Phase
         {
-            Stowed,
+            /// <summary>Put away: not shown.</summary>
+            Away,
 
-            /// <summary>Coming off the forearm into the hand.</summary>
-            Pulling,
+            /// <summary>Coming out of the wrist panel into the hand.</summary>
+            Coming,
 
             Held,
 
-            /// <summary>Let go away from the forearm: standing where it was left.</summary>
-            Floating,
+            /// <summary>Let go: standing where it was left.</summary>
+            Standing,
 
-            /// <summary>Flying back to the forearm.</summary>
-            Returning,
+            /// <summary>Going back into the wrist.</summary>
+            Going,
         }
 
         /// <summary>What the render thread needs to pose the pad, published by the game thread.</summary>
@@ -102,10 +104,13 @@ namespace SpaceEngineersVR.Hands
             public Hand Holder;
             public long Since;
 
-            /// <summary>Floating: where it stands; returning: where it started from.</summary>
+            /// <summary>Standing, or coming out to its spot in a seat: where it stands; going: where it started from.</summary>
             public Matrix From;
 
             public float FromWidth;
+
+            /// <summary>Coming out to its spot in a seat (<see cref="From"/>), not into the hand.</summary>
+            public bool ToStand;
         }
 
         private static readonly object gate = new object();
@@ -116,31 +121,37 @@ namespace SpaceEngineersVR.Hands
         // Game thread.
         private static Phase phase;
         private static Hand holder;
+
+        /// <summary>The holder's grip holds it (taken by a grip); false while it rests in the hand it came out into.</summary>
+        private static bool gripped;
+
+        /// <summary>Coming out to its spot in a seat (<see cref="TrySeatSpot"/>) rather than into the hand.</summary>
+        private static bool toStand;
+
         private static long phaseAt, touchedAt;
         private static DatapadScreen screen;
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(Datapad));
 
-        /// <summary>A test aid holds it: held without a grip, until the test aid lets go.</summary>
-        private static bool driveHold;
+        /// <summary>A test aid took it out: it stays out without the hands, and no grip takes it, until the test aid lets go.</summary>
+        private static bool driven;
 
         /// <summary>The phase, for the drive and the log.</summary>
         internal static Phase Now => phase;
 
         /// <summary>The hand that holds it, while it is held.</summary>
-        internal static Hand? Holder => phase == Phase.Pulling || phase == Phase.Held ? holder : (Hand?)null;
+        internal static Hand? Holder => phase == Phase.Coming && !toStand || phase == Phase.Held ? holder : (Hand?)null;
 
-        /// <summary>It is out of the stowed place: the screen is up and the panel is the pad.</summary>
-        internal static bool Out => phase != Phase.Stowed;
+        /// <summary>It is out: the screen is up and the panel is the pad.</summary>
+        internal static bool Out => phase != Phase.Away;
+
+        /// <summary>The wrist panel's Datapad tile can take it out: not switched off, and the hands are the headset's.</summary>
+        internal static bool CanOpen => !Shelved && !Off && guard.On && VRInput.Active;
 
         public static void Patch(Harmony harmony)
         {
             GripClaim.Register(ClaimName, ClaimPriority, Take);
-            Log.Info($"Datapad: stowed {ForearmFromPalm * 100:0} cm up the {StowHand.ToString().ToLowerInvariant()} forearm from the grip; " +
-                     $"the other grip within {ForearmReach * 100:0} cm takes it (grip claim at priority {ClaimPriority})");
-            PatchRegistry.Apply("datapad indicator", () =>
-                harmony.Patch(AccessTools.Method(typeof(MySession), nameof(MySession.DrawSync)),
-                    postfix: new HarmonyMethod(typeof(Datapad), nameof(DrawIndicator))),
-                "Datapad: the forearm's new-message light could not be hooked; the controller still ticks");
+            Log.Info($"Datapad: taken out from the wrist panel's Datapad tile into the {Name(OutHand)} hand; while it is out a grip on it takes it " +
+                     $"(grip claim at priority {ClaimPriority})");
         }
 
         // ---- Game thread ----
@@ -148,7 +159,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Game thread, once per frame after the hands were read (InputPatches.FrameStart).</summary>
         public static void Update()
         {
-            if (!guard.On)
+            if (Shelved || !guard.On)
                 return;
             try
             {
@@ -158,6 +169,43 @@ namespace SpaceEngineersVR.Hands
             {
                 guard.Failed(e, "Datapad failed this frame");
             }
+        }
+
+        /// <summary>
+        /// Game thread, from the wrist panel's Datapad tile as the panel closes: the screen goes up and the pad comes out where
+        /// the panel was, into <paramref name="hand"/> (the wrist panel's hand unless a test aid says otherwise).
+        /// </summary>
+        internal static void Open() => Open(OutHand, false);
+
+        /// <summary>The pad out into <paramref name="hand"/>; by a test aid (<paramref name="byDrive"/>) without the hands. False when it cannot come out.</summary>
+        private static bool Open(Hand hand, bool byDrive)
+        {
+            if (Shelved || !(byDrive ? !Off && guard.On : CanOpen) || phase != Phase.Away)
+                return false;
+            bool toChat = Unread;
+            screen = new DatapadScreen(toChat);
+            MyGuiSandbox.AddScreen(screen);
+            holder = hand;
+            gripped = false;
+            driven = byDrive;
+            ClearUnread();
+            // In a kind of seat it was last let go in, it comes out to that spot.
+            Matrix spot = default;
+            toStand = !byDrive && TrySeatSpot(out spot);
+            if (toStand)
+            {
+                lock (gate)
+                {
+                    shown.From = spot;
+                    shown.FromWidth = VRSettings.DatapadWidth;
+                }
+            }
+            Haptics.Pulse(hand, TickAmplitude, TickSeconds);
+            Enter(Phase.Coming);
+            string to = toStand ? $"to its spot in the {Kind(standSeat)}" : $"into the {Name(hand)} hand";
+            Log.Info($"Datapad: taken out from the wrist panel {to}{(byDrive ? " (drive)" : string.Empty)}, {VRSettings.DatapadWidth:0.00} m wide" +
+                     (toChat ? ", on its chat page (a line came in while it was away)" : string.Empty));
+            return true;
         }
 
         private static void Frame()
@@ -172,119 +220,109 @@ namespace SpaceEngineersVR.Hands
                 }
             }
 
-            if (!Enabled || !VRInput.Active && !driveHold)
-            {
-                if (phase != Phase.Stowed)
-                    Stow(Enabled ? "the hands went away" : "switched off");
-                UpdateIndicator();
-                return;
-            }
+            if (phase != Phase.Away && (Off || !VRInput.Active && !driven))
+                PutAway(Off ? "switched off" : "the hands went away");
+            // The screen went away without the pad being put away: B, Escape, or the game closing it.
+            else if (phase != Phase.Away && (screen == null || Gone(screen)))
+                PutAway("its screen was closed");
+            if (phase != Phase.Away)
+                Step();
+            UpdateIndicator();
+        }
 
-            // The screen went away without the pad being put back: B, Escape, or the game closing it.
-            if (phase != Phase.Stowed && (screen == null || Gone(screen)))
-            {
-                Stow("its screen was closed");
-                UpdateIndicator();
-                return;
-            }
-
+        /// <summary>Game thread, while it is out: grips, Y, and the timed steps.</summary>
+        private static void Step()
+        {
             // Asked here as well as by VRControls, so a grip on the pad is noticed while its screen has the focus.
             GripClaim.Owner(Hand.Left);
             GripClaim.Owner(Hand.Right);
 
+            // Y on the wrist panel's hand, which opens and closes the panel, puts the pad back as well.
+            if (phase != Phase.Going && VRInput.IsNewPressed(WristButton.WristHand, VRButtons.Y))
+            {
+                Log.Info("Datapad: Y; going back into the wrist");
+                Return();
+                return;
+            }
+
+            // Standing in a seat: it stays with the seat, and goes back into the wrist when the player gets up.
+            if (InSeat && !FollowSeat())
+            {
+                Log.Info("Datapad: the seat it stands in was left; going back into the wrist");
+                Return();
+                return;
+            }
+
             double since = Seconds(phaseAt);
             switch (phase)
             {
-                case Phase.Pulling:
+                case Phase.Coming:
                 case Phase.Held:
-                    if (!driveHold && !GripClaim.Holds(holder, ClaimName))
+                    if (gripped && !GripClaim.Holds(holder, ClaimName))
                         Release();
-                    else if (phase == Phase.Pulling && since >= PullSeconds)
-                        Enter(Phase.Held);
+                    else if (phase == Phase.Coming && since >= ComeSeconds)
+                        Enter(toStand ? Phase.Standing : Phase.Held);
                     break;
 
-                case Phase.Floating:
-                    if (Seconds(Math.Max(phaseAt, touchedAt)) >= FloatSeconds)
+                case Phase.Standing:
+                    if (standSeat == null && Seconds(Math.Max(phaseAt, touchedAt)) >= FloatSeconds)
                     {
-                        Log.Info($"Datapad: left standing {FloatSeconds:0} s untouched; back to the forearm");
+                        Log.Info($"Datapad: left standing {FloatSeconds:0} s untouched; going back into the wrist");
                         Return();
                     }
                     break;
 
-                case Phase.Returning:
-                    if (since >= ReturnSeconds)
-                        Stow(null);
+                case Phase.Going:
+                    if (since >= GoSeconds)
+                        PutAway(null);
                     break;
             }
-            UpdateIndicator();
         }
 
         /// <summary>
-        /// A grip has just started. On the stowed pad (the other hand, the game in play): it comes off into that hand. On the
-        /// pad standing or flying back (either hand), or held in the other (the free hand): it goes into this one.
+        /// A grip has just started on the pad. Held in one hand, the other hand's grip takes it, and the hand it rests in closes
+        /// on it (so that letting go leaves it standing); standing or going back, either hand's grip takes it.
         /// </summary>
         private static bool Take(Hand hand)
         {
-            if (!Enabled || !VRInput.Active || ToolbarWheel.Owns)
+            if (Off || !VRInput.Active || ToolbarWheel.Owns || phase == Phase.Away || driven || !OnPad(hand))
                 return false;
-            switch (phase)
+            // The ship hologram on the pad is the free hand's to turn; the hand holding the pad still grips the pad.
+            if (!(Holder.HasValue && hand == holder) && ShipModel.OnPadAt(hand))
+                return false;
+            if (Holder.HasValue && hand == holder)
             {
-                case Phase.Stowed:
-                    if (hand == StowHand || !gripsTracked[(int)hand] || !(MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay) || !TryForearm(out Vector3 stowAt))
-                        return false;
-                    float distance = Vector3.Distance(grips[(int)hand].Translation, stowAt);
-                    if (distance > ForearmReach)
-                        return false;
-                    Pull(hand, distance);
-                    return true;
-
-                case Phase.Pulling:
-                case Phase.Held:
-                    if (hand == holder || driveHold || !OnPad(hand))
-                        return false;
-                    Log.Info($"Datapad: handed from the {Name(holder)} hand to the {Name(hand)}");
-                    GripClaim.Release(holder, ClaimName);
-                    Haptics.Pulse(holder, TickAmplitude, TickSeconds);
-                    holder = hand;
-                    Haptics.Pulse(hand, TickAmplitude, TickSeconds);
-                    Enter(Phase.Held);
-                    return true;
-
-                default:
-                    if (!OnPad(hand))
-                        return false;
-                    Log.Info($"Datapad: taken back into the {Name(hand)} hand ({(phase == Phase.Floating ? "standing" : "on its way back")})");
-                    holder = hand;
-                    Haptics.Pulse(hand, TickAmplitude, TickSeconds);
-                    Enter(Phase.Held);
-                    return true;
+                if (gripped)
+                    return false;
+                gripped = true;
+                Haptics.Pulse(hand, TickAmplitude, TickSeconds);
+                Log.Info($"Datapad: gripped by the {Name(hand)} hand it rests in; let go and it stands there");
+                return true;
             }
-        }
-
-        /// <summary>Off the forearm into <paramref name="hand"/>: the screen goes up, the pad grows into the hand.</summary>
-        private static void Pull(Hand hand, float distance)
-        {
-            screen = new DatapadScreen(Unread);
-            MyGuiSandbox.AddScreen(screen);
+            if (Holder.HasValue)
+            {
+                Log.Info($"Datapad: handed from the {Name(holder)} hand to the {Name(hand)}");
+                if (gripped)
+                    GripClaim.Release(holder, ClaimName);
+                Haptics.Pulse(holder, TickAmplitude, TickSeconds);
+            }
+            else
+                Log.Info($"Datapad: taken back into the {Name(hand)} hand ({(phase == Phase.Standing ? "standing" : phase == Phase.Coming ? "on its way to its spot" : "on its way back")})");
             holder = hand;
-            ClearUnread();
+            gripped = true;
+            toStand = false;
+            standSeat = null;
             Haptics.Pulse(hand, TickAmplitude, TickSeconds);
-            Haptics.Pulse(StowHand, TickAmplitude, TickSeconds);
-            Enter(Phase.Pulling);
-            Log.Info($"Datapad: pulled off the forearm by the {Name(hand)} grip ({distance * 100:0.0} cm from it), {VRSettings.DatapadWidth:0.00} m wide");
+            Enter(Phase.Held);
+            return true;
         }
 
-        /// <summary>The holding hand let go: back on the forearm if it was near, else it stands where it is.</summary>
+        /// <summary>The holding hand let go: it stands where it is.</summary>
         private static void Release()
         {
-            driveHold = false;
+            driven = false;
+            gripped = false;
             Haptics.Pulse(holder, TickAmplitude, TickSeconds);
-            if (TryForearm(out Vector3 stowAt) && Vector3.Distance(grips[(int)holder].Translation, stowAt) <= StowReach)
-            {
-                Log.Info($"Datapad: let go at the forearm ({Vector3.Distance(grips[(int)holder].Translation, stowAt) * 100:0} cm); stowed");
-                Return();
-                return;
-            }
             if (!HudPanel.TryGetPlacement(out Matrix pose, out float halfWidth, out _))
             {
                 Return();
@@ -296,56 +334,67 @@ namespace SpaceEngineersVR.Hands
                 shown.FromWidth = 2f * halfWidth;
             }
             touchedAt = 0;
-            Enter(Phase.Floating);
-            Log.Info($"Datapad: let go by the {Name(holder)} hand away from the forearm; it stands there {FloatSeconds:0} s");
+            bool inSeat = AnchorInSeat(pose);
+            Enter(Phase.Standing);
+            Log.Info(inSeat
+                ? $"Datapad: let go by the {Name(holder)} hand in the {Kind(standSeat)}; it stays there, fixed to the seat"
+                : $"Datapad: let go by the {Name(holder)} hand; it stands there {FloatSeconds:0} s");
         }
 
-        /// <summary>Flies back to the forearm from where it is shown now; the screen closes as it gets there.</summary>
+        /// <summary>Goes back into the wrist from where it is shown now; the screen closes as it gets there.</summary>
         private static void Return()
         {
-            Matrix from;
-            float width;
-            if (HudPanel.TryGetPlacement(out Matrix pose, out float halfWidth, out _))
+            if (!HudPanel.TryGetPlacement(out Matrix pose, out float halfWidth, out _))
             {
-                from = pose;
-                width = 2f * halfWidth;
-            }
-            else
-            {
-                Stow(null);
+                PutAway(null);
                 return;
             }
+            LetGo();
             lock (gate)
             {
-                shown.From = from;
-                shown.FromWidth = width;
+                shown.From = pose;
+                shown.FromWidth = 2f * halfWidth;
             }
-            Enter(Phase.Returning);
+            Enter(Phase.Going);
         }
 
-        /// <summary>Back on the forearm at once: the screen closes. <paramref name="why"/> is logged when it is not the usual way.</summary>
-        private static void Stow(string why)
+        /// <summary>Put away at once: the screen closes. <paramref name="why"/> is logged when it is not the usual way.</summary>
+        private static void PutAway(string why)
         {
-            if (phase != Phase.Stowed)
+            if (phase != Phase.Away)
             {
-                Haptics.Pulse(StowHand, TickAmplitude, TickSeconds);
-                Log.Info(why == null ? "Datapad: back on the forearm" : $"Datapad: back on the forearm ({why})");
+                Haptics.Pulse(OutHand, TickAmplitude, TickSeconds);
+                Log.Info(why == null ? "Datapad: put away" : $"Datapad: put away ({why})");
             }
-            if (Holder.HasValue)
-                GripClaim.Release(holder, ClaimName);
-            driveHold = false;
+            LetGo();
             DatapadScreen closing = screen;
             screen = null;
-            Enter(Phase.Stowed);
+            Enter(Phase.Away);
             if (closing != null && !Gone(closing))
                 closing.CloseScreen();
         }
 
-        /// <summary>From the pad's screen as it closes: if the pad did not close it, it goes back to the forearm.</summary>
+        /// <summary>
+        /// On the way away: the hand's grip and the seat let go of it. Put away from the hand in a seat, that kind of seat
+        /// forgets its spot (<see cref="ForgetSeatSpot"/>).
+        /// </summary>
+        private static void LetGo()
+        {
+            if (Holder.HasValue && !driven)
+                ForgetSeatSpot();
+            if (Holder.HasValue && gripped)
+                GripClaim.Release(holder, ClaimName);
+            gripped = false;
+            driven = false;
+            toStand = false;
+            standSeat = null;
+        }
+
+        /// <summary>From the pad's screen as it closes: if the pad did not close it, the pad is put away.</summary>
         internal static void ScreenClosed(DatapadScreen closed)
         {
             if (ReferenceEquals(closed, screen))
-                Stow("its screen was closed");
+                PutAway("its screen was closed");
         }
 
         private static void Enter(Phase next)
@@ -357,6 +406,7 @@ namespace SpaceEngineersVR.Hands
                 shown.Phase = next;
                 shown.Holder = holder;
                 shown.Since = phaseAt;
+                shown.ToStand = toStand;
             }
         }
 
@@ -389,49 +439,32 @@ namespace SpaceEngineersVR.Hands
         internal static Hand LaserHand(Hand dominant) => Holder.HasValue ? Other(holder) : dominant;
 
         /// <summary>The pad holds this hand's grip (the hand holds it, or has just taken it): the grip is not the laser's right button.</summary>
-        internal static bool OwnsGrip(Hand hand) => phase != Phase.Stowed && GripClaim.Holds(hand, ClaimName);
+        internal static bool OwnsGrip(Hand hand) => phase != Phase.Away && GripClaim.Holds(hand, ClaimName);
 
         /// <summary>
         /// The hands whose fingertips touch the pad (<see cref="PanelTouch"/>): the free hand while it is held, both while it
-        /// stands in the air. False while it is stowed, flying, or not the panel's (a screen of its own is not up).
+        /// stands in the air. False while it is away or going, or not the panel's (a screen of its own is not up).
         /// </summary>
         internal static bool TryTouchHands(out Hand first, out Hand? second)
         {
             first = Hand.Right;
             second = null;
-            if (!Enabled || screen == null || PanelTouch.InjectedTip == null && !VRInput.Active)
+            if (Off || screen == null || PanelTouch.InjectedTip == null && !VRInput.Active)
                 return false;
             switch (phase)
             {
-                case Phase.Pulling:
+                case Phase.Coming when !toStand:
                 case Phase.Held:
                     first = Other(holder);
                     return true;
-                case Phase.Floating:
+                case Phase.Coming:
+                case Phase.Standing:
                     first = VRSettings.DominantHand;
                     second = Other(first);
                     return true;
                 default:
                     return false;
             }
-        }
-
-        /// <summary>Where the stowed pad's middle is, from the forearm's grip pose (game thread's snapshot).</summary>
-        private static bool TryForearm(out Vector3 at)
-        {
-            at = default;
-            if (!gripsTracked[(int)StowHand])
-                return false;
-            at = ForearmPoint(grips[(int)StowHand]);
-            return true;
-        }
-
-        /// <summary>The stowed pad's middle: <see cref="ForearmFromPalm"/> back along the forearm (the grip's own +Z) from the grip.</summary>
-        internal static Vector3 ForearmPoint(in Matrix grip)
-        {
-            Vector3 along = grip.Backward;
-            float length = along.Length();
-            return length > 0.5f ? grip.Translation + along / length * ForearmFromPalm : grip.Translation;
         }
     }
 }

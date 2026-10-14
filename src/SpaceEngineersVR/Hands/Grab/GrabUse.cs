@@ -51,7 +51,7 @@ namespace SpaceEngineersVR.Hands
     /// the grip held), which drops it (<see cref="UseOrWait"/>, <see cref="LetGo"/>).</para>
     /// <para>In a seat (first person, the seat's own view): the seat itself and everything else of the seat's own block
     /// are left out, so a grip on the armrest does nothing and standing up stays on its button. A grip anywhere that is not
-    /// on a use object is the seat's: the hand flying and the roll.</para>
+    /// on a use object is the seat's: a cockpit stick, or the roll.</para>
     /// <para>Line of reach (<see cref="LineOfReach"/>): a use object is taken only when nothing solid lies between the arm's
     /// shoulder (the eyes before the arms are known) and the palm, other than the target's own block (the seat's own block
     /// counts, but for the collision shape the line starts in), and, in a closed cockpit, the line stays within its cells, so a

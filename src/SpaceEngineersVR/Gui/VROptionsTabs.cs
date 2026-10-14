@@ -20,6 +20,14 @@ namespace SpaceEngineersVR.Gui
     {
         private const string Display = "Display", Comfort = "Comfort", Controls = "Controls", Hands = "Hands", Interface = "Interface";
 
+        /// <summary>
+        /// The credit a group's name carries when its settings work by ColbyJack1134's SpaceEngineersVR's code, carried over or
+        /// adapted with his permission: such settings sit in a group of their own, named for its topic and this.
+        /// </summary>
+        private const string FromColby = " (from ColbyJack1134's SpaceEngineersVR)";
+
+        private const string ColbyCockpits = "Cockpits" + FromColby, ColbyHeadset = "Headset" + FromColby, ColbyDesktop = "Desktop window" + FromColby;
+
         /// <summary>The tab, the group in it, and the setting's key (its name in VRSettings and the settings file).</summary>
         private static readonly (string Tab, string Group, string Key)[] Places =
         {
@@ -34,21 +42,22 @@ namespace SpaceEngineersVR.Gui
             (Display,   "Helmet",         "visorTint"),
             (Display,   "Helmet",         "sunVisorTint"),
             (Display,   "Helmet",         "visorGlare"),
+            (Display,   "Helmet",         "helmetAirVolume"),
             (Display,   "Helmet",         "helmetBreathing"),
             (Display,   "External view",  "externalViewSize"),
             (Display,   "External view",  "externalViewHalfRate"),
             (Display,   "External view",  "moveViewByHand"),
             (Display,   "Headset",        "refreshRate"),
             (Display,   "Headset",        "dynamicResolution"),
-            (Display,   "Headset",        "lensMask"),
-            (Display,   "Headset",        "particleDensity"),
             (Display,   "Headset",        "headsetAudio"),
             (Display,   "Headset",        "ipd"),
+            (Display,   ColbyHeadset,     "lensMask"),
+            (Display,   ColbyHeadset,     "particleDensity"),
             (Display,   "Third person",   "thirdPerson"),
             (Display,   "Third person",   "levelChaseCamera"),
             (Display,   "Desktop window", "mirrorWidth"),
             (Display,   "Desktop window", "mirrorHeight"),
-            (Display,   "Desktop window", "freeMouse"),
+            (Display,   ColbyDesktop,     "freeMouse"),
 
             (Comfort,   "Turning",        "snapTurn"),
             (Comfort,   "Turning",        "smoothTurn"),
@@ -65,21 +74,14 @@ namespace SpaceEngineersVR.Gui
             (Controls,  "Controllers",    "leftHanded"),
             (Controls,  "Controllers",    "stickDeadzone"),
             (Controls,  "Controllers",    "shipStickSensitivity"),
-            (Controls,  "Piloting",       "handsOnControls"),
-            (Controls,  "Piloting",       "yawFromTwist"),
-            (Controls,  "Piloting",       "yawFromThumbstick"),
-            (Controls,  "Hand flying",    "handFlying"),
-            (Controls,  "Hand flying",    "stickMaxAngle"),
-            (Controls,  "Hand flying",    "throttleTravel"),
-            (Controls,  "Hand flying",    "handFlyingSensitivity"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyCockpit"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyThumbsticks"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyStickTwist"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyTapHoldSticks"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyTapHoldLevers"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyVehicleFlight"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyBarTilt"),
-            (Controls,  "Cockpits (from ColbyJack1134's SpaceEngineersVR)", "colbyWheelMotion"),
+            (Controls,  ColbyCockpits,    "colbyCockpit"),
+            (Controls,  ColbyCockpits,    "colbyThumbsticks"),
+            (Controls,  ColbyCockpits,    "colbyStickTwist"),
+            (Controls,  ColbyCockpits,    "colbyTapHoldSticks"),
+            (Controls,  ColbyCockpits,    "colbyTapHoldLevers"),
+            (Controls,  ColbyCockpits,    "colbyVehicleFlight"),
+            (Controls,  ColbyCockpits,    "colbyBarTilt"),
+            (Controls,  ColbyCockpits,    "colbyWheelMotion"),
             (Controls,  "Ping",           "pingHoldX"),
             (Controls,  "Ping",           "pingSeconds"),
             (Controls,  "Ping",           "pingChat"),
@@ -122,8 +124,7 @@ namespace SpaceEngineersVR.Gui
             (Interface, "Menus",          "vrKeyboard"),
             (Interface, "Wrist panel",    "wristPanel"),
             (Interface, "Wrist panel",    "wristPanelSize"),
-            (Interface, "Datapad",        "datapad"),
-            (Interface, "Datapad",        "datapadWidth"),
+            (Interface, "Wrist panel",    "datapadWidth"),
             (Interface, "Prompts",        "vrButtonNames"),
             (Interface, "Wheels",         "vrRadialMenu"),
             (Interface, "Wheels",         "vrActionsWheel"),
