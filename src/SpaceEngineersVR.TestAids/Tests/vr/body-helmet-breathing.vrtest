@@ -1,9 +1,0 @@
-# The breathing in the closed helmet has its sounds in any world, arcade or realistic: the game defines them only for
-# realistic sounds, and the plugin gives the game's own under the names any world finds. The plugin logs the breathing's
-# sounds once for each character, as the world loads.
-plugin SpaceEngineersVR
-log SpaceEngineersVR.log
-world game:Earth Planet fresh
-expect session focused within 60
-expect log '/Helmet breathing: the game.s own, in a world with \w+ sounds: at rest PlayVocBreath1L [(]PlayVocBreath1L[)], heavy PlayVocBreath2L [(]PlayVocBreath2L[)]/' within 30
-expect no log no sound loaded

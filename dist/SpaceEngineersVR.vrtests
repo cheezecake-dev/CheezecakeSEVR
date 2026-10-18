@@ -1,0 +1,3329 @@
+# Cheezecake's SE VR: its VR tests, one file. Each 'test' section is one test; the lines before the first one start
+# every test, and each 'define' holds steps a test puts in with 'include'.
+
+plugin SpaceEngineersVR
+# every test starts with the plugin's settings as a new player has them; the player's own are put back after the run
+fresh SpaceEngineersVR.cfg
+
+define gun-load.inc
+# The magazine out and a fresh one in: the right stick click drops it, the left trigger at the hip takes another, and
+# held, the left hand pushes it into the well. The well is where the plugin's line for the magazine taken from the pouch says
+# the left hand seats it, in the STAGE space (the floor's), as the hand steps are.
+
+# The click is held until the plugin has seen it: a tick of the game's longer than a short click would miss it.
+press right stick
+expect log /pressed RELOAD on the .*magazine [0-9]+[/]/ within 5
+release right stick
+wait 1
+expect no log the game refuses
+expect log magazine dropped within 5
+
+hand left -0.2 1.0 -0.1
+wait 1
+press left trigger
+wait 1
+expect log from the pouch within 5
+
+remember seat log '/seats with the other hand at stage \(([-\d.]+), ([-\d.]+), ([-\d.]+)\) m, yaw ([-\d.]+) pitch ([-\d.]+) roll ([-\d.]+)/' within 5
+hand left {seat}
+wait 1.5
+expect log hand seated a magazine in the within 5
+release left trigger
+wait 5
+expect log magazine is home within 5
+expect log /Reload: done after .*[(]magazine [1-9]/ within 5
+hand left -0.25 1.2 -0.3
+wait 0.5
+end
+
+define gun-reload.inc
+# One hand weapon's reload by hand, as a player does it, with the gun in the right hand. A gun comes out of the inventory
+# empty, and the game loads it as it comes out (one of the three magazines, on its own reload timer). A magazine fired empty
+# stays in the gun: the right stick click (the gun hand's) drops it, the left trigger, low at the hip, takes a fresh one from
+# the pouch and, held, pushes it up into the well under the gun (gun-load.inc).
+# Args: $1 the gun's item subtype, $2 its magazine's subtype.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the gun in toolbar slot 1 and three magazines in the inventory ----------------------------------
+
+give PhysicalGunObject/$1
+give AmmoMagazine/$2 3
+toolbar 1 PhysicalGunObject/$1
+log SpaceEngineersVR.log
+expect session focused within 60
+# out in the open, nothing within 40 m: the one shot below hits no block, so the world is kept for the next test
+goto open 40
+
+# ---- The gun into the right hand: the tools wheel's first slot ---------------------------------------------------------------
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.3 -0.4 0 -5 0
+wait 1
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains $1
+
+# ---- Drawn empty, with magazines in the inventory: the game loads it, timed, and nothing drops ---------------------------------
+
+expect log was drawn with its magazine empty; the game loads it within 10
+expect log /Reload: done after .*[(]magazine [1-9]/ within 15
+expect no log magazine dropped
+expect no log stays in until the reload press
+
+# ---- One shot, then the reload by hand: a magazine need not be empty to change it --------------------------------------------
+# fired a little above level, over the open ground: lower, a rocket bursts on the ground a few metres off and hurts
+log SpaceEngineersVR.log
+hand right 0.25 1.3 -0.4 0 25 0
+wait 0.5
+press right trigger
+wait 0.1
+release right trigger
+wait 3
+hand right 0.25 1.3 -0.4 0 -5 0
+wait 0.5
+expect no log magazine dropped
+include gun-load.inc
+expect no log Exception
+end
+
+define vr-option.inc
+# One of Cheezecake's SE VR's settings set through Options > VR, as a player sets it, from play. What it was is kept as
+# {$4}, to set it back in the test's cleanup:
+#   include vr-option.inc playPosition 0 selectedIndex was_playPosition
+#   ...
+#   cleanup
+#   include vr-option.inc playPosition {was_playPosition} selectedIndex _
+# $1 the setting's key (as in SpaceEngineersVR.cfg), $2 its value: a list's index, true or false for a box, a number for a
+# slider; $3 the field of the control that holds it: selectedIndex, isChecked or value; $4 the name to keep the old one as.
+# the game hands a key only to a screen that is fully open (one opening, unhiding or closing drops it): wait for it
+read screen
+expect state == OPENED within 15
+key Escape
+read screen
+expect type == MyGuiScreenMainMenu within 5
+click Options
+read screen
+expect type == MyGuiScreenOptionsSpace within 5
+click VR
+read screen
+expect type == VROptionsScreen within 5
+read control setting $1
+remember $4 properties.$3
+set "setting $1" $2
+read control setting $1
+expect properties.$3 == $2
+# OK saves the settings and closes; Escape closes the game's Options and the menu
+click OK
+read screen
+expect type == MyGuiScreenOptionsSpace within 5
+read screen
+expect state == OPENED within 15
+key Escape
+read screen
+expect type == MyGuiScreenMainMenu within 5
+read screen
+expect state == OPENED within 15
+key Escape
+read screen
+expect type == MyGuiScreenGamePlay within 5
+end
+
+test body-crouch-head
+# Crouching for real: the player's head goes down 30 cm or more and stays there, and the astronaut crouches; the head back
+# up and the astronaut stands.
+# Needs: Earth Planet. Sets Options > VR > Display > Play position to Standing and Crouch when you crouch on (off by default)
+# for the test, and both back after.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+include vr-option.inc playPosition 0 selectedIndex was_playPosition
+include vr-option.inc crouchWithHead true isChecked was_crouchWithHead
+
+head 0 1.6 0
+wait 2
+
+# before: standing, and still standing a moment later
+read character
+expect state == standing
+
+# the head at 1.0 m (a deep crouch): the astronaut crouches
+head 0 1.0 0
+wait 1.5
+read character
+expect state == crouching
+
+# the head back at 1.6 m: the astronaut stands
+head 0 1.6 0
+wait 1.5
+read character
+expect state == standing
+
+cleanup
+reset
+include vr-option.inc playPosition {was_playPosition} selectedIndex _
+include vr-option.inc crouchWithHead {was_crouchWithHead} isChecked _
+
+test body-crouch-stick
+# Crouching with the right stick: pushed down it crouches the astronaut, and pushed down again it stands up (the game's
+# crouch is a toggle, as the C key).
+# Needs: Earth Planet (survival, on foot, in gravity).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: standing
+read character
+expect state == standing
+
+# a push down and back to the middle: crouching
+stick right 0 -1
+wait 0.3
+stick right 0 0
+wait 0.7
+read character
+expect state == crouching
+
+# another push down: standing again
+stick right 0 -1
+wait 0.3
+stick right 0 0
+wait 0.7
+read character
+expect state == standing
+
+test body-death
+# Dying as a VR player: the eyes show a still, dark space with the game's death camera on a screen ahead, and the respawn
+# screen follows, the menu in front of that screen. The harness makes the death, which is only how the test gets there.
+# Needs: Earth Planet (survival, on foot).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: alive, and the eyes show the world
+read character
+expect state == standing
+expect health >= 1
+headset alive.png
+expect headset bright
+expect no log Forced view: on
+
+# the character dies
+die
+expect applied == true
+read character
+expect state == dead within 5
+expect log Forced view: on (the character is dead) within 10
+
+# the eyes no longer show the world: the screen with the death camera stands ahead
+wait 2
+headset dead.png
+expect headset changed
+
+# the respawn screen opens, and the screen with the death camera stands behind it
+read respawn
+expect screenPresent == true within 40
+expect log Forced view: screen put behind the menu within 5
+
+test body-helmet-breathing
+# The breathing in the closed helmet has its sounds in any world, arcade or realistic: the game defines them only for
+# realistic sounds, and the plugin gives the game's own under the names any world finds. The plugin logs the breathing's
+# sounds once for each character, as the world loads.
+plugin SpaceEngineersVR
+log SpaceEngineersVR.log
+world game:Earth Planet fresh
+expect session focused within 60
+expect log '/Helmet breathing: the game.s own, in a world with \w+ sounds: at rest PlayVocBreath1L [(]PlayVocBreath1L[)], heavy PlayVocBreath2L [(]PlayVocBreath2L[)]/' within 30
+expect no log no sound loaded
+
+test body-helmet-lamp
+# The helmet and the suit lamp by hand: a grip on the right side of the helmet opens or closes it, a grip on the left side
+# switches the suit lamp. The plugin reads the game's own state back into its log a moment after each grip.
+# Needs: Earth Planet; Options > VR > Display > Helmet view on, Controls > Helmet and lamp by hand on (the defaults).
+# The hands are placed from the head: the helmet's middle is 9 cm behind the eyes, its shell reaches 26 cm from there.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+# the game's exposure moves the whole view for a while after a load: the images below are compared once it has settled
+expect headset steady
+
+# before: nothing is gripped
+headset helmet-b.png
+expect no log Helmet and lamp by hand: Right helmet grip
+
+# the right hand to the right side of the helmet, grip: the helmet opens or closes (whichever it was not)
+hand right 0.12 1.59 0.09
+wait 0.7
+press right grip
+wait 0.8
+release right grip
+wait 1.5
+headset helmet-toggled.png
+expect headset changed
+expect log Helmet and lamp by hand: Right helmet grip -> helmet within 5
+
+# and again: the other way
+hand right 0.12 1.59 0.09
+wait 0.5
+press right grip
+wait 0.8
+release right grip
+wait 1.5
+headset helmet-toggled-back.png
+expect headset changed
+expect log -> helmet off within 5
+expect log -> helmet on within 5
+
+# the left hand to the left side of the helmet, grip: the suit lamp switches
+hand left -0.12 1.59 0.09
+wait 0.7
+press left grip
+wait 0.8
+release left grip
+wait 1
+expect log Helmet and lamp by hand: Left lamp grip -> lamp within 5
+
+# and again: the other way
+hand left -0.12 1.59 0.09
+wait 0.5
+press left grip
+wait 0.8
+release left grip
+wait 1
+expect log -> lamp on within 5
+expect log -> lamp off within 5
+
+test body-hull-grab
+# Hull grab in zero g: with the jetpack on, a grip with the hand on a hull takes hold of it, pushing the hand away from the
+# hull moves the astronaut the other way, and letting go of the grip lets go.
+# World: Green Station (survival; an asteroid base; the astronaut starts on foot in it). The test goes out into open space
+# and builds an armor block 1.7 m ahead (a 2.5 m cube, its near face 45 cm ahead of the astronaut) with creative tools. The hand is put
+# 45 cm ahead of the head, on the block's near face (the grab reaches 8 cm).
+plugin SpaceEngineersVR
+world game:Green Station
+# zero g: the station's artificial gravity off
+switch GravityGenerator off
+switch GravityGeneratorSphere off
+admin creativeTools
+# out of the station into open space, nothing built within 10 m, to build there
+goto open
+build LargeBlockArmorBlock 3 as Test hull
+# stand with the near face 45 cm ahead (the cube is 2.5 m: its centre 1.7 m away)
+goto Test hull 1.7
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# the jetpack on (the astronaut starts with it on in the station): a hull is only grabbed while floating
+read character
+expect jetpack == true
+
+# before: nothing gripped
+expect no log Hull grab: Right hand takes hold
+read character
+mark
+wait 1
+read character
+expect position moved < 0.2
+
+# the right hand on the hull, grip: it takes hold
+hand right 0.2 1.2 -0.45
+wait 0.7
+press right grip
+wait 1
+expect log Hull grab: Right hand takes hold of within 5
+
+# the hand pushed 20 cm into the hull: the astronaut is moved the other way
+read character
+mark
+hand right 0.2 1.2 -0.55
+wait 0.3
+hand right 0.2 1.2 -0.65
+wait 1
+read character
+expect position moved > 0.1
+
+# the grip let go
+release right grip
+wait 1
+expect log Hull grab: Right hand lets go of within 5
+
+test body-jetpack-dampeners
+# The jetpack and the dampeners by hand: B on the right controller turns the jetpack on and off; a tap of X on the left
+# controller (the left A on an Index) turns the dampeners off and on.
+# Needs: Earth Planet (survival, on foot, in gravity), the astronaut starting with the jetpack off and the dampeners on.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: jetpack off, dampeners on
+read character
+expect jetpack == false
+expect dampeners == true
+expect state == standing
+
+# B: the jetpack is on, and the astronaut is flying
+press right b
+wait 0.15
+release right b
+wait 0.7
+read character
+expect jetpack == true
+expect state == flying
+
+# B again: off
+press right b
+wait 0.15
+release right b
+wait 1.5
+read character
+expect jetpack == false
+expect state == standing
+
+# a tap of X: the dampeners are off
+press left a
+wait 0.15
+release left a
+wait 0.7
+read character
+expect dampeners == false
+
+# another tap: back on
+press left a
+wait 0.15
+release left a
+wait 0.7
+read character
+expect dampeners == true
+
+test body-jetpack-fly
+# Flying with the jetpack in gravity: A climbs, the left stick flies, the dampeners hold the astronaut still when the
+# sticks are at rest. With the head turned round, the body does not turn after it (on the jetpack it turns by the sticks
+# only). The left stick click is not a roll in gravity.
+# Needs: Earth Planet (survival, on foot, in gravity), the astronaut starting with the jetpack off and the dampeners on;
+# open sky or a high ceiling above the start.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# jetpack on (B)
+read character
+expect jetpack == false
+expect dampeners == true
+press right b
+wait 0.15
+release right b
+wait 0.7
+read character
+expect jetpack == true
+expect state == flying
+
+# before: with the sticks at rest and the dampeners on the astronaut hovers where it is
+read character
+mark
+wait 1.5
+read character
+expect position moved < 0.5
+
+# A held: the astronaut climbs
+mark
+press right a
+wait 1
+release right a
+read character
+expect position moved > 1
+
+# the dampeners bring it to a stop
+wait 3
+read view
+expect localSpeed < 1.5
+
+# the left stick forward flies it
+read character
+mark
+stick left 0 1
+wait 1
+stick left 0 0
+read character
+expect position moved > 1.5
+
+# the head turned right, the stick forward: it flies, and the body keeps facing the way it did
+wait 3
+read character
+mark
+head 0 1.6 0 90
+wait 1
+stick left 0 1
+wait 1
+stick left 0 0
+read character
+expect position moved > 1.5
+expect forward moved < 0.15
+head 0 1.6 0
+
+# the left stick click held with the right stick pushed: in gravity the jetpack does not pitch or roll
+read character
+mark
+press left stick
+wait 0.3
+stick right 1 0
+wait 0.5
+stick right 0 0
+release left stick
+wait 0.5
+expect log Zero-g pitch and roll: not here within 5
+read character
+expect up moved < 0.1
+
+test body-jump
+# Jumping: A on the right controller, or the right stick pushed up, jumps.
+# Needs: Earth Planet (survival, on foot, in gravity).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: standing still, nothing moves the astronaut
+read character
+expect state == standing
+mark
+wait 0.5
+read character
+expect position moved < 0.05
+
+# A: the astronaut is in the air a moment later (a jump rises about a metre)
+mark
+press right a
+wait 0.3
+read character
+expect position moved > 0.25
+release right a
+wait 2
+
+# the right stick pushed up jumps too
+read character
+mark
+stick right 0 1
+wait 0.3
+read character
+expect position moved > 0.25
+stick right 0 0
+wait 2
+
+# and the stick back at rest does not
+read character
+mark
+wait 0.5
+read character
+expect position moved < 0.05
+
+test body-ladder
+# Ladders: a grip with the hand on a ladder takes the astronaut onto it, pulling the hand down climbs, and letting go of
+# the grip lets go of the ladder.
+# Needs: Earth Planet (survival, on foot, in gravity). The test builds a ladder three shafts tall 1.6 m ahead (2.5 m cubes, the
+# near face 35 cm ahead of the astronaut) with creative tools. The hand is put 55 cm ahead of the head, inside the shaft's cell.
+plugin SpaceEngineersVR
+world game:Earth Planet
+admin creativeTools
+# open ground: room to walk, nothing in the way
+goto open
+# three shafts, one on another: the game climbs only where there is ladder above the head
+build LadderShaft 3 5
+build LadderShaft 3 2.5
+build LadderShaft 3 as Test ladder
+# its near face 35 cm ahead (the cell is 2.5 m: its centre 1.6 m away)
+goto Test ladder 1.6
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: standing on the ground, nothing gripped
+read character
+expect state == standing
+expect no log Hull grab: Right hand takes
+
+# the right hand into the ladder, grip: the astronaut is on the ladder
+hand right 0.2 1.2 -0.55
+wait 0.7
+press right grip
+wait 1
+expect log Hull grab: Right hand takes within 5
+read character
+expect state == ladder
+
+# hand over hand, as a player climbs: the hand that holds pulls down 80 cm, the other takes the ladder higher up and the
+# first lets go. A step of the game's ladder (0.83 m here) starts at half a step's pull, then one for each step's pull,
+# so four pulls of 80 cm climb four steps
+mark
+hand right 0.2 1.3 -0.55
+wait 0.3
+hand right 0.2 1.2 -0.55
+wait 0.2
+hand right 0.2 1.1 -0.55
+wait 0.2
+hand right 0.2 1.0 -0.55
+wait 0.2
+hand right 0.2 0.9 -0.55
+wait 0.2
+hand right 0.2 0.8 -0.55
+wait 0.2
+hand right 0.2 0.7 -0.55
+wait 0.2
+hand right 0.2 0.6 -0.55
+wait 0.2
+hand right 0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+hand left -0.2 1.3 -0.55
+wait 0.4
+press left grip
+wait 0.4
+release right grip
+wait 0.2
+expect log Hull grab: Left hand takes within 5
+hand left -0.2 1.2 -0.55
+wait 0.2
+hand left -0.2 1.1 -0.55
+wait 0.2
+hand left -0.2 1.0 -0.55
+wait 0.2
+hand left -0.2 0.9 -0.55
+wait 0.2
+hand left -0.2 0.8 -0.55
+wait 0.2
+hand left -0.2 0.7 -0.55
+wait 0.2
+hand left -0.2 0.6 -0.55
+wait 0.2
+hand left -0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+hand right 0.2 1.3 -0.55
+wait 0.4
+press right grip
+wait 0.4
+release left grip
+wait 0.2
+hand right 0.2 1.2 -0.55
+wait 0.2
+hand right 0.2 1.1 -0.55
+wait 0.2
+hand right 0.2 1.0 -0.55
+wait 0.2
+hand right 0.2 0.9 -0.55
+wait 0.2
+hand right 0.2 0.8 -0.55
+wait 0.2
+hand right 0.2 0.7 -0.55
+wait 0.2
+hand right 0.2 0.6 -0.55
+wait 0.2
+hand right 0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+hand left -0.2 1.3 -0.55
+wait 0.4
+press left grip
+wait 0.4
+release right grip
+wait 0.2
+hand left -0.2 1.2 -0.55
+wait 0.2
+hand left -0.2 1.1 -0.55
+wait 0.2
+hand left -0.2 1.0 -0.55
+wait 0.2
+hand left -0.2 0.9 -0.55
+wait 0.2
+hand left -0.2 0.8 -0.55
+wait 0.2
+hand left -0.2 0.7 -0.55
+wait 0.2
+hand left -0.2 0.6 -0.55
+wait 0.2
+hand left -0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+read character
+expect state == ladder
+expect position moved > 2.0
+expect log Hull grab: ladder step up within 5
+
+# the grip let go: the plugin lets go of the ladder
+release left grip
+wait 1
+expect log lets go of the ladder within 5
+
+test body-magboots
+# Magnetic boots: in zero g with the jetpack off the boots hold the astronaut to a station's floor and the astronaut walks on
+# them; the plugin, which steadies the view against the grid's bumps, reports its steps on the boots every ten seconds.
+# World: Green Station (survival; an asteroid base, no gravity; the astronaut starts on foot, on the base's floor).
+# The walk goes forward a second and a half, then back.
+plugin SpaceEngineersVR
+world game:Green Station
+# zero g: the station's artificial gravity off
+switch GravityGenerator off
+switch GravityGeneratorSphere off
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# the jetpack is off, so the boots hold the astronaut to the floor: the plugin's steps on them are on the grid
+read character
+expect jetpack == false
+log SpaceEngineersVR.log
+expect log /Magnetic boots .* [1-9][0-9]* steps on boots [(][1-9][0-9]* on a grid/ within 15
+
+# walking on the boots
+read character
+mark
+stick left 0 1
+wait 1.5
+stick left 0 0
+read character
+expect position moved > 0.5
+expect jetpack == false
+stick left 0 -1
+wait 1.5
+stick left 0 0
+
+test body-neck-limit
+# The body follows the head past a neck's limit: turning the head 30 degrees leaves the body facing the same way,
+# turning it 90 degrees makes the body turn after it until the head is 50 degrees off the body (it turns about 40 degrees).
+# Needs: Earth Planet (survival, on foot, in gravity).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# the head turned within the limit: the body stays
+read character
+mark
+head 0 1.6 0 30
+wait 1.5
+read character
+expect forward moved < 0.05
+expect no log Body followed the head
+
+# the head turned past the limit: the body follows (a 40 degree turn moves the forward vector by about 0.68)
+head 0 1.6 0 90
+wait 2
+read character
+expect forward moved > 0.5
+expect forward moved < 0.85
+expect log Body followed the head by within 5
+expect log neck limit within 5
+
+cleanup
+# Put back: the head ahead and a short walk, which turns the body all the way to the head, so the tests after this one
+# start with the body facing where the head looks (standing still, the body stays up to 50 degrees off the head).
+head 0 1.6 0
+stick left 0 1
+wait 0.5
+stick left 0 0
+wait 0.5
+
+test body-sprint
+# Sprinting: the left stick click with the stick forward sprints; without the click the astronaut runs.
+# Needs: Earth Planet (survival, on foot, in gravity). The astronaut runs at 6 m/s and sprints at 10 m/s; the legs are
+# short and the second goes back the way the first came, so the start base has room for them.
+plugin SpaceEngineersVR
+world game:Earth Planet
+# open ground: room to walk, nothing in the way
+goto open
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: standing, speed nothing
+read view
+expect localSpeed < 0.3
+
+# the left stick forward: a run
+stick left 0 1
+wait 1
+read view
+expect localSpeed > 4
+expect localSpeed < 7.5
+stick left 0 0
+wait 0.5
+
+# back to where it started
+stick left 0 -1
+wait 1
+stick left 0 0
+wait 1
+
+# the left stick forward with its click: faster than any run
+press left stick
+stick left 0 1
+wait 1.2
+read view
+expect localSpeed > 8
+stick left 0 0
+release left stick
+wait 0.5
+
+test body-sun-visor
+# The sun visor: a grip on the front of the helmet with the hand drawn down lowers the sun visor over the glass (the view
+# darkens), and pushed up raises it again.
+# Needs: Earth Planet; Options > VR > Display > Helmet view on (the default). The test closes the helmet: the sun visor rides
+# on its glass, and Earth Planet starts with it open.
+# The hand is placed from the head: 13 cm ahead of the eyes is on the front of the helmet (it reaches 26 cm from its middle,
+# 9 cm behind the eyes) and clear of the headset (a hand within 10 cm of the eyes is dropped as not tracked); a draw of
+# 5 cm slides the visor.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+helmet on
+read character
+expect helmet == true within 5
+
+head 0 1.6 0
+wait 2
+
+# the game's exposure moves the whole view for a while after a load: the images below are compared once it has settled
+expect headset steady
+# before: nothing gripped, the view holds still
+headset visor-a.png
+wait 1
+headset visor-b.png
+expect headset same
+expect no log Sun visor: Right hand
+
+# the right hand to the front of the helmet, grip, drawn down 10 cm: the sun visor comes down and the view darkens
+hand right 0 1.6 -0.13
+wait 0.7
+press right grip
+wait 0.5
+hand right 0 1.55 -0.13
+wait 0.2
+hand right 0 1.5 -0.13
+wait 1.5
+headset visor-down.png
+expect headset changed
+expect log Sun visor: Right hand on the front of the helmet drew it down within 5
+expect no log the helmet is open and the visor rides on its glass
+
+# pushed back up 10 cm: the sun visor goes up and the view lightens again
+hand right 0 1.55 -0.13
+wait 0.2
+hand right 0 1.6 -0.13
+wait 0.2
+hand right 0 1.65 -0.13
+wait 1.5
+headset visor-up.png
+expect headset changed
+expect log Sun visor: Right hand on the front of the helmet pushed it up within 5
+release right grip
+
+test body-turn-snap
+# Snap turning: one flick of the right stick turns the astronaut 30 degrees, once however long the stick is held; a flick
+# the other way turns it back.
+# Needs: Earth Planet; Options > VR > Comfort at its defaults (snap turn 30 degrees, smooth turn off).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: nothing pushed, the astronaut faces the same way
+read character
+mark
+wait 1
+read character
+expect forward moved < 0.05
+
+# a flick right and the stick held there: one 30 degree turn (the forward vector moves by about 0.52), not a steady one
+stick right 1 0
+wait 2
+read character
+expect forward moved > 0.35
+expect forward moved < 0.7
+expect log Snap turn right 30 deg within 5
+stick right 0 0
+wait 0.5
+
+# a flick left turns it back
+stick right -1 0
+wait 1
+stick right 0 0
+wait 0.5
+read character
+expect forward moved < 0.1
+expect log Snap turn left 30 deg within 5
+
+test body-visor-cold
+# Frost and mist on the visor: in the game's extreme cold, frost grows in from the visor's rim and the view changes; back in
+# the warm, the cold glass mists over, and the frost melts.
+# Needs: Earth Planet, out in the open, away from the start's station (inside its pressurised rooms the game's temperature
+# stays Cozy, whatever the weather); Options > VR > Display > Helmet view, Frost on the visor and Visor mists up indoors on
+# (the defaults). The test closes the helmet (frost grows only on the closed glass) and calls the game's ExtremeCold weather
+# with its admin chat command (/weather ExtremeCold: the game's temperature there times -1, ExtremeFreeze), then clears it.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+goto open 20
+helmet on
+read character
+expect helmet == true within 5
+
+head 0 1.6 0
+wait 2
+# out in the open the grass sways in the wind: a second apart the view differs by about 5 however still the head is
+expect headset steady 8
+headset cold-before.png
+
+key Enter
+wait 0.5
+type /weather ExtremeCold
+key Enter
+expect log Visor weather: frost grows in from the within 60
+expect log layers drawn on the glass within 10
+# the frost reaches most of the way to its rim in about 20 s
+wait 30
+headset cold-frost.png
+expect headset changed 12
+
+# the cold gone: the glass is still cold in the warmer air, so it mists; a fingertip wipes a stroke through it, and it
+# clears as the glass warms; the frost melts
+key Enter
+wait 0.5
+type /weather clear
+key Enter
+expect log Visor weather: the visor mists over within 60
+# the right index fingertip across the misted glass, left to right at eye height (placed as in body-visor-rain-wipe):
+# the stroke clears the mist along it
+hand right -0.06 1.667 -0.186 0 -90 0
+wait 0.7
+hand right -0.045 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.03 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.015 1.667 -0.186 0 -90 0
+wait 0.2
+hand right 0 1.667 -0.186 0 -90 0
+wait 0.5
+expect log Visor weather: the right fingertip wipes the visor within 5
+hand right 0.25 1.3 -0.4 0 -5 0
+expect log mist clears as the glass warms within 60
+expect log Visor weather: the frost has melted from the visor within 90
+expect no log Visor weather failed
+expect no log Exception
+
+cleanup
+reset
+
+test body-visor-rain-wipe
+# Rain on the visor and a fingertip wiping it: out in heavy rain, drops spatter the closed visor and run down it; the right
+# index fingertip drawn across the front of the helmet wipes them, with the visor's log naming the hand.
+# Needs: Earth Planet, out in the open (under a roof the game's weather does not reach the glass); Options > VR > Display >
+# Helmet view, Weather on the visor and Wipe the visor on (the defaults). The test closes the helmet and calls the game's
+# heavy rain with its admin chat command (/weather RainHeavy), then clears it.
+# The hand is placed from the head with the index finger pointing back at the face: the forearm reaching forward, the
+# controller turned nose down (pitch -90). The drawn index fingertip is 12.6 cm along the controller's -Y from its grip
+# and 6.7 cm along its -Z (the glove's bind pose on the grip, no grip fit), so the grip 18.6 cm ahead and 6.7 cm above the
+# eyes puts the tip 6 cm ahead of them at eye height and 3 cm right of the grip: 4 cm into the helmet's front, which
+# stands 9 cm ahead of the eyes, where the drawn hand stops on it (HelmetStop) and the fingertip's touch is kept. The
+# controller's -Z pointed at the face instead would put the tip 15 cm below the eyes, under the chin.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+goto open 20
+helmet on
+read character
+expect helmet == true within 5
+
+head 0 1.6 0
+wait 2
+# out in the open the grass sways in the wind: a second apart the view differs by about 5 however still the head is
+expect headset steady 8
+headset rain-before.png
+
+key Enter
+wait 0.5
+type /weather RainHeavy
+key Enter
+expect log Visor weather: rain on the visor within 60
+wait 10
+headset rain-on.png
+expect headset changed 12
+
+# the right index fingertip across the front of the visor, left to right at eye height: the tip from 3 cm left of the
+# middle to 3 cm right of it
+hand right -0.06 1.667 -0.186 0 -90 0
+wait 0.7
+hand right -0.045 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.03 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.015 1.667 -0.186 0 -90 0
+wait 0.2
+hand right 0 1.667 -0.186 0 -90 0
+wait 0.5
+expect log Hand stop: Right hand on the helmet within 5
+expect log Visor weather: the right fingertip wipes the visor within 5
+
+key Enter
+wait 0.5
+type /weather clear
+key Enter
+expect log Visor weather: no weather falls on the visor now within 60
+expect no log Visor weather failed
+expect no log Exception
+
+cleanup
+reset
+
+test body-walk
+# Walking and strafing: the left stick walks the astronaut forward, back and sideways, the way the body faces.
+# Needs: Earth Planet (survival, on foot, in gravity). Each leg is about one second, so the start base has room for it.
+plugin SpaceEngineersVR
+world game:Earth Planet
+# open ground: room to walk, nothing in the way
+goto open
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+# a moment's walk first: walking turns the body to the way the head faces, and goto left the body facing elsewhere
+stick left 0 1
+wait 0.3
+stick left 0 0
+wait 1
+
+# before: with the stick at rest the astronaut stays where it is
+read character
+mark
+wait 1
+read character
+expect position moved < 0.1
+
+# the left stick forward: the astronaut walks ahead and does not turn
+read character
+mark
+stick left 0 1
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1
+
+# the left stick back: the astronaut walks backward and still faces the same way
+read character
+mark
+stick left 0 -1
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1
+
+# the left stick right: the astronaut sidesteps and still faces the same way
+read character
+mark
+stick left 1 0
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1
+
+# the left stick left
+read character
+mark
+stick left -1 0
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1
+
+test body-walk-head-direction
+# Walking goes where the player looks: with the head turned 60 degrees, the left stick forward walks that way, and the
+# body turns round to follow the head while it walks.
+# Needs: Earth Planet (survival, on foot, in gravity).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: the head alone does not turn the body that far (60 degrees is past the 50 degree neck limit, so look at 30 first)
+head 0 1.6 0 30
+wait 1
+read character
+mark
+wait 1
+read character
+expect forward moved < 0.05
+expect no log (walking)
+
+# head turned 60 degrees right, stick forward: the astronaut walks and its body comes round with the head
+head 0 1.6 0 60
+read character
+mark
+stick left 0 1
+wait 1.5
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved > 0.5
+expect log (walking) within 5
+
+cleanup
+# Put back: the head ahead and a short walk, which turns the body all the way to the head, so the tests after this one
+# start with the body facing where the head looks (standing still, the body stays up to 50 degrees off the head).
+head 0 1.6 0
+stick left 0 1
+wait 0.5
+stick left 0 0
+wait 0.5
+
+test body-zerog-pitch-roll
+# Pitch and roll in zero g: on the jetpack, the left stick click held makes the right stick sideways roll the astronaut and up
+# and down pitch it, about the eyes. Without the click the right stick does not.
+# World: Green Station (survival; an asteroid base, no gravity; the astronaut starts on foot in it).
+# Needs: Options > VR > Controls > Zero-g pitch and roll Smooth (the default, 120 deg/s with the stick all the way over).
+plugin SpaceEngineersVR
+world game:Green Station
+# zero g: the station's artificial gravity off
+switch GravityGenerator off
+switch GravityGeneratorSphere off
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# the jetpack on (B)
+read character
+expect jetpack == false
+press right b
+wait 0.15
+release right b
+wait 1
+read character
+expect jetpack == true
+
+# before: the right stick sideways without the click is a snap turn about the up, it does not roll the body
+read character
+mark
+stick right 1 0
+wait 1
+stick right 0 0
+wait 0.5
+read character
+expect up moved < 0.05
+
+# the click held, the right stick right for 0.4 s: rolled about 48 degrees (the up vector moves by about 0.8); the forward does not
+read character
+mark
+press left stick
+wait 0.3
+stick right 1 0
+wait 0.4
+stick right 0 0
+wait 0.3
+release left stick
+wait 0.7
+read character
+expect up moved > 0.4
+expect forward moved < 0.2
+expect log Zero-g pitch and roll: left stick click held within 5
+expect log Zero-g pitch and roll: let go within 5
+
+# the click held, the right stick up for 0.4 s: pitched about 48 degrees (the forward vector moves by about 0.8)
+read character
+mark
+press left stick
+wait 0.3
+stick right 0 1
+wait 0.4
+stick right 0 0
+wait 0.3
+release left stick
+wait 0.7
+read character
+expect forward moved > 0.4
+
+test hands-actions-wheel
+# Hands: choosing from the actions wheel. With the tools wheel up, a click of the left stick turns it into the actions wheel
+# (opened where the left hand is); the left stick picks an entry and letting go of the grip uses it. The first entry, straight
+# up, is Inventory; Dampeners is the next, one sector clockwise.
+# World: Earth Planet (survival, on foot, in gravity). Nothing is built. The wheel has as many sectors as entries (see the
+# "Actions wheel: opened" line, "N entries"): the angle for Dampeners below assumes 16 and is tuned from that line.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the dampeners on, so the Dampeners entry has something to switch off ---------------------------------
+
+dampeners on
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.2 -0.3
+wait 1
+read character
+expect dampeners == true
+
+# ---- Dampeners: the entry next to the top one, 360/16 = 22.5 degrees clockwise -> the dampeners go off ---------------------------
+
+press left grip
+wait 1
+press left stick
+wait 0.2
+release left stick
+wait 1
+read screen
+expect type == ActionsWheelScreen
+stick left 0.383 0.924
+wait 0.7
+release left grip
+wait 0.3
+stick left 0 0
+wait 1.5
+expect log Actions wheel: picked Toggle Dampeners within 5
+read character
+expect dampeners == false
+
+# ---- Inventory: the top entry, straight up -> the inventory screen opens ----------------------------------------------------------
+
+press left grip
+wait 1
+press left stick
+wait 0.2
+release left stick
+wait 1
+stick left 0 1
+wait 0.7
+release left grip
+wait 0.3
+stick left 0 0
+wait 1.5
+expect log Actions wheel: picked Inventory within 5
+read screens
+expect result contains MyGuiScreenTerminal
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+expect no log Exception
+
+test hands-build-place
+# Hands: a block in hand. Taking a block from the toolbar puts it in the hand as a ghost; the right trigger places it where
+# the hand points, the left trigger removes the block pointed at (creative tools), a tap of X switches symmetry and a click of
+# the right stick switches between large and small blocks; the empty hand puts the block away.
+# World: Earth Planet (survival, on foot, in gravity). A large armor block is built 3 m ahead as a grid to build on.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: creative tools, a large armor block in toolbar slot 1, and one on a grid ahead to build on ----------
+
+admin creativeTools
+toolbar 1 CubeBlock/LargeBlockArmorBlock
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+# Before anything is built: no large armor block within 8 m of the astronaut (Earth Planet's starter base has none there).
+read nearby LargeBlockArmorBlock 8
+expect result == []
+build LargeBlockArmorBlock 3 as Test base
+# 5.5 m from its middle: the block placed on its near face (4.25 m ahead) is clear of the astronaut
+goto Test base 5.5
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.2 1.3 -0.3
+wait 1
+read nearby LargeBlockArmorBlock 8
+expect 0.subtype == LargeBlockArmorBlock
+
+# ---- Slot 1 of the tools wheel: the block comes into the hand ----------------------------------------------------------------------
+
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+expect log Build mode on: LargeBlockArmorBlock within 5
+
+# ---- The right hand points at the near face of the block on the grid (4.25 m ahead): the trigger places a block there -----------
+
+hand right 0.2 1.3 -0.3 -2.2 -1 0
+wait 1
+expect no log Build: placed
+press right trigger
+wait 0.3
+release right trigger
+wait 1.5
+expect log Build: placed LargeBlockArmorBlock within 5
+read nearby LargeBlockArmorBlock 8
+expect 1.subtype == LargeBlockArmorBlock
+
+# ---- The left trigger removes the block pointed at (creative tools) ---------------------------------------------------------------------
+
+press left trigger
+wait 0.3
+release left trigger
+wait 1.5
+expect log Build: removed within 5
+
+# ---- X (the left controller's lower button) switches symmetry; the right stick click switches the block size ---------------------------
+
+press left a
+wait 0.2
+release left a
+wait 1
+expect log asked; symmetry now within 5
+press right stick
+wait 0.2
+release right stick
+wait 1
+expect log Build: block size asked; block LargeBlockArmorBlock -> SmallBlockArmorBlock within 5
+# and back: the game keeps the builder's size from world to world, and the tests after this one build large blocks
+press right stick
+wait 0.2
+release right stick
+wait 1
+expect log Build: block size asked; block SmallBlockArmorBlock -> LargeBlockArmorBlock within 5
+
+# ---- The empty hand (the middle of the tools wheel, the trigger) puts the block away -----------------------------------------------------
+
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+stick left 0 0
+wait 1
+press right trigger
+wait 0.2
+release right trigger
+release left grip
+wait 1.5
+expect log Build mode off within 5
+expect no log Exception
+
+test hands-finger-button-panel
+# Hands: pressing a button panel's button with the fingertip. The right index fingertip pushed into a button on a button
+# panel presses it, as the use key does at a flat screen; the plugin reports the press. A button reached from behind,
+# through its own block, is not pressed, as a flat player cannot press it from there: the panel's plate stops the hand.
+# World: Earth Planet (survival, on foot, in gravity). A button panel is built 3 m ahead and the astronaut stands before
+# it. Where the button sits on the model comes from the plugin's line as the fingertip comes near it.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a button panel (a large block, 2.5 m, with one button) in front of the character ----------------
+
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build LargeButtonPanelPedestal 3 as Test panel
+# the panel keeps the astronaut 1.3 m from the block's middle (any nearer and the game pushes it off), with the button
+# 77 cm ahead and 33 cm below the eyes: past the arm's reach until the player leans in
+goto Test panel 1.3
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+# Left hand down at the side; the right hand low at the side, out of reach of the button, the fingertip pointing ahead.
+hand left -0.25 1.0 -0.2
+hand right 0.25 1.0 0.0
+wait 1
+# Before: no button has been pressed.
+expect no log Finger press: right fingertip pressed
+
+# ---- The fingertip goes to the button -----------------------------------------------------------------------------------
+# The astronaut leans in, then the hand comes up near the panel: the plugin says, as the fingertip comes within reach of the
+# button, where the hand goes for the tip to rest on the button's middle; the hand then moves there, the fingertip pushing in.
+# lean in 20 cm, as a player does to reach a pedestal's button
+head 0 1.55 -0.2
+wait 1.5
+hand right 0.0 1.2 -0.5
+wait 1.5
+remember button log '/Finger press: Right fingertip within .* the hand at stage \((\S+), (\S+), (\S+)\) m puts the tip on it/'
+hand right {button}
+wait 1
+# The plugin names how near the fingertip got.
+expect log Finger press: right fingertip within 5
+expect log Finger press: right fingertip pressed within 5
+expect log MyUseObjectPanelButton within 5
+expect no log Exception
+
+# ---- From behind: the fingertip reaches round a button panel's plate to its buttons, and nothing is pressed -------------
+# A button panel's plate is at the front of its block, and its buttons face out of it. The astronaut stands in the block,
+# behind the plate, and the plugin says, as the fingertip comes near a button, where the hand goes for the tip to rest on
+# it; the head is behind it. The hand is put down out of reach of any button first, so that line comes when it is raised.
+hand right 0.25 1.0 -0.3
+wait 1
+goto open
+build ButtonPanelLarge 3 0.8 as Test wall panel
+goto Test wall panel 0.3 front
+# only what happens from here on counts
+log SpaceEngineersVR.log
+head 0 1.6 0
+wait 1
+hand right 0.0 1.6 0.5
+wait 1.5
+remember behind log '/Finger press: Right fingertip within .* on MyButtonPanel ButtonPanelLarge .* the hand at stage \((\S+), (\S+), \S+\) m puts the tip on it/'
+# The tip goes through the button and 4 cm out past it (the button is 81 cm behind the head), as a press from in front
+# goes into it.
+hand right {behind} 0.85
+wait 1.5
+expect no log Finger press: right fingertip pressed
+expect no log Exception
+
+test hands-grab-use-cargo
+# Hands: grab to use a cargo container. A grip with the palm at the container's use spot takes hold and uses it, as the use
+# key does at a flat screen: its inventory opens.
+# World: Earth Planet (survival, on foot, in gravity). A small cargo container is built 1.7 m ahead, centred at chest
+# height. The palm position is a first guess: tune it from the "Grab use: right palm N cm from" lines in the log.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a small cargo container (a large block, 2.5 m) in front of the character -------------------------
+
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build LargeBlockSmallContainer 3 as Test cargo
+goto Test cargo 1.7
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.2
+# The right palm reaches out to the container's near face, 45 cm ahead.
+hand right 0.1 1.25 -0.45
+wait 1
+# Before: only the game is up.
+read screen
+expect type == MyGuiScreenGamePlay
+expect no log Grab use: right hand took hold
+
+# ---- Grip: the hand takes hold; let go, it is used -> the inventory screen opens -------------------------------------------
+# (the use waits for the grip to be let go, so the screen does not open under a held grip)
+
+press right grip
+wait 1.5
+expect log Grab use: right hand took hold of within 5
+release right grip
+wait 1.5
+expect log Grab use: right hand used within 5
+read screens
+expect result contains MyGuiScreenTerminal
+# B goes back: the screen closes and the game has the focus again.
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+expect no log Exception
+
+test hands-grab-use-cryo
+# Hands: grab to use a cryo chamber. A grip with the palm at the chamber's use spot takes hold and uses it: the astronaut
+# gets in and is sitting in it; holding the left Y button for half a second gets out again.
+# World: Earth Planet (survival, on foot, in gravity). The station's cryo chamber: the game lets a cryo chamber be used only
+# with power, which one built on its own grid has none of. The palm position is tuned from the "Grab use: right palm N cm
+# from" lines in the log.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the station's cryo chamber, the player's, in front of the character ---------------------------------
+admin creativeTools
+# Earth Planet's station belongs to the world's own identity: the game lets the player use it once they own it
+own EarthEasyStation
+goto Cryo Chamber 1.0
+wait 2
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.2
+hand right 0 1.3 -0.6
+wait 1
+# Before: standing on foot, in nothing.
+read character
+expect state == standing
+
+# ---- Grip: the hand takes hold and uses it -> sitting in the chamber -----------------------------------------------------------
+
+press right grip
+wait 1.5
+expect log Grab use: right hand took hold of within 5
+expect log Grab use: right hand used within 5
+release right grip
+wait 2
+read character
+expect state == sitting
+expect controlledEntity.type contains Cryo
+
+# ---- Y held for half a second leaves the seat -------------------------------------------------------------------------------------
+
+press left b
+wait 0.8
+release left b
+wait 2
+read character
+expect state == standing
+expect no log Exception
+
+test hands-grab-use-door
+# Hands: grab to use a door. A grip with the palm at a door's use spot takes hold of it; drawing the hand 12 cm away pulls it,
+# and that uses the door (a slide door opens or closes). Letting go of the grip without drawing the hand does not.
+# World: Earth Planet (survival, on foot, in gravity). A slide door is built 1.7 m ahead (a large block, 2.5 m). The door
+# itself is not read here: the plugin's own report is the check. The palm
+# position is a first guess: tune it from the "Grab use: right palm N cm from" lines in the log.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a slide door in front of the character --------------------------------------------------------------
+
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build LargeBlockSlideDoor 3 as Test door
+# the door's use box is the doorway's middle, about the closed door: standing in the doorway, 1.2 m from the block's
+# middle, its near side is 37 cm ahead, under the hand
+goto Test door 1.2
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.2
+hand right 0.1 1.25 -0.45
+wait 1
+expect no log Grab use: right hand took hold
+
+# ---- Grip, then let go with the hand where it is: held, but not pulled -> not used -----------------------------------------------
+
+press right grip
+wait 1
+expect log Grab use: right hand took hold of within 5
+release right grip
+wait 1
+expect no log Grab use: right hand used
+
+# ---- Grip again and draw the hand back 20 cm: the pull -> used -------------------------------------------------------------------
+
+press right grip
+wait 1
+hand right 0.1 1.25 -0.25
+wait 1
+expect log Grab use: right hand used within 5
+release right grip
+wait 1
+expect no log Exception
+
+test hands-gun-drawn-no-magazine
+# Hands: a gun drawn with its magazine empty and no magazine for it in the inventory comes out with nothing in its well, so
+# it shows it needs one; a magazine picked up then, the game loads it by itself, timed, and the well shows the magazine.
+# Nothing drops and no reload by hand is asked for.
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default). The S-10 pistol: the character
+# starts the world with the MR-20 rifle and ten of the magazines it takes, and none for the pistol.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the pistol in toolbar slot 1 and no magazine for it -------------------------------------------
+
+give PhysicalGunObject/SemiAutoPistolItem
+toolbar 1 PhysicalGunObject/SemiAutoPistolItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+# ---- The pistol into the right hand: the tools wheel's first slot --------------------------------------------------------
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.3 -0.4 0 -5 0
+wait 1
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains SemiAutoPistolItem
+
+# ---- No magazine: the well is empty, and nothing reloads ------------------------------------------------------------------
+
+expect log none for it in the inventory; its well is empty within 5
+wait 2
+expect no log "Reload: the game's reload"
+expect no log magazine dropped
+
+# ---- A magazine into the inventory: the game loads the pistol, timed --------------------------------------------------------
+
+give AmmoMagazine/SemiAutoPistolMagazine 1
+expect log was drawn with its magazine empty; the game loads it within 10
+expect log /Reload: done after .*[(]magazine [1-9]/ within 15
+expect no log magazine dropped
+expect no log Exception
+
+test hands-gun-fire
+# Hands: a pistol and a rifle in the right hand. Each is taken out with the tools wheel, loaded by the game as it comes out
+# (a gun comes out of the inventory empty; with a magazine for it in the inventory the game reloads it, timed) and fires
+# along the hand while the right trigger is pulled.
+# World: Earth Planet (survival, on foot, in gravity). Nothing is built; the hand points out over the ground ahead.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a pistol in toolbar slot 1 and a rifle in slot 2, with magazines for both ---------------------
+
+give PhysicalGunObject/SemiAutoPistolItem
+give AmmoMagazine/SemiAutoPistolMagazine 4
+give PhysicalGunObject/AutomaticRifleItem
+give AmmoMagazine/AutomaticRifleGun_Mag_20rd 4
+toolbar 1 PhysicalGunObject/SemiAutoPistolItem
+toolbar 2 PhysicalGunObject/AutomaticRifleItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+# The right hand at chest height, pointing straight ahead and a little down.
+hand right 0.25 1.3 -0.4 0 -5 0
+wait 1
+
+# ---- The pistol: slot 1 ----------------------------------------------------------------------------------------------------
+
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.definition contains SemiAutoPistol
+# The plugin says once, as a hand weapon comes into the hand from none, that its iron sight is the gun at the eye.
+expect log Iron sight: within 5
+# Logged with it, as the gun comes into the hand: which way it shoots from the hand.
+expect log Hand tools: shot direction from the hand within 5
+expect log was drawn with its magazine empty; the game loads it within 10
+expect log /Reload: done after .*[(]magazine [1-9]/ within 15
+expect weapon.shooting == false
+# A tick of the game's longer than the press would miss it: the state is read again while the trigger is held.
+press right trigger
+wait 0.3
+read character
+expect weapon.shooting == true within 3
+release right trigger
+wait 1
+read character
+expect weapon.shooting == false within 3
+
+# ---- The rifle: slot 2 -----------------------------------------------------------------------------------------------------
+
+log SpaceEngineersVR.log
+press left grip
+wait 1
+stick left 0.643 0.766
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.definition contains AutomaticRifle
+expect log was drawn with its magazine empty; the game loads it within 10
+expect log /Reload: done after .*[(]magazine [1-9]/ within 15
+expect weapon.shooting == false
+# The rifle is automatic: held, it keeps firing.
+press right trigger
+wait 1
+read character
+expect weapon.shooting == true within 3
+wait 1
+read character
+expect weapon.shooting == true
+release right trigger
+wait 1
+read character
+expect weapon.shooting == false within 3
+expect no log Exception
+
+test hands-gun-reload-advanced-launcher
+# Hands: reloading the PRO-1 rocket launcher by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc AdvancedHandHeldLauncherItem Missile200mm
+
+test hands-gun-reload-automatic-rifle
+# Hands: reloading the MR-20 rifle by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc AutomaticRifleItem AutomaticRifleGun_Mag_20rd
+
+test hands-gun-reload-basic-launcher
+# Hands: reloading the RO-1 rocket launcher by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc BasicHandHeldLauncherItem Missile200mm
+
+test hands-gun-reload-elite-pistol
+# Hands: reloading the S-10E elite pistol by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc ElitePistolItem ElitePistolMagazine
+
+test hands-gun-reload-elite-rifle
+# Hands: reloading the MR-30E elite rifle by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc UltimateAutomaticRifleItem UltimateAutomaticRifleGun_Mag_30rd
+
+test hands-gun-reload-flare-gun
+# Hands: reloading the flare gun by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc FlareGunItem FlareClip
+
+test hands-gun-reload-full-auto-pistol
+# Hands: reloading the S-20A pistol by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc FullAutoPistolItem FullAutoPistolMagazine
+
+test hands-gun-reload-precise-rifle
+# Hands: reloading the MR-8P precise rifle by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc PreciseAutomaticRifleItem PreciseAutomaticRifleGun_Mag_5rd
+
+test hands-gun-reload-rapid-fire-rifle
+# Hands: reloading the MR-50A rapid-fire rifle by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc RapidFireAutomaticRifleItem RapidFireAutomaticRifleGun_Mag_50rd
+
+test hands-gun-reload-semi-auto-pistol
+# Hands: reloading the S-10 pistol by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc SemiAutoPistolItem SemiAutoPistolMagazine
+
+test hands-paint
+# Hands: the colour tool. Chosen from the actions wheel ("Select Color Tool"), it paints the block the right hand points at
+# with the right trigger and takes up that block's colour with the left trigger.
+# World: Earth Planet (survival, on foot, in gravity). A large armor block is built ahead as the thing to paint. The angle of
+# the "Select Color Tool" entry below is for Earth Planet's 19 entries (it is the fifth, 4 x 18.9 = 75.8 degrees clockwise
+# from up): the "Actions wheel: opened" line lists the entries in order.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a block to paint, and a build colour that is not the block's own ----------------------------------------
+
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+# the block is built in the selected colour, which the game keeps from world to world: first one unlike the paint
+color 0.1 0.5 0.5
+build LargeBlockArmorBlock 2.2 as Test block
+goto Test block 2.2
+color 0.6 0.3 0.2
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.2 1.3 -0.3 -17 -4 0
+wait 1
+# Before: the block's colour, remembered.
+read nearby LargeBlockArmorBlock 5
+mark
+
+# ---- The actions wheel: Select Color Tool ----------------------------------------------------------------------------------------------
+
+press left grip
+wait 1
+press left stick
+wait 0.2
+release left stick
+wait 1
+stick left 0.969 0.245
+wait 0.7
+release left grip
+wait 0.3
+stick left 0 0
+wait 1.5
+expect log Actions wheel: picked Select Color Tool within 5
+expect log Colour tool on within 5
+
+# ---- The right trigger paints the block pointed at --------------------------------------------------------------------------------------
+
+press right trigger
+wait 0.5
+release right trigger
+wait 1.5
+expect log Paint: within 5
+read nearby LargeBlockArmorBlock 5
+expect 0.colorMask moved > 0.01
+
+# ---- The left trigger takes up the colour of the block pointed at -------------------------------------------------------------------------
+
+press left trigger
+wait 0.5
+release left trigger
+wait 1
+expect log Paint: took the colour of the block pointed at within 5
+expect no log Exception
+
+test hands-tool-grinder
+# Hands: the angle grinder in the right hand. The right trigger grinds what the hand points at: the character is shooting
+# while it is pulled, and a small armor block ground long enough is gone.
+# World: Earth Planet (survival, on foot, in gravity). A small armor block is built in the open at the hand's height, and the astronaut stands 1.1 m before it,
+# the grinder in both hands.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the grinder in toolbar slot 1, and one small armor block in front of the character -----------
+
+admin creativeTools
+give PhysicalGunObject/AngleGrinderItem
+toolbar 1 PhysicalGunObject/AngleGrinderItem
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+# 1 m up, at the hand's height (a static block holds there; the game builds none into the ground)
+build SmallBlockArmorBlock 2 1 as Test block
+# 1.1 m before the block, facing it: its near side 85 cm ahead, clear of the grinder's muzzle, where the game's ray starts
+goto Test block 1.1
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.2 -0.3
+wait 1
+
+# ---- Take the grinder out with the tools wheel (slot 1) ----------------------------------------------------------------
+
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains AngleGrinderItem
+expect log Hand tools: the AngleGrinder is held in the right hand within 5
+# Before: the grinder is out, but not running.
+expect weapon.shooting == false
+
+# ---- The block is there, and the hand is not yet pointing at it -----------------------------------------------------------
+
+read nearby SmallBlockArmorBlock 3
+expect 0.subtype == SmallBlockArmorBlock
+
+# ---- The right hand points straight ahead at the block (its near side 85 cm ahead, at the hand's height) ------------------------
+# the left hand out of reach of the grip first, so the line below comes with the right hand where it will grind from
+hand left -0.6 0.8 0.3
+wait 0.5
+hand right 0 1.2 -0.2
+wait 1.5
+# ---- The left hand takes the grinder's second grip, as the game's LeftHand spot has it: one-handed, a grinder kicks off the block --
+# The plugin says where the second grip is as the left hand comes within reach of it: the left hand comes up near it, then
+# goes onto it.
+hand left -0.15 1.15 -0.25
+wait 1
+remember grip log '/Two-hand: Left hand within .* of the AngleGrinder.s grip .* the grip at stage \((\S+), (\S+), (\S+)\) m/'
+hand left {grip}
+wait 0.5
+press left grip
+wait 0.5
+expect log Two-hand: Left hand took the AngleGrinder by its grip within 5
+# ---- The trigger -----------------------------------------------------------------------------------------------------------------
+press right trigger
+wait 1
+read character
+expect weapon.shooting == true
+# Grinding takes a while: hold on.
+wait 12
+release right trigger
+release left grip
+wait 1
+read character
+expect weapon.shooting == false
+read nearby SmallBlockArmorBlock 3
+expect result == []
+expect no log Exception
+
+test hands-tools-wheel
+# Hands: the tools wheel on foot. Holding the left grip in empty air puts the toolbar up as a wheel; the left stick picks a
+# slot, and letting go of the grip or pulling a trigger takes that tool in the right hand. The middle is the empty hand.
+# World: Earth Planet (survival, on foot, in gravity). Three tools go into the inventory and the first three toolbar slots.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a welder, an angle grinder and a hand drill in the first three slots of the toolbar ----------
+
+give PhysicalGunObject/WelderItem
+give PhysicalGunObject/AngleGrinderItem
+give PhysicalGunObject/HandDrillItem
+toolbar 1 PhysicalGunObject/WelderItem
+toolbar 2 PhysicalGunObject/AngleGrinderItem
+toolbar 3 PhysicalGunObject/HandDrillItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+# Headset level; the left hand out in front of the left shoulder in empty air (nothing to grab there), the right at rest.
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.2 -0.3
+wait 1
+# Before: nothing in the hand.
+read character
+expect weapon == null
+
+# ---- Slot 1 (straight up on the wheel): the left stick up, then let go of the grip -> the welder ----------------------
+
+press left grip
+wait 1
+read screen
+expect type == SlotWheelScreen
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+expect log Toolbar wheel: activated slot 1 (grip let go) within 5
+read character
+expect weapon.item contains WelderItem
+
+# ---- Slot 2 (40 degrees clockwise of up): the grinder replaces the welder -------------------------------------------------
+
+press left grip
+wait 1
+stick left 0.643 0.766
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+expect log Toolbar wheel: activated slot 2 (grip let go) within 5
+read character
+expect weapon.item contains AngleGrinderItem
+
+# ---- Slot 3 (80 degrees): chosen with the stick and taken with the right trigger instead of the grip -----------------------
+
+press left grip
+wait 1
+stick left 0.985 0.174
+wait 0.5
+press right trigger
+wait 0.2
+release right trigger
+release left grip
+stick left 0 0
+wait 2
+expect log Toolbar wheel: activated slot 3 (right trigger) within 5
+read character
+expect weapon.item contains HandDrillItem
+
+# ---- B cancels: the wheel closes and the drill stays in the hand; the right stick sideways turns the page ------------------
+
+press left grip
+wait 1
+stick right 1 0
+wait 0.5
+stick right 0 0
+expect log Toolbar wheel: page 2 of within 5
+stick right -1 0
+wait 0.5
+stick right 0 0
+expect log Toolbar wheel: page 1 of within 5
+press right b
+wait 0.2
+release right b
+release left grip
+wait 1.5
+expect log Toolbar wheel: closing within 5
+read screen
+expect type == MyGuiScreenGamePlay
+read character
+expect weapon.item contains HandDrillItem
+
+# ---- The middle is the empty hand: push the stick out, bring it back to the middle, pull the trigger -> hands empty -------
+
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+stick left 0 0
+wait 1
+press right trigger
+wait 0.2
+release right trigger
+release left grip
+wait 2
+expect log Toolbar wheel: empty hand (right trigger) within 5
+read character
+expect weapon == null
+expect no log Exception
+
+test hands-tool-welder-drill
+# Hands: the welder and the hand drill in the right hand. Each is taken out with the tools wheel, is held in the right hand
+# by the astronaut's wrist, aims where the hand points, and works while the right trigger is pulled.
+# World: Earth Planet (survival, on foot, in gravity). Nothing is built; the hand points at the ground ahead.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a welder in toolbar slot 1 and a hand drill in slot 2 ------------------------------------------
+
+give PhysicalGunObject/WelderItem
+give PhysicalGunObject/HandDrillItem
+toolbar 1 PhysicalGunObject/WelderItem
+toolbar 2 PhysicalGunObject/HandDrillItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+# The right hand low, pointing forward and down at the ground about 1.5 m ahead.
+hand right 0.25 1.1 -0.3 0 -30 0
+wait 1
+
+# ---- The welder: slot 1 --------------------------------------------------------------------------------------------------
+
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains WelderItem
+expect log Hand tools: the Welder is held in the right hand within 5
+# Before: not welding.
+expect weapon.shooting == false
+press right trigger
+wait 1.5
+read character
+expect weapon.shooting == true
+# The shot goes where the hand points, not where the head looks.
+expect log Hand tools: shot direction from the hand within 5
+release right trigger
+wait 1
+read character
+expect weapon.shooting == false
+
+# ---- The hand drill: slot 2 ------------------------------------------------------------------------------------------------
+
+press left grip
+wait 1
+stick left 0.643 0.766
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains HandDrillItem
+expect log Hand tools: the HandDrill is held in the right hand within 5
+expect weapon.shooting == false
+press right trigger
+wait 1.5
+read character
+expect weapon.shooting == true
+release right trigger
+wait 1
+read character
+expect weapon.shooting == false
+expect no log Exception
+
+test perf-standing-still
+# Frame rate: standing still in a busy base, the headset gets its frames. The plugin reports every ten seconds how many
+# frames the headset asked for and how many were drawn ("Perf 10.0 s [Focused]: N frames asked, M submitted (P%); frame
+# cycle A ms avg / B p95 ..."). The window read is the newest after half a minute, past the world's loading.
+# This guards against a change that makes the frames slower; it does not stand for a real headset's rate, which is
+# measured in one.
+# World: Earth Planet (survival; the astronaut starts in the starter base, with its lights, screens and grids around).
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+hand left -0.25 1.0 -0.2
+hand right 0.25 1.0 -0.2
+wait 35
+remember submitted log '/Perf 10.0 s \[Focused\]: \d+ frames asked, \d+ submitted \((\d+)%\)/'
+remember p95 log '/Perf 10.0 s \[Focused\]: .* frame cycle [\d.]+ ms avg / ([\d.]+) p95/'
+# Nearly every frame the headset asked for was drawn, none of them very late.
+expect number {submitted} >= 95
+expect number {p95} <= 40
+expect no log Exception
+
+test screens-inventory-pull
+# Screens: a tool or gun pulled out of the inventory into the hand. With the laser on one in your own inventory, the grip
+# squeezed and the hand drawn back toward you (15 cm) puts it in the hand through the game's own switch to that item.
+# World: Earth Planet (survival, on foot). A pistol is given so the inventory surely holds a gun; the hand starts empty.
+# The plugin says where the item is on the panel once the inventory page is shown, as in screens-inventory-toolbar.vrtest.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a gun in the inventory ----------------------------------------------------------------------
+
+give PhysicalGunObject/SemiAutoPistolItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.3
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+# Before: nothing in the hand.
+read character
+expect weapon == null
+key I
+wait 2
+read screens
+expect result contains MyGuiScreenTerminal
+
+remember tool log '/Inventory toolbar: on the panel, .* the first tool or gun you carry, (\S+), at stage/' within 10
+remember toolAt log '/Inventory toolbar: on the panel, .* the first tool or gun you carry, \S+, at stage \((\S+), (\S+), (\S+)\) m/' within 10
+
+# ---- A grip let go before the pull takes nothing -------------------------------------------------------------------------
+
+hand right 0.1 1.55 -0.2 toward {toolAt}
+wait 1
+expect log Laser: pointing at the panel within 5
+press right grip
+wait 0.5
+expect log /Inventory pull: Right grip on the .* in the inventory/ within 5
+release right grip
+wait 0.5
+expect log Inventory pull: let go of the within 5
+read character
+expect weapon == null
+
+# ---- The grip, then the hand drawn back 25 cm: it comes into the hand -------------------------------------------------------
+
+press right grip
+wait 0.5
+hand right 0.1 1.55 -0.1 toward {toolAt}
+wait 0.3
+hand right 0.1 1.55 0.05 toward {toolAt}
+wait 1
+expect log came out of the inventory into the Right hand within 5
+# The grip was the pull's, never the right mouse button.
+expect no log Laser: right button down
+release right grip
+wait 0.5
+read character
+expect weapon.item contains {tool} within 5
+expect no log Exception
+
+key Escape
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+
+test screens-inventory-toolbar
+# Screens: the toolbar on the inventory screen. In VR the inventory shows the toolbar's slots along its bottom; a hand tool
+# or gun dragged with the laser's trigger from your inventory onto slot 3 goes in slot 3, as the G menu puts it there.
+# World: Earth Planet (survival, on foot). A pistol is given so the inventory surely holds a gun; slot 3 is emptied first.
+# The plugin says, once the inventory page is shown, where the toolbar's slots and the first tool or gun you carry are
+# on the panel; the right hand, before the face at 0.1 1.55 -0.2, points at each.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a gun in the inventory and nothing in slot 3 -----------------------------------------------
+
+give PhysicalGunObject/SemiAutoPistolItem
+toolbar 3
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.3
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+expect headset steady
+headset no-inventory.png
+key I
+wait 2
+read screens
+expect result contains MyGuiScreenTerminal
+expect log Inventory toolbar: shown on the inventory page within 5
+
+# ---- Where the inventory is drawn: standing in the world ahead, at the menu distance, and staying there ----------------
+
+# A menu opens 2 m ahead of the head (Menu distance), level, at the height of the eyes, 60 degrees wide (Menu width),
+# and stays where it opened while the head turns (Rendering/WorldMenu.cs).
+headset inventory.png
+expect headset new depth 1.5 2.6
+expect headset new at 0 0 12
+expect headset new size 35 75
+head 0 1.6 0 20 0
+wait 1
+headset inventory-head-turned.png
+expect headset new follows world
+head 0 1.6 0
+wait 1
+# Before: slot 3 is empty.
+read toolbar
+remember before items
+
+# ---- Where the first tool or gun and slot 3 are ------------------------------------------------------------------------
+
+remember tool log '/Inventory toolbar: on the panel, .* the first tool or gun you carry, (\S+), at stage/' within 10
+remember toolAt log '/Inventory toolbar: on the panel, .* the first tool or gun you carry, \S+, at stage \((\S+), (\S+), (\S+)\) m/' within 10
+remember slot log '/Inventory toolbar: on the panel, its slots at stage .* 3 \((\S+), (\S+), (\S+)\), 4 /' within 10
+
+# ---- The trigger on the tool, the hand turned to slot 3, the trigger let go ------------------------------------------
+
+hand right 0.1 1.55 -0.2 toward {toolAt}
+wait 1
+expect log Laser: pointing at the panel within 5
+press right trigger
+wait 0.3
+# Turning past the hold that keeps a click from being a drag, then on to slot 3.
+hand right 0.1 1.55 -0.2 toward {slot}
+wait 0.5
+hand right 0.1 1.55 -0.2 toward {slot}
+wait 0.5
+release right trigger
+wait 1
+expect log /Inventory toolbar: .* put in slot 3/ within 5
+read toolbar
+expect items != {before}
+expect items contains {tool}
+expect no log Exception
+
+key Escape
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+
+test screens-main-menu-loading
+# Screens: the main menu and loading, in VR. Leaving a world for the main menu keeps the VR session and shows the menu in
+# the headset (no scene, the menu panel in front of both eyes); loading a world from there brings the astronaut back with
+# the headset still on.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: nothing built. The game menu is opened with the keyboard by the harness (the simulated Index
+# ---- has no Menu button; README, Controls); this file tests what the headset shows, not how the menu is opened.
+
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 3
+# The world in the headset, for the main menu to differ from.
+headset world.png
+expect headset bright
+
+# ---- Out to the main menu -------------------------------------------------------------------------------------------------
+
+key Escape
+wait 1.5
+click Exit to Main Menu
+wait 1
+# The game asks to be sure; "Yes" leaves.
+click Yes
+read screen
+expect type == MyGuiScreenMainMenu within 60
+wait 3
+
+# The VR session is still up, and the headset shows the menu (not the world, not black).
+expect session focused within 10
+headset menu.png
+expect headset bright
+expect headset changed
+
+# ---- And back into a world, loaded from the main menu with the headset on ------------------------------------------------
+
+world game:Earth Planet
+expect session focused within 60
+wait 3
+headset back.png
+expect headset bright
+read character
+expect health >= 1
+expect state == standing
+expect no log Exception
+
+test screens-mouse-and-laser
+# Screens: the mouse and the laser share a menu's cursor (LINUX_TESTS.md, "Mouse in VR menus"). The mouse takes the cursor
+# when it moves; the right hand's laser takes it when its trigger is pulled on the menu and keeps it; the mouse takes it
+# back, going on from where the laser left it.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: nothing built. A menu is opened with the keyboard by the harness (the inventory, I), because
+# ---- the file tests who holds its cursor, not how it is opened.
+
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+# The right hand rests below the menu, aimed down.
+hand left -0.25 1.0 -0.3
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+key I
+wait 2
+read screens
+expect result contains MyGuiScreenTerminal
+# The inventory stands in the world ahead of the eyes, level, at the menu distance.
+expect log Menu opened; panel placed within 5
+# The right hand at eye height before the face, aimed straight ahead: its laser meets the panel near its middle.
+hand right 0.1 1.55 -0.2 0 0
+wait 1
+expect log Laser: pointing at the panel within 5
+
+# ---- The mouse moves: it has the cursor -------------------------------------------------------------------------------
+
+# Before: nothing has said the mouse holds the cursor.
+expect no log Laser: the mouse moved
+mouse 500 300
+wait 1
+expect log Laser: the mouse moved, so the mouse has the cursor within 5
+read cursor
+expect result contains MyGuiControl
+
+# ---- The hand moves without pressing: the mouse keeps the cursor ----------------------------------------------------------
+
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+hand right 0.1 1.55 -0.2 0 0
+wait 1
+expect no log Laser: a press on the panel
+
+# ---- The trigger on the menu: the laser takes the cursor and clicks there --------------------------------------------------
+
+press right trigger
+wait 0.3
+release right trigger
+wait 1
+expect log Laser: a press on the panel, so the laser has the cursor within 5
+expect log Laser: left button down at within 5
+
+# ---- The mouse moves again: it goes on from where the laser was, with no jump -------------------------------------------
+
+mouse 520 310
+wait 1
+expect log Laser: the mouse goes on from the laser within 5
+expect no log Exception
+
+key Escape
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+
+test screens-options-vr
+# Screens: Options > VR. The game's Options screen has a VR button, it opens the plugin's settings screen on its tabs,
+# and leaving by OK keeps the settings and writes the settings file. Then Headset layers in the desktop window, turned off
+# and back on: the window says it shows the eye alone.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: nothing built. The simulated Index has no Menu button apps can use (README, Controls), so the
+# ---- game menu is opened with the keyboard by the harness; this file tests the Options screens, not the opening.
+
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+expect headset steady
+headset no-menu.png
+key Escape
+wait 1.5
+read screen
+expect type == MyGuiScreenMainMenu
+
+# The game menu stands in the world: 2 m ahead of the head (Menu distance), level, at the height of the eyes, and it
+# stays where it opened while the head turns (Rendering/WorldMenu.cs).
+headset game-menu.png
+expect headset new depth 1.5 2.6
+expect headset new at 0 0 15
+head 0 1.6 0 20 0
+wait 1
+headset game-menu-head-turned.png
+expect headset new follows world
+head 0 1.6 0
+wait 1
+
+# ---- Options, then the plugin's VR button ------------------------------------------------------------------------------
+
+click Options
+wait 1.5
+read screen
+expect type == MyGuiScreenOptionsSpace
+click VR
+wait 1.5
+read screen
+expect type == VROptionsScreen
+# The screen's tab control has five tabs: Display, Comfort, Controls, Hands, Interface (Gui/VROptionsTabs.cs).
+read screen
+expect result contains VROptionsTabs
+
+# Leave on the last tab, as a player would look through them.
+set VROptionsTabs 4
+wait 1
+
+# ---- OK keeps the settings and writes the file -------------------------------------------------------------------------
+
+click OK
+wait 1.5
+expect log VR options: leaving, nothing changed within 5
+expect log Settings saved to within 5
+read screen
+expect type == MyGuiScreenOptionsSpace
+expect no log VR options: no tab line
+expect no log Exception
+
+# Back out of Options and the game menu.
+key Escape
+wait 1
+key Escape
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- Headset layers in the desktop window off: logged, and put back ----------------------------------------------------
+
+include vr-option.inc mirrorLayers false isChecked was_mirrorLayers
+expect log '/Desktop window: the headset.s layers are not drawn/' within 5
+expect no log Exception
+
+cleanup
+include vr-option.inc mirrorLayers {was_mirrorLayers} isChecked _
+
+test screens-wheels-open
+# Screens: the tools wheel and the actions wheel. Holding the left grip in empty air opens the tools wheel, clicking the
+# left stick while it is open turns it into the actions wheel, and B closes it.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the astronaut on foot with nothing in hand. Nothing is built. --------------------------------
+
+log SpaceEngineersVR.log
+expect session focused within 60
+
+# Looking down at the hands, so the wheels are in view: the left hand is then about 0.5 m ahead of the eyes, 27 degrees
+# left of the middle of the view and 8 below it.
+head 0 1.6 0 0 -45
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.2 -0.3
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+expect headset steady
+headset no-wheel.png
+
+# ---- Tools wheel: hold the left grip in empty air --------------------------------------------------------------------
+
+press left grip
+wait 1
+read screen
+expect type == SlotWheelScreen
+# The toolbar's wheel is in the left hand: near, to the left of the view.
+headset tools-wheel.png
+expect headset new depth 0.2 1.0
+expect headset new at -27 -8 20
+
+# ---- Actions wheel: click the left stick while the tools wheel is open ----------------------------------------------
+
+press left stick
+wait 0.2
+release left stick
+wait 1
+read screen
+expect type == ActionsWheelScreen
+expect log Actions wheel: opened at the left hand within 5
+# The actions wheel is where the hand was when it opened (Gui/ActionsWheel.cs: at the grip, facing the head), and stays
+# there until it closes: the view moves past it as the head looks further down. What is new against the tools wheel is
+# what the actions wheel shows in its place.
+headset actions-wheel.png
+expect headset new depth 0.2 1.0
+expect headset new at -27 -8 20
+head 0 1.6 0 0 -60
+wait 1
+headset actions-wheel-look-down.png
+expect headset new follows world
+head 0 1.6 0 0 -45
+wait 1
+
+# ---- B closes it, with nothing chosen: no tool changed and the game has the focus --------------------------------------
+
+press right b
+wait 0.2
+release right b
+release left grip
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+read character
+expect weapon == null
+expect no log Exception
+
+test screens-wrist-panel
+# Screens: the wrist panel. Y (the left controller's upper button) opens the quick actions on a panel over the left wrist
+# and Y again closes it; the right hand's laser and trigger press its tiles: Dampeners switches the dampeners, Inventory,
+# Terminal and the G menu open their screens, which stand in the world ahead of the eyes, and B goes back out of them.
+# The panel follows the left hand: with the hand where this file holds it, the panel's middle is 0.3 m from the right
+# hand placed and turned as below, square on, and 0.3 m wide (1920 GUI pixels); each tile's place on it is the plugin's
+# grid of 3 by 4 tiles (QuickActionsScreen.Layout).
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the astronaut on foot in gravity (Earth Planet starts so). Nothing is built. ---------------
+
+# Dampeners on, so the Dampeners tile has something to switch off.
+dampeners on
+log SpaceEngineersVR.log
+expect session focused within 60
+
+# ---- Y opens and closes the panel -------------------------------------------------------------------------------------
+
+# Headset level, the left hand held out low before the body, the right hand resting below, aimed down.
+head 0 1.6 0
+hand left -0.2 1.1 -0.35
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+# Before: only the game is up.
+read screen
+expect type == MyGuiScreenGamePlay
+# Index's left B is the Y button.
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+expect log Wrist panel: opened (Y), 12 tiles within 5
+expect log Menu opened on the wrist within 5
+# Y again closes it.
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+expect log Wrist panel: closed (Y) within 5
+
+# ---- Where the panel is drawn: on the left wrist, near, low and to the left, and it stays with the hand ----------------
+
+# Looking down at the left hand, as a player does to use the panel. With the hand where this file holds it, the panel's
+# middle is about 0.5 m ahead of the eyes, 18 degrees left of the middle of the view and 10 below it, and it is 0.3 m
+# wide, about 35 degrees (Rendering/WorldMenu.cs, WristPose).
+head 0 1.6 0 0 -45
+wait 1
+expect headset steady
+headset wrist-closed.png
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+headset wrist-open.png
+expect headset new depth 0.25 0.8
+expect headset new at -18 -10 15
+expect headset new size 20 50
+# Looking further down, the panel stays on the wrist: the view moves past it, as it does past the world.
+head 0 1.6 0 0 -60
+wait 1
+headset wrist-look-down.png
+expect headset new follows world
+# Y closes it, and the head is level again for the rest of the test.
+press left b
+wait 0.2
+release left b
+wait 1
+head 0 1.6 0
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- The laser presses a tile: Dampeners ---------------------------------------------------------------------------------
+
+read character
+expect dampeners == true
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the Dampeners tile, and its trigger.
+hand right -0.128 1.438 -0.013 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]3[0-9][0-9], 6[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+# The game's own Dampeners control was pressed and the panel closed.
+expect log '/Wrist panel: .Dampeners. read by the game/' within 5
+read character
+expect dampeners == false
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- The tiles that open screens: Inventory, Terminal, G menu, each in the world ahead -------------------------------
+
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the Inventory tile, and its trigger.
+hand right -0.158 1.473 -0.054 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]3[0-9][0-9], 2[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+read screens
+expect result contains MyGuiScreenTerminal
+expect log Menu opened; panel placed within 5
+# B goes back: the screen closes and the game has the focus again.
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the Terminal tile, and its trigger.
+hand right -0.082 1.473 -0.111 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]9[0-9][0-9], 2[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+read screens
+expect result contains MyGuiScreenTerminal
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+
+# G menu: some screen other than the game and the panel has the focus.
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the G menu tile, and its trigger.
+hand right -0.006 1.473 -0.167 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]1[45][0-9][0-9], 2[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+read screen
+expect type != MyGuiScreenGamePlay
+expect type != QuickActionsScreen
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+# The datapad is left out of this release: nothing of it ran.
+expect no log Datapad
+expect no log Exception
+
+test seats-camera-block-view
+# Looking through a camera block: the eyes go to a still screen showing the camera, a right-stick flick switches camera,
+# the stick up zooms, and holding Y returns to the character. Drill Ship Atmosphere mk.1's two cameras from Earth Planet.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: the head up, the world on the screen ---------------------------------------------------------------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+# remote control and cameras reach a ship only through its antenna, which this one has off
+switch Drill Ship Antenna on
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+wait 2
+headset world.png
+expect headset bright
+
+# ---- View through the bow camera (the terminal's View action, a setup step) -------------------------------------------
+# the camera's View button in the terminal
+control Camera Bow on Drill Ship Atmosphere mk.1
+wait 2
+expect log VR controls: camera over on foot within 5
+expect log Forced view: on (the view is a camera block within 5
+headset camera.png
+expect headset changed
+
+# ---- Flick the right stick right: the next camera, then left: the previous one ----------------------------------------
+stick right 1 0
+wait 0.3
+stick right 0 0
+wait 0.5
+expect log Camera view: right stick flicked right, the next camera (SWITCH_RIGHT) within 5
+stick right -1 0
+wait 0.3
+stick right 0 0
+wait 0.5
+expect log Camera view: right stick flicked left, the previous camera (SWITCH_LEFT) within 5
+
+# ---- The stick up zooms in while held, down zooms out ----------------------------------------------------------------
+stick right 0 1
+wait 1
+expect log Camera view: right stick: zoom in (CAMERA_ZOOM_IN) held within 5
+stick right 0 0
+wait 0.5
+expect log Camera view: right stick: zoom let go within 5
+stick right 0 -1
+wait 1
+expect log Camera view: right stick: zoom out (CAMERA_ZOOM_OUT) held within 5
+stick right 0 0
+wait 0.5
+
+# ---- Hold Y: back to the character and the world ----------------------------------------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+expect log Forced view: over within 5
+expect log VR controls: on foot within 5
+headset back.png
+expect headset changed
+expect headset bright
+
+test seats-cockpit-hand-flight
+# Flying from a cockpit with the buttons: in a cockpit that has a cockpit rig (the small cockpit here), A raises the ship and
+# the grips roll it, with the thumbsticks left to the rig's own sticks. Sat down by the game's Use (a setup step); the
+# hand entry is tested in seats-pilot-seat-enter-leave. Drill Ship Atmosphere mk.1 from Earth Planet.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: the ship's cockpit, and sit in it -----------------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+wait 1
+# the game's Use on the cockpit (the ship stands high on its landing gear, out of reach from the ground)
+control Cockpit on Drill Ship Atmosphere mk.1
+wait 2
+read character
+expect state == sitting
+expect controlledEntity.type == MyCockpit
+expect log VR controls: ship controller (Cockpit) within 5
+wait 1
+
+# ---- A held raises the ship ------------------------------------------------------------------------------------------
+read grid Drill Ship Atmosphere mk.1
+mark
+press right a
+wait 3
+release right a
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.5
+
+# ---- Right grip rolls the ship: the pilot's up turns (the seat turns with the ship) ----------------------------------
+# Hands kept at the sides, away from the cockpit's sticks.
+hand left -0.3 0.9 -0.1
+hand right 0.3 0.9 -0.1
+read character
+mark
+press right grip
+wait 2
+release right grip
+wait 0.5
+read character
+expect up moved > 0.05
+
+# ---- Hold Y to get up ------------------------------------------------------------------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+read character
+expect state != sitting
+
+test seats-cockpit-head-clamp
+# In a seat the head is held round the pilot's head: leaning far out of the seat does not take the eyes through the
+# cockpit's glass or floor. The plugin says how far it held the head.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: a pilot's seat of our own, built before the character ---------------------------------------------
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build LargeBlockCockpitSeat 3 as TestClampSeat
+goto TestClampSeat 1.0
+wait 2
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+hand right 0 1.3 -0.6
+wait 1
+
+# ---- Sit down with the right grip (see seats-pilot-seat-enter-leave for the reach) ---------------------------
+press right grip
+wait 1.5
+release right grip
+wait 1
+read character
+expect state == sitting
+# Sitting still, nothing is held.
+expect no log Seat clamp: head held
+
+# ---- Lean a metre and a half forward and to the side: far further than the seat lets the head go ---------------
+head 0.6 1.6 -1.5
+wait 2
+expect log Seat clamp: head held within 5
+
+# ---- Back in the seat, then get up -----------------------------------------------------------------------------
+head 0 1.6 0
+press left b
+wait 0.8
+release left b
+wait 1.5
+read character
+expect state != sitting
+
+test seats-cryo-pod
+# Getting into a cryo chamber with the hands and out of it again with Y held.
+# The cryo chamber is its own kind of seat (the game's cryo pod), so the controls label names it.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: the station's cryo chamber (a cryo chamber is used only with power, which one built on its own grid has none of) --
+admin creativeTools
+# Earth Planet's station belongs to the world's own identity: the game lets the player use it once they own it
+own EarthEasyStation
+# Stand before it, facing it. The pod's door is low and ahead, so the hand reaches down-forward.
+goto Cryo Chamber 1.0
+wait 2
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0 1.3 -0.6
+wait 1
+
+# ---- Before: on foot, not in any seat ------------------------------------------------------------------------
+read character
+expect state != sitting
+expect controlledEntity == null
+
+# ---- Reach the seat with the right hand and grip: the game's Use, so the character sits ------------------------
+# (Hand coordinates are a first guess; the log line "Grab use: Right palm ... box middle at tracking x,y,z" says where
+# the seat's use spot is, head-relative, to tune them.)
+press right grip
+wait 1.5
+release right grip
+wait 1
+
+# ---- After: seated in the block, and the hands' controls are the ship's ------------------------------------------
+read character
+expect state == sitting
+expect controlledEntity.type == MyCryoChamber
+expect log VR controls: ship controller (CryoChamber) within 5
+
+# ---- Leave: hold Y (left B) for half a second, the game's Use held, which leaves the seat -----------------------
+press left b
+wait 0.8
+release left b
+wait 1.5
+read character
+expect state != sitting
+expect controlledEntity == null
+expect log VR controls: on foot within 5
+
+test seats-g-forces
+# G-forces in a seat: the ship's pull on the seat moves the eye a few centimetres, presses in the hands, and under a hard
+# load greys the view out and makes the astronaut breathe hard. Sitting still on the ground is felt as nothing; lifting
+# off and stopping is. The plugin logs each mark the pull or the load crosses ("Seat G: rising ..." and "easing").
+# Drill Ship Atmosphere mk.1 from Earth Planet, flown up with A as in seats-cockpit-hand-flight.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: the ship's cockpit, and sit in it ---------------------------------------------------------------------
+admin creativeTools
+own Drill Ship Atmosphere mk.1
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+wait 1
+control Cockpit on Drill Ship Atmosphere mk.1
+wait 3
+read character
+expect state == sitting
+
+# ---- Sitting still on the ground: no pull is felt (the planet's gravity is the seat's 1 g, not G) -----------------
+wait 3
+expect no log Seat G:
+
+# ---- A held lifts the ship for 6 s, letting go the dampeners stop it: the pull crosses the first mark, and eases -------------
+press right a
+wait 6
+release right a
+expect log '/Seat G: rising in \S+: the ship pulls [0-9.]+ m.s/' within 6
+expect log '/Seat G: easing in \S+: /' within 10
+
+# ---- Pushed into the seat off: the same lift moves the eye by nothing, and the log says so ---------------------------
+include vr-option.inc seatGPush false isChecked was_seatGPush
+wait 3
+press right a
+wait 6
+release right a
+expect log '/Seat G: rising in \S+: .*push 0.0 cm [(]off[)]/' within 6
+
+cleanup
+include vr-option.inc seatGPush {was_seatGPush} isChecked _
+
+test seats-passenger-seat
+# Getting in and out of a passenger seat with the hands: grip the seat to sit, hold Y to get up.
+# A passenger seat has no flight controls, but the buttons and the leave hold work as in any seat.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: a PassengerSeatLarge of our own, built before the character (Earth Planet ships none standing free) --------
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build PassengerSeatLarge 3 as TestPassengerSeat
+# Stand inside the block's cell, facing it. A large seat's centre is below the eyes, so the hand reaches down-forward.
+goto TestPassengerSeat 0.2
+wait 2
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+# the seat's use spot is its cushion, low at the back of the block: the hand reaches down to it
+hand right 0 0.75 -0.7
+wait 1
+
+# ---- Before: on foot, not in any seat ------------------------------------------------------------------------
+read character
+expect state != sitting
+expect controlledEntity == null
+
+# ---- Reach the seat with the right hand and grip: the game's Use, so the character sits ------------------------
+# (Hand coordinates are a first guess; the log line "Grab use: Right palm ... box middle at tracking x,y,z" says where
+# the seat's use spot is, head-relative, to tune them.)
+press right grip
+wait 1.5
+release right grip
+wait 1
+
+# ---- After: seated in the block, and the hands' controls are the ship's ------------------------------------------
+read character
+expect state == sitting
+expect controlledEntity.type == MyCockpit
+expect log VR controls: ship controller (Cockpit) within 5
+
+# ---- Leave: hold Y (left B) for half a second, the game's Use held, which leaves the seat -----------------------
+press left b
+wait 0.8
+release left b
+wait 1.5
+read character
+expect state != sitting
+expect controlledEntity == null
+expect log VR controls: on foot within 5
+
+test seats-pilot-seat-enter-leave
+# Getting in and out of a pilot's seat with the hands: grip the seat to sit, hold Y to get up.
+# The VR controls switch to the ship's set while seated and back to on-foot after.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: a LargeBlockCockpitSeat of our own, built before the character (Earth Planet ships none standing free) --------
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build LargeBlockCockpitSeat 3 as TestPilotSeat
+# Stand inside the block's cell, facing it. A large seat's centre is below the eyes, so the hand reaches down-forward.
+goto TestPilotSeat 1.0
+wait 2
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0 1.3 -0.6
+wait 1
+
+# ---- Before: on foot, not in any seat ------------------------------------------------------------------------
+read character
+expect state != sitting
+expect controlledEntity == null
+
+# ---- Reach the seat with the right hand and grip: the game's Use, so the character sits ------------------------
+# (Hand coordinates are a first guess; the log line "Grab use: Right palm ... box middle at tracking x,y,z" says where
+# the seat's use spot is, head-relative, to tune them.)
+press right grip
+wait 1.5
+release right grip
+wait 1
+
+# ---- After: seated in the block, and the hands' controls are the ship's ------------------------------------------
+read character
+expect state == sitting
+expect controlledEntity.type == MyCockpit
+expect log VR controls: ship controller (Cockpit) within 5
+# The seat holds the head round the pilot's head; the plugin says so a second after sitting down.
+expect log Seat clamp: in LargeBlockCockpitSeat within 5
+
+# ---- Leave: hold Y (left B) for half a second, the game's Use held, which leaves the seat -----------------------
+press left b
+wait 0.8
+release left b
+wait 1.5
+read character
+expect state != sitting
+expect controlledEntity == null
+expect log VR controls: on foot within 5
+
+test seats-remote-control-flight
+# Flying a ship from its remote control with the thumbsticks: A raises the ship, the left stick pushes it forward, and
+# holding Y lets go of the remote control. A remote control has no cockpit rig, so the thumbsticks fly it on their own.
+# Needs the Drill Ship Atmosphere mk.1 that Earth Planet ships near its starter base (powered, small grid, gears free).
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: name the ship's remote control, then take control of it the way the game's remote access does ------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+# remote control and cameras reach a ship only through its antenna, which this one has off
+switch Drill Ship Antenna on
+# the ship's cockpit is its main cockpit, and the game flies and parks a ship only from that one while it has one
+property Cockpit on Drill Ship Atmosphere mk.1 MainCockpit false
+rename Remote Control on Drill Ship Atmosphere mk.1 as Drill remote control
+log SpaceEngineersVR.log
+expect session focused within 60
+control Drill remote control
+wait 2
+read block Drill remote control
+expect controlledByMe == true
+expect log VR controls: ship controller (RemoteControl) within 5
+head 0 1.6 0
+wait 1
+
+# ---- A raises the ship ----------------------------------------------------------------------------------------
+read grid Drill Ship Atmosphere mk.1
+mark
+press right a
+wait 3
+release right a
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.5
+
+# ---- The left stick forward pushes it along (dampeners on, so it comes to rest after) ----------------------------
+mark
+stick left 0 1
+wait 3
+stick left 0 0
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.5
+
+# ---- B lowers it ------------------------------------------------------------------------------------------------
+mark
+press right b
+wait 3
+release right b
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.3
+
+# ---- Hold Y: the remote control is let go and the character is on foot again ------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+read block Drill remote control
+expect controlledByMe == false
+expect log VR controls: on foot within 5
+
+test seats-ship-switches
+# The ship's switches on the controllers while flying: X toggles the dampeners, the left stick click the lights, the
+# right stick click the landing gear. Flown from the Drill Ship Atmosphere mk.1's remote control (see
+# seats-remote-control-flight); it has two spotlights (off) and landing gears ready to lock.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: take control of the ship's remote control ----------------------------------------------------------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+# remote control and cameras reach a ship only through its antenna, which this one has off
+switch Drill Ship Antenna on
+# the ship's cockpit is its main cockpit, and the game flies and parks a ship only from that one while it has one
+property Cockpit on Drill Ship Atmosphere mk.1 MainCockpit false
+log SpaceEngineersVR.log
+expect session focused within 60
+control Remote Control on Drill Ship Atmosphere mk.1
+wait 2
+read block Remote Control on Drill Ship Atmosphere mk.1
+expect controlledByMe == true
+head 0 1.6 0
+wait 1
+
+# ---- Lights: the left stick click -------------------------------------------------------------------------------
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == false
+press left stick
+wait 0.3
+release left stick
+wait 1
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == true
+# And off again.
+press left stick
+wait 0.3
+release left stick
+wait 1
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == false
+
+# ---- Dampeners: a tap of X (left A) turns them off, another turns them on ----------------------------------------
+read block "Remote Control on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == true
+press left a
+wait 0.2
+release left a
+wait 1
+read block "Remote Control on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == false
+press left a
+wait 0.2
+release left a
+wait 1
+read block "Remote Control on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == true
+
+# ---- Landing gear: the right stick click locks the gear that is touching the ground --------------------------------
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == ReadyToLock
+press right stick
+wait 0.3
+release right stick
+wait 2
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == Locked
+# Click again: it lets go, and the gear, still on the ground, is ready to lock again.
+press right stick
+wait 0.3
+release right stick
+wait 2
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == ReadyToLock
+
+# ---- Let go of the remote control -----------------------------------------------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+read block Remote Control on Drill Ship Atmosphere mk.1
+expect controlledByMe == false
+
+test seats-turret-control
+# Taking control of a turret: the eyes go to the turret's view on a screen, A and B zoom while held, and holding Y gets
+# out. The Gatling Turret 1 that Earth Planet's EarthEasyStation carries (owned by the player).
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: stand at the turret and take its control (the terminal's Control action, a setup step) ----------------------
+admin creativeTools
+# Earth Planet's station belongs to the world's own identity: the game lets the player use it once they own it
+own EarthEasyStation
+# a turret is taken only through an antenna, and the station's is off
+switch Antenna on
+goto "Gatling Turret 1" 6
+wait 2
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+wait 1
+read character
+expect controlledEntity == null
+# the turret's Control button in the terminal
+control Gatling Turret 1 on EarthEasyStation
+wait 2
+expect log VR controls: turret ( within 5
+expect log Forced view: on (the view is a turret within 5
+
+# ---- A zooms in while held, B zooms out ---------------------------------------------------------------------------------
+press right a
+wait 1
+expect log Turret: A / B: zoom in (CAMERA_ZOOM_IN) held within 5
+release right a
+wait 0.5
+expect log Turret: A / B: zoom let go within 5
+press right b
+wait 1
+expect log Turret: A / B: zoom out (CAMERA_ZOOM_OUT) held within 5
+release right b
+wait 0.5
+
+# ---- Hold Y to let go of the turret ------------------------------------------------------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+expect log Forced view: over within 5
+expect log VR controls: on foot within 5
+read character
+expect controlledEntity == null
+
+test suit-power-hud
+# Suit power failing: as the suit's battery runs low, the HUD on the visor flickers and dims, and at zero it and the
+# wrist screen go dark; the suit lamp sputters the same way; recharging brings both back with the existing power-on
+# effect. A small flashing icon at the HUD's edge marks any of health, food, energy, oxygen or hydrogen at the game's
+# own critical mark. Both are settings, on by default (Suit power failing, Low stat warnings at the HUD's edge).
+#
+# No generic step in this harness reads or sets the suit's battery, hurts it toward empty, or changes a VR plugin's
+# own setting (the table in SKILL.md has `hurt AMOUNT` for health and `admin FLAG` for the game's own build/spawn
+# flags, nothing for suit energy; a setting is only ever read from the plugin's own file, which `file` steps would
+# reach and a public file must not use). So this file cannot drive the suit to low, critical or zero, cannot turn
+# either setting off, and cannot watch the HUD or the wrist screen go dark and come back: that needs a real run with
+# a battery actually draining, in the headset. What it can check, with the defaults (both settings on) and a fresh
+# spawn (a full suit battery): nothing the feature adds shows, flickers or logs while the suit is fully charged - a
+# regression check that the feature leaves a healthy suit alone. (Its patches are put on once, as the game starts,
+# before any test's log is read, so whether they took hold is not something a test here can see.)
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+expect headset steady
+
+# A fresh spawn's suit is full: the HUD is lit as the game draws it, none of the low/critical/out states entered,
+# no low-stat icon at the HUD's edge, nothing thrown.
+headset hud-full-power.png
+expect headset bright
+expect no log Suit power: low
+expect no log Suit power: critical
+expect no log Suit power: out
+expect no log Low stat warning
+expect no log Exception
