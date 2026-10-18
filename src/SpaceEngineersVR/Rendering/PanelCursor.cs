@@ -12,11 +12,13 @@ namespace SpaceEngineersVR.Rendering
     /// <summary>
     /// The mouse on the panel. The game reads the cursor in window pixels and lays its GUI out in GUI pixels
     /// (<see cref="GuiLayout"/>), but the GUI shows as a panel somewhere in each eye (<see cref="HudPanel"/>), so a
-    /// click on a drawn button went to wherever that button is laid out. The cursor is read through the panel instead -
-    /// from where the panel shows in the eye under the cursor, back to the GUI - and placed through it the other way.
-    /// The game draws its cursor where it reads it, so the drawn cursor lands under the real one. While the laser pointer
-    /// (<see cref="Laser"/>) has the cursor, it reads the GUI pixel the hand points at instead, and the game's moves of
-    /// the real cursor are dropped.
+    /// click on a drawn button went to wherever that button is laid out. With a headset the player sees the panel, not
+    /// the window, so the window stands for the panel: the mouse goes over the whole menu as it goes over the whole screen
+    /// in flat play, wherever the head is turned. Without one (both eyes side by side in the window) the cursor is read
+    /// through the panel - from where the panel shows in the eye under the cursor, back to the GUI - and placed through it
+    /// the other way. The game draws its cursor where it reads it, so the drawn cursor is where the mouse points. While the
+    /// laser pointer (<see cref="Laser"/>) has the cursor, it reads the GUI pixel the hand points at instead, and the
+    /// game's moves of the real cursor are dropped.
     /// </summary>
     /// <remarks>
     /// Everything the game sees of the mouse is in GUI pixels: the mouse area it is told (GetMouseAreaSize) is the GUI's
@@ -35,6 +37,13 @@ namespace SpaceEngineersVR.Rendering
         private static readonly MyViewport[] areas = new MyViewport[2], panels = new MyViewport[2];
         private static readonly Vector2 gui = new Vector2(GuiLayout.Size.X, GuiLayout.Size.Y);
         private static int lastEye;
+
+        // With a headset, the part of the window the mouse covers the whole GUI in; zero size without one.
+        private static MyViewport overWindow;
+
+        // Where the game last placed the real cursor (SetMousePosition), in window pixels, until the laser has read it.
+        private static bool placed;
+        private static Vector2 placedAt;
 
         public static void Patch(Harmony harmony)
         {
@@ -71,9 +80,10 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// Render thread, each frame the panel is shown: the parts of the window it can show in (an eye's part, or all
-        /// of it), and the rectangle it showed at in each, zero size where it did not show.
+        /// of it), and the rectangle it showed at in each, zero size where it did not show; and, with a headset, the part
+        /// of the window the mouse goes over the whole GUI in (zero size without one).
         /// </summary>
-        public static void Shown(MyViewport[] areaWindows, MyViewport[] panelWindows)
+        public static void Shown(MyViewport[] areaWindows, MyViewport[] panelWindows, MyViewport mouseWindow)
         {
             lock (gate)
             {
@@ -82,6 +92,19 @@ namespace SpaceEngineersVR.Rendering
                     areas[i] = areaWindows[i];
                     panels[i] = panelWindows[i];
                 }
+                overWindow = mouseWindow;
+            }
+        }
+
+        /// <summary>The game placed the real cursor since the last call, and where, in window pixels: that move was not the player's.</summary>
+        internal static bool TakePlaced(out Vector2 window)
+        {
+            lock (gate)
+            {
+                window = placedAt;
+                bool was = placed;
+                placed = false;
+                return was;
             }
         }
 
@@ -94,6 +117,30 @@ namespace SpaceEngineersVR.Rendering
         {
             lock (gate)
                 return areas[0];
+        }
+
+        /// <summary>The real mouse in the window to where it is on the GUI: over the whole GUI with a headset, else through the panel.</summary>
+        private static Vector2 MouseToGui(Vector2 window)
+        {
+            lock (gate)
+            {
+                if (!Off && overWindow.Width > 0f)
+                    return new Vector2(
+                        MathHelper.Clamp((window.X - overWindow.OffsetX) / overWindow.Width, 0f, 1f) * (gui.X - 1f),
+                        MathHelper.Clamp((window.Y - overWindow.OffsetY) / overWindow.Height, 0f, 1f) * (gui.Y - 1f));
+            }
+            return ToGui(window);
+        }
+
+        /// <summary>A GUI pixel to where the real mouse goes for it: the other way from <see cref="MouseToGui"/>.</summary>
+        private static Vector2 GuiToMouse(Vector2 onGui)
+        {
+            lock (gate)
+            {
+                if (!Off && overWindow.Width > 0f)
+                    return new Vector2(overWindow.OffsetX + onGui.X / gui.X * overWindow.Width, overWindow.OffsetY + onGui.Y / gui.Y * overWindow.Height);
+            }
+            return ToWindow(onGui);
         }
 
         /// <summary>A point in the window to where it falls on the GUI, through the panel in the part of the window it is in.</summary>
@@ -168,7 +215,7 @@ namespace SpaceEngineersVR.Rendering
         private static void RawPosition(ref Vector2 __result)
         {
             if (StereoPatches.VRPicture)
-                __result = Laser.TryCursor(out Vector2 pointed) ? pointed : ToGui(__result);
+                __result = Laser.TryCursor(out Vector2 pointed) ? pointed : MouseToGui(__result);
         }
 
         // As the game works it out (MyVRageInput.GetMousePosition), from the cursor on the GUI.
@@ -184,17 +231,23 @@ namespace SpaceEngineersVR.Rendering
         static partial void KeepsRealMouse(ref bool keep);
 
         // While the laser has the cursor the game placing it is dropped: SetMousePosition moves the real Windows cursor.
-        // So it is while a test drives the game without focus (Drive): the cursor belongs to someone else then.
+        // While a test drives the game without focus (Drive) the cursor belongs to someone else: the real one stays where it
+        // is, but the placement still counts as the game's (the laser hands the cursor on from it, as with the focus).
         private static bool SetPosition(ref int x, ref int y)
         {
-            bool drivenUnfocused = false;
-            KeepsRealMouse(ref drivenUnfocused);
-            if (Laser.HoldsCursor || drivenUnfocused)
+            if (Laser.HoldsCursor)
                 return false;
-            Vector2 window = ToWindow(new Vector2(x, y));
+            Vector2 window = GuiToMouse(new Vector2(x, y));
             x = (int)window.X;
             y = (int)window.Y;
-            return true;
+            lock (gate)
+            {
+                placed = true;
+                placedAt = new Vector2(x, y);
+            }
+            bool drivenUnfocused = false;
+            KeepsRealMouse(ref drivenUnfocused);
+            return !drivenUnfocused;
         }
 
         // Until the picture is VR's the game places the cursor as it does without the plugin.

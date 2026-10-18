@@ -1,0 +1,71 @@
+# Hands: the welder and the hand drill in the right hand. Each is taken out with the tools wheel, is held in the right hand
+# by the astronaut's wrist, aims where the hand points, and works while the right trigger is pulled.
+# World: Earth Planet (survival, on foot, in gravity). Nothing is built; the hand points at the ground ahead.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a welder in toolbar slot 1 and a hand drill in slot 2 ------------------------------------------
+
+give PhysicalGunObject/WelderItem
+give PhysicalGunObject/HandDrillItem
+toolbar 1 PhysicalGunObject/WelderItem
+toolbar 2 PhysicalGunObject/HandDrillItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+# The right hand low, pointing forward and down at the ground about 1.5 m ahead.
+hand right 0.25 1.1 -0.3 0 -30 0
+wait 1
+
+# ---- The welder: slot 1 --------------------------------------------------------------------------------------------------
+
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains WelderItem
+expect log Hand tools: the Welder is held in the right hand within 5
+# Before: not welding.
+expect weapon.shooting == false
+press right trigger
+wait 1.5
+read character
+expect weapon.shooting == true
+# The shot goes where the hand points, not where the head looks.
+expect log Hand tools: shot direction from the hand within 5
+release right trigger
+wait 1
+read character
+expect weapon.shooting == false
+
+# ---- The hand drill: slot 2 ------------------------------------------------------------------------------------------------
+
+press left grip
+wait 1
+stick left 0.643 0.766
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains HandDrillItem
+expect log Hand tools: the HandDrill is held in the right hand within 5
+expect weapon.shooting == false
+press right trigger
+wait 1.5
+read character
+expect weapon.shooting == true
+release right trigger
+wait 1
+read character
+expect weapon.shooting == false
+expect no log Exception

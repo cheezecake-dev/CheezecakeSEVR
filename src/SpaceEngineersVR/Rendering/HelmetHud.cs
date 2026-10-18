@@ -34,9 +34,8 @@ namespace SpaceEngineersVR.Rendering
     /// XR_KHR_composition_layer_color_scale_bias here), and the visor's swing is over in a third of a second.
     /// </para>
     /// <para>
-    /// Not touched: the game's HUD state (MyHud, the HUD mode Tab cycles, saved with the game), the desktop window (the
-    /// whole HUD on the flat panel, as ever), menus and the wrist panel (world-locked: <see cref="WorldMenu"/>), and the
-    /// wrist's status (<see cref="WristStatus"/>). RenderDebug HelmetHud=0 keeps the HUD in the headset with the helmet open
+    /// Not touched: the game's HUD state (MyHud, the HUD mode Tab cycles, saved with the game), menus and the wrist panel
+    /// (world-locked: <see cref="WorldMenu"/>), and the wrist's status (<see cref="WristStatus"/>). RenderDebug HelmetHud=0 keeps the HUD in the headset with the helmet open
     /// (<see cref="VisorClosed"/> still follows the helmet).
     /// </para>
     /// </remarks>

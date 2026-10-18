@@ -13,7 +13,9 @@ namespace SpaceEngineersVR.Rendering
     /// SpaceEngineersVR.renderdebug in the game's user data folder, re-read about once a second, e.g. "Laser=0 HandResidual=1".
     /// The switches that change the game's state or reach past its checks, and the renderer's own debug overrides
     /// (MyRender11.DebugOverrides), are test aids (src/SpaceEngineersVR.TestAids/RenderDebug.TestAids.cs), not in a player's build.
-    /// RightFirst=1 draws the right eye first; EyeOffset=0 turns off <see cref="EyeOffset"/>,
+    /// RightFirst=1 draws the right eye first; EyeCant=n turns each eye n degrees outward from where the
+    /// runtime puts it, the views drawn and submitted alike, as a headset with canted displays does (the compositor turns the
+    /// picture back, so a correct frame still looks right); EyeOffset=0 turns off <see cref="EyeOffset"/>,
     /// SharedBillboards=1 lets the eyes share <see cref="OnceBillboards"/>, HudCamera=0 turns off <see cref="HudCamera"/>,
     /// HudVisor=0 puts the whole HUD back on the flat panel (<see cref="HudVisor"/>), HudVisorCylinder=0 draws its pieces on flat quads
     /// even when the runtime offers cylinder layers, HudVisorZones=1 puts them in zones, a layer each, instead of on the one display,
@@ -35,7 +37,8 @@ namespace SpaceEngineersVR.Rendering
     /// leaves the held arm's shoulder swaying as the animation has it; HandIKEase=1 logs the left arm's stretch every frame
     /// while it eases onto or off a tool's grip (<see cref="Tracking.HandIK"/>); HandIKCap=130 the most any arm is drawn stretched, % (0: no cap);
     /// HandIKJump=N logs every frame an arm's reach changes by more than N cm beyond what the hand did against the head, split into its causes,
-    /// and the 20 frames after (<see cref="Tracking.ArmJump"/>).
+    /// and the 20 frames after (<see cref="Tracking.ArmJump"/>). HandIKReach=1 logs each arm's reach every 2 s, in reach or not;
+    /// HandIKFitReset=1 forgets the grip fit of the controllers in use (<see cref="Tracking.GripFit"/>).
     /// HandResidual=1 logs once a second how far the drawn palms are from the controllers; HandGhost=1 draws each controller's
     /// grip pose as a small axis triad, with a dot where the palm belongs (<see cref="Tracking.HandResidual"/>); HandGhost=2 also draws
     /// the handle as an orange bar and a cyan dot where the finger press takes the index fingertip to be.
@@ -60,6 +63,7 @@ namespace SpaceEngineersVR.Rendering
     /// Helmet air setting (150% by default, 0 to 300).
     /// VisorGlass=0 takes away the visor's glass, the tint filtering the view while the helmet is closed (its colour and strength are
     /// settings; <see cref="VisorGlass"/>). HelmetInterior=0 takes away the helmet's inside round the view (<see cref="HelmetInterior"/>).
+    /// VisorWeather=0 takes away the frost, breath, weather and mist on the visor (<see cref="VisorWeather"/>).
     /// ConformalHorizon=0 gives back the game's own artificial horizon in a cockpit (<see cref="ConformalHorizon"/>).
     /// VisorGlare=0 takes away the sun's glare in the visor's glass (<see cref="VisorGlare"/>).
     /// HelmetBreath=0 leaves the game's breathing at its own volume and unstrained, whatever the setting (<see cref="HelmetBreath"/>; its sounds stay, <see cref="BreathCues"/>).
@@ -77,7 +81,6 @@ namespace SpaceEngineersVR.Rendering
     /// HandTools=0 turns off the hand as the tool, aim and build ray, back to the head's (<see cref="Hands.HandTools"/>).
     /// Ping=0 turns off the ping and the GPS mark, and X is the dampeners on its press again (<see cref="Hands.Ping"/>).
     /// ExternalView=1 forces the chase-camera screen on, =0 off, whatever the setting says (<see cref="ExternalView"/>).
-    /// Laser=0 turns off the laser pointer, back to the plain mouse (<see cref="Laser"/>).
     /// PerfMeter=0 turns off the frame-time meter, the "Perf" lines in the log every 10 s (<see cref="PerfMeter"/>).
     /// GpuPasses=1 puts the per-pass GPU timestamps back, for the Perf line's GPU time by pass (<see cref="PerfMeter.PassMarks"/>; off by default: with them the game ended in NVIDIA's driver).
     /// ChaseCamera=0 gives the game's own third-person ship camera (<see cref="Tracking.ChaseCamera"/>).
@@ -127,7 +130,10 @@ namespace SpaceEngineersVR.Rendering
     /// says; KickbackTrace=1 logs it every frame while an item is in use or settling (<see cref="Hands.Kickback"/>). These three take
     /// fractions: KickScale=x multiplies all of the kick (1 as built), KickAir=x is the share of a grinder's or drill's kick left
     /// spinning in the air (0.8 as built), KickTwoHand=x the share of the one-handed kick left with both hands on the item (0.33 as built).
-    /// Reload=0 turns off reloading a hand weapon from the hands, both the other hand's trigger at the magazine and the gun hand's stick click (<see cref="Hands.Reload"/>); ReloadTrace=1 logs every frame the other hand is within 25 cm of the held weapon's magazine.
+    /// Reload=0 turns off reloading a hand weapon from the hands, both the other hand's trigger at the magazine and the gun hand's stick click (<see cref="Hands.Reload"/>); ReloadTrace=1 logs every frame the other hand is within 25 cm of the held weapon's magazine, and once a second where the
+    /// magazine is. HolsterTrace=1 logs once a second where each tool
+    /// holster is (<see cref="Hands.Holsters"/>).
+    /// InventoryToolbar=0 takes the toolbar off the inventory screen (<see cref="Gui.InventoryToolbar"/>).
     /// InputLog=0 stops the log line for each headset button press and release, and the menu focus lines beside them (<see cref="InputLog"/>; on by default, at most 10 lines a second).
     /// VRPrompts=0 gives the game's prompts their keyboard names back (<see cref="VRPrompts"/>); VRRadial=0 gives back the game's gamepad radial menus, labels and entries (<see cref="Gui.VRRadialMenus"/>); ActionsWheel=0 has the left stick click on the tools wheel open the game's radial screen instead of the wheel at the hand (<see cref="Gui.ActionsWheel"/>); HudToolbar=1 shows the HUD's bottom toolbar on foot too (<see cref="HudToolbar"/>).
     /// BodyClearance=0 lets the eye go into the character's own body (<see cref="Tracking.BodyGuard"/>), CrouchWithHead=0 stops the head's crouch crouching
@@ -177,6 +183,9 @@ namespace SpaceEngineersVR.Rendering
     /// ColbyGripX/Y/Z move that grip further, mm, and ColbyGripPitch turns it about its X axis, degrees.
     /// ColbyStickPlacement=1 unlocks the seat's cockpit sticks so a gripped stick moves with the hand, 0 locks and saves them, -1 puts them
     /// back where the cockpit has them (the quick menu Seat page's Move sticks and Reset sticks).
+    /// GrabItems=0 turns off grabbing loose items, GrabItemsTrace=1 logs how a held item follows the hand and how a released one flies
+    /// (<see cref="Hands.ItemGrab"/>); HullGrab=0 and LadderGrab=0 turn off grabbing hulls and ladders (<see cref="Hands.HullGrab"/>).
+    /// StallStacks=1 turns on the stall watchdog, which logs the stack of a game thread that stalls (<see cref="StallWatchdog"/>).
     /// Removing a name restores it.
     /// </summary>
     internal static partial class RenderDebug
@@ -187,6 +196,9 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>Draw the right eye first, to tell state left over between the eyes from the eyes themselves.</summary>
         public static bool RightFirst { get; private set; }
+
+        /// <summary>Degrees each eye is turned outward from what the runtime gives, as a headset with canted displays does; 0 leaves them.</summary>
+        public static int EyeCant { get; private set; }
 
         /// <summary>The desktop eyes' separation, metres, in place of the IPD setting; null for the setting.</summary>
         public static float? DesktopIpd { get; private set; }
@@ -249,6 +261,7 @@ namespace SpaceEngineersVR.Rendering
             ResetTestAids();
             RightFirst = false;
             DesktopIpd = null;
+            EyeCant = 0;
             SharedShadows.Off = true;
             SceneOnce.SpotShadowsEachEye = true;
             SceneOnce.ProbeEachPass = true;
@@ -300,6 +313,7 @@ namespace SpaceEngineersVR.Rendering
             HelmetAir.Reset();
             VisorGlass.Off = false;
             HelmetInterior.Off = false;
+            VisorWeather.Off = false;
             HelmetBreath.Off = false;
             VisorGlare.Off = false;
             ConformalHorizon.Off = false;
@@ -362,6 +376,8 @@ namespace SpaceEngineersVR.Rendering
             Hands.Kickback.TwoHands = Hands.Kickback.TwoHandShare;
             Hands.Reload.Off = false;
             Hands.Reload.Trace = false;
+            Hands.Holsters.Trace = false;
+            Gui.InventoryToolbar.Off = false;
             Hands.ItemGrab.Off = false;
             Hands.ItemGrab.Trace = false;
             Hands.HullGrab.HullOff = false;
@@ -806,6 +822,12 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"HelmetBreath={!HelmetBreath.Off}");
                         continue;
                     }
+                    if (pair[0].Equals("VisorWeather", StringComparison.OrdinalIgnoreCase))
+                    {
+                        VisorWeather.Off = setting == 0;
+                        applied.Add($"VisorWeather={!VisorWeather.Off}");
+                        continue;
+                    }
                     if (pair[0].Equals("HelmetInterior", StringComparison.OrdinalIgnoreCase))
                     {
                         HelmetInterior.Off = setting == 0;
@@ -1142,6 +1164,18 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"Reload={!Hands.Reload.Off}");
                         continue;
                     }
+                    if (pair[0].Equals("InventoryToolbar", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Gui.InventoryToolbar.Off = setting == 0;
+                        applied.Add($"InventoryToolbar={!Gui.InventoryToolbar.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HolsterTrace", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Hands.Holsters.Trace = setting != 0;
+                        applied.Add($"HolsterTrace={Hands.Holsters.Trace}");
+                        continue;
+                    }
                     if (pair[0].Equals("ReloadTrace", StringComparison.OrdinalIgnoreCase))
                     {
                         Hands.Reload.Trace = setting != 0;
@@ -1321,6 +1355,12 @@ namespace SpaceEngineersVR.Rendering
                         int percent = Math.Max(30, Math.Min(100, setting));
                         Rendering.DynamicResolution.FixedScale = percent / 100f;
                         applied.Add($"RenderScale={percent}%");
+                        continue;
+                    }
+                    if (pair[0].Equals("EyeCant", StringComparison.OrdinalIgnoreCase))
+                    {
+                        EyeCant = Math.Max(-45, Math.Min(45, setting));
+                        applied.Add($"EyeCant={EyeCant} deg");
                         continue;
                     }
                     if (pair[0].Equals("DesktopIpd", StringComparison.OrdinalIgnoreCase))

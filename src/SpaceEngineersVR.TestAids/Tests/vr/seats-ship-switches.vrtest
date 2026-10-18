@@ -1,0 +1,80 @@
+# The ship's switches on the controllers while flying: X toggles the dampeners, the left stick click the lights, the
+# right stick click the landing gear. Flown from the Drill Ship Atmosphere mk.1's remote control (see
+# seats-remote-control-flight); it has two spotlights (off) and landing gears ready to lock.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: take control of the ship's remote control ----------------------------------------------------------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+# remote control and cameras reach a ship only through its antenna, which this one has off
+switch Drill Ship Antenna on
+# the ship's cockpit is its main cockpit, and the game flies and parks a ship only from that one while it has one
+property Cockpit on Drill Ship Atmosphere mk.1 MainCockpit false
+log SpaceEngineersVR.log
+expect session focused within 60
+control Remote Control on Drill Ship Atmosphere mk.1
+wait 2
+read block Remote Control on Drill Ship Atmosphere mk.1
+expect controlledByMe == true
+head 0 1.6 0
+wait 1
+
+# ---- Lights: the left stick click -------------------------------------------------------------------------------
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == false
+press left stick
+wait 0.3
+release left stick
+wait 1
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == true
+# And off again.
+press left stick
+wait 0.3
+release left stick
+wait 1
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == false
+
+# ---- Dampeners: a tap of X (left A) turns them off, another turns them on ----------------------------------------
+read block "Remote Control on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == true
+press left a
+wait 0.2
+release left a
+wait 1
+read block "Remote Control on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == false
+press left a
+wait 0.2
+release left a
+wait 1
+read block "Remote Control on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == true
+
+# ---- Landing gear: the right stick click locks the gear that is touching the ground --------------------------------
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == ReadyToLock
+press right stick
+wait 0.3
+release right stick
+wait 2
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == Locked
+# Click again: it lets go, and the gear, still on the ground, is ready to lock again.
+press right stick
+wait 0.3
+release right stick
+wait 2
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == ReadyToLock
+
+# ---- Let go of the remote control -----------------------------------------------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+read block Remote Control on Drill Ship Atmosphere mk.1
+expect controlledByMe == false

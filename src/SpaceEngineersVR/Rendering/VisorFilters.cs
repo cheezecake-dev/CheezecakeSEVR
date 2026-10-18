@@ -55,7 +55,7 @@ namespace SpaceEngineersVR.Rendering
         private static void BeforeAfterProcessing(object target)
         {
             int pass = ScenePass.Current;
-            if (pending && (pass == ScenePass.FirstEye || pass == ScenePass.SecondEye) && HelmetInterior.InScene)
+            if (pending && (pass == ScenePass.FirstEye || pass == ScenePass.SecondEye) && (HelmetInterior.InScene || VisorWeather.InScene))
                 Apply(target);
         }
 

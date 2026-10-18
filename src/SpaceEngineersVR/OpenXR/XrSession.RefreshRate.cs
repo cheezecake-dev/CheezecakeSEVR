@@ -133,9 +133,16 @@ namespace SpaceEngineersVR.OpenXR
             (XrRuntime.HasRefreshRate ? "offered " + (OfferedRefreshRates.Length == 0 ? "none yet" : string.Join(", ", OfferedRefreshRates) + " Hz") : "the runtime has no refresh-rate control") +
             $"; running at {(RefreshRate > 0f ? RefreshRate + " Hz" : "an unknown rate")}; the setting asks for {(VRSettings.RefreshRateHz > 0f ? VRSettings.RefreshRateHz + " Hz" : "the runtime default")}";
 
-        /// <summary>A new session offers its own rates and is asked again.</summary>
+        /// <summary>
+        /// A new session offers its own rates and is asked again. Its functions are looked up again too: after a lost runtime
+        /// the next session is on a new instance, and the old instance's function pointers crash the game when called.
+        /// </summary>
         private static void ResetRefreshRate()
         {
+            refreshLoaded = false;
+            enumerateRates = null;
+            getRate = null;
+            requestRate = null;
             refreshListed = false;
             requestedSession = 0;
             requestedName = null;

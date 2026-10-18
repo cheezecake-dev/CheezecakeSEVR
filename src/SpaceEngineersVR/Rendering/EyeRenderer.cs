@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using SharpDX.DXGI;
 using SpaceEngineersVR.Input;
@@ -22,7 +23,8 @@ namespace SpaceEngineersVR.Rendering
     /// resolution; the swapchain stays the size of the desktop mirror window. The GUI has a size of its own
     /// (<see cref="GuiLayout"/>) and is drawn into a panel texture at that size.
     /// With a headset, each eye is drawn from the runtime's eye pose and field of view and copied into the eye's OpenXR
-    /// swapchain image; the window shows the left eye. Without one, the eyes sit side by side in the window.
+    /// swapchain image; the window shows the left eye, with the headset's other layers over it (<see cref="MirrorLayers"/>).
+    /// Without one, the eyes sit side by side in the window.
     /// </remarks>
     internal static partial class EyeRenderer
     {
@@ -55,6 +57,12 @@ namespace SpaceEngineersVR.Rendering
         private static FieldInfo mainViewportScale;
         private static FieldInfo texturesPool;
         private static object environmentMatrices;
+
+        // Bound once (Patch): MyRender11.RC.ClearRtv(target, colour); MyManagers.RwTextures.CreateRtv(name, width, height,
+        // format); and a texture's D3D resource, which the renderer makes again when the device is reset.
+        private static Action<object, SharpDX.Mathematics.Interop.RawColor4> fill;
+        private static Func<string, int, int, Format, object> createTarget;
+        private static Func<object, SharpDX.Direct3D11.Resource> resourceOf;
 
         /// <summary>Size of the swapchain (the desktop mirror window). m_resolution no longer says, it is the eye size.</summary>
         private static Vector2I windowSize;
@@ -199,6 +207,7 @@ namespace SpaceEngineersVR.Rendering
             mainViewportScale = AccessTools.Field(Render, "m_mainViewportScaleFactor");
             object environment = AccessTools.Field(Render, "Environment").GetValue(null);
             environmentMatrices = AccessTools.Field(environment.GetType(), "Matrices").GetValue(environment);
+            BindTargetCalls();
 
             StackWatchdog.StartFromEnvironment();
             harmony.Patch(AccessTools.Method(Render, "ResizeSwapchain"),
@@ -449,6 +458,7 @@ namespace SpaceEngineersVR.Rendering
             object debugAmbientOcclusion = null;
             int drawn = 0;
             HelmetInterior.BeginFrame();
+            VisorWeather.BeginFrame();
 
             // The head now goes to the game thread; the camera it sent already includes the head as it was then, so
             // the eyes are placed relative to that (eye pose now * inverse(head in camera)) - head motion since the
@@ -525,7 +535,9 @@ namespace SpaceEngineersVR.Rendering
                     }
                 }
                 // The helmet's inside in the scene sits on the head the eyes are drawn from: the eye less its place in the head.
-                HelmetInterior.Prepare((MatrixD)(Matrix.Invert(eyeInHead[0]) * eyeFromHead[0]) * head.InvViewD);
+                MatrixD headDrawn = (MatrixD)(Matrix.Invert(eyeInHead[0]) * eyeFromHead[0]) * head.InvViewD;
+                HelmetInterior.Prepare(headDrawn);
+                VisorWeather.Prepare(headDrawn);
                 SharedShadows.Fit(environmentMatrices, head, eyeFromHead, eyeFov);
                 SceneOnce.BeginFrame();
                 ParticlesOnce.BeginFrame();
@@ -539,6 +551,7 @@ namespace SpaceEngineersVR.Rendering
                     if (n > 0)
                         OnceBillboards.Rewind(billboards);
                     HelmetInterior.AddToEye();
+                    VisorWeather.AddToEye();
                     int i = RenderDebug.RightFirst ? 1 - n : n;
                     bool left = i == 0;
                     eyeTargets[i] = borrowRtv.Invoke(pool, new object[] { left ? "VR left eye" : "VR right eye", eye.X, eye.Y, windowFormat, 1, 0 });
@@ -623,14 +636,20 @@ namespace SpaceEngineersVR.Rendering
                     Eyes[0].Window = new MyViewport(0, 0, half, windowSize.Y);
                     Eyes[1].Window = new MyViewport(half, 0, windowSize.X - half, windowSize.Y);
                 }
+                // With the desktop view off (VRSettings.DesktopView) the window is black while the headset shows the game.
+                bool toWindow = !headset || VRSettings.DesktopView;
+                if (!toWindow)
+                    Clear(window);
                 for (int i = 0; i < 2; i++)
-                    if (Eyes[i].Window.Width > 0f)
+                    if (toWindow && Eyes[i].Window.Width > 0f)
                         copy.Invoke(null, new object[] { window, eyeTargets[i], false, Eyes[i].Window, true });
                 if (drawn == 2)
                 {
-                    ExternalView.ShowInWindow(window, windowSize);
+                    // With a headset the window shows its screen where the headset does (MirrorLayers).
                     if (headset)
                         ExternalView.ShowInHeadset(ToMatrix(XrSession.Head));
+                    if (toWindow && (!headset || !MirrorLayers.Ready))
+                        ExternalView.ShowInWindow(window, windowSize);
                 }
                 eyesDrawn = drawn == 2;
                 headsetEyes = headset && eyesDrawn;
@@ -687,9 +706,10 @@ namespace SpaceEngineersVR.Rendering
                 bool drawn = MainMenu.DrawBackdrop(out bool toHeadset);
                 if (drawn)
                 {
-                    ExternalView.ShowInWindow(window, windowSize);
                     if (toHeadset)
                         ExternalView.ShowInHeadset(ToMatrix(XrSession.Head));
+                    if (!toHeadset || (VRSettings.DesktopView && !MirrorLayers.Ready))
+                        ExternalView.ShowInWindow(window, windowSize);
                 }
                 eyesDrawn = drawn;
                 headsetEyes = drawn && toHeadset;
@@ -882,6 +902,58 @@ namespace SpaceEngineersVR.Rendering
 
         internal static void Clear(object target) =>
             clearRtv.Invoke(renderContext.GetValue(null), new[] { target, new SharpDX.Mathematics.Interop.RawColor4(0f, 0f, 0f, 0f) });
+
+        /// <summary>Fills <paramref name="target"/> with <paramref name="color"/>, red, green, blue and alpha as they are written.</summary>
+        internal static void Fill(object target, Vector4 color) =>
+            fill(target, new SharpDX.Mathematics.Interop.RawColor4(color.X, color.Y, color.Z, color.W));
+
+        /// <summary>
+        /// A render target of the window's format that is the caller's to keep from frame to frame: the pool's (<see cref="Borrow"/>)
+        /// are taken back at each frame's end. The renderer makes it again, empty, when the device is reset (<see cref="ResourceOf"/>).
+        /// </summary>
+        internal static object CreateTarget(string name, Vector2I size) => createTarget(name, size.X, size.Y, windowFormat);
+
+        /// <summary>The D3D resource behind a target; a new one after a device reset.</summary>
+        internal static SharpDX.Direct3D11.Resource ResourceOf(object target) => resourceOf(target);
+
+        private static void BindTargetCalls()
+        {
+            Type rwTextures = ReflectionUtil.Field(Managers, "RwTextures").FieldType;
+
+            ILGenerator il = ReflectionUtil.Begin("EyeRenderer.Fill", null, new[] { typeof(object), typeof(SharpDX.Mathematics.Interop.RawColor4) }, Render, out DynamicMethod method);
+            il.Emit(OpCodes.Call, ReflectionUtil.Need(renderContext.GetGetMethod(true), "MyRender11.RC"));
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Castclass, RtvBindable);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Callvirt, ReflectionUtil.Need(clearRtv, "MyRenderContext.ClearRtv"));
+            il.Emit(OpCodes.Ret);
+            fill = (Action<object, SharpDX.Mathematics.Interop.RawColor4>)method.CreateDelegate(typeof(Action<object, SharpDX.Mathematics.Interop.RawColor4>));
+
+            // CreateRtv(name, width, height, format, samplesCount 1, samplesQuality 0, no option flags, default usage, one mip, no CPU access)
+            MethodInfo createRtv = ReflectionUtil.Need(AccessTools.Method(rwTextures, "CreateRtv"), "MyRwTextureManager.CreateRtv");
+            il = ReflectionUtil.Begin("EyeRenderer.CreateTarget", typeof(object), new[] { typeof(string), typeof(int), typeof(int), typeof(Format) }, Render, out method);
+            il.Emit(OpCodes.Ldsfld, ReflectionUtil.Field(Managers, "RwTextures"));
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Ldarg_2);
+            il.Emit(OpCodes.Ldarg_3);
+            il.Emit(OpCodes.Ldc_I4_1);
+            il.Emit(OpCodes.Ldc_I4_0);
+            il.Emit(OpCodes.Ldc_I4_0);
+            il.Emit(OpCodes.Ldc_I4_0);
+            il.Emit(OpCodes.Ldc_I4_1);
+            il.Emit(OpCodes.Ldc_I4_0);
+            il.Emit(OpCodes.Callvirt, createRtv);
+            il.Emit(OpCodes.Ret);
+            createTarget = (Func<string, int, int, Format, object>)method.CreateDelegate(typeof(Func<string, int, int, Format, object>));
+
+            il = ReflectionUtil.Begin("EyeRenderer.ResourceOf", typeof(SharpDX.Direct3D11.Resource), new[] { typeof(object) }, Render, out method);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Castclass, Resource);
+            il.Emit(OpCodes.Callvirt, ReflectionUtil.Need(AccessTools.PropertyGetter(Resource, "Resource"), "IResource.Resource"));
+            il.Emit(OpCodes.Ret);
+            resourceOf = (Func<object, SharpDX.Direct3D11.Resource>)method.CreateDelegate(typeof(Func<object, SharpDX.Direct3D11.Resource>));
+        }
 
         /// <summary>Draws <paramref name="source"/> stretched over <paramref name="viewport"/> of <paramref name="target"/>, premultiplied alpha over what is there.</summary>
         internal static void Blend(object target, object source, MyViewport viewport) =>

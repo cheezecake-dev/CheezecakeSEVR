@@ -10,8 +10,9 @@ namespace SpaceEngineersVR.Rendering
     internal static partial class ExternalView
     {
         /// <summary>
-        /// The desktop: the picture over the lower left of each eye's part of the window (a quarter of its width at the
-        /// screen's first size, in proportion to <see cref="VRSettings.ExternalViewSize"/>), after the eyes were copied into it. With a headset the window shows the left eye, so it shows the picture too.
+        /// The desktop without a headset: the picture over the lower left of each eye's part of the window (a quarter of its width at the
+        /// screen's first size, in proportion to <see cref="VRSettings.ExternalViewSize"/>), after the eyes were copied into it. With a
+        /// headset the window shows the screen where it stands, as the headset does (<see cref="MirrorLayers"/>).
         /// </summary>
         public static void ShowInWindow(object window, Vector2I windowSize)
         {
@@ -153,6 +154,8 @@ namespace SpaceEngineersVR.Rendering
                 Vector3 inHead = Vector3.Transform(pose.Translation, Matrix.Invert(EyeRenderer.Head));
                 float light = (1f - CameraCut.Blackness) * (1f - Vignette.DarknessAt(inHead));
                 VisorGlass.CopyThrough(texture, new Vector2I(TextureWidth, TextureHeight), image, light);
+                MirrorLayers.Screen(texture, new Vector2I(TextureWidth, TextureHeight), pose, width, width * TextureHeight / TextureWidth,
+                    VisorGlass.Behind * MathHelper.Clamp(light, 0f, 1f));
             }
             finally
             {

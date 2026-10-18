@@ -20,8 +20,18 @@ namespace SpaceEngineersVR.Hands
     {
         // ---- The log ----
 
+        /// <summary>The log's budgets are a world's: a new world starts them again.</summary>
+        private static void CountFromThisWorld()
+        {
+            if (ReferenceEquals(countedIn, MySession.Static))
+                return;
+            countedIn = MySession.Static;
+            logs = nearLogs = 0;
+        }
+
         private static void Say(string message)
         {
+            CountFromThisWorld();
             long now = Stopwatch.GetTimestamp();
             if (now - logWindow > Stopwatch.Frequency)
             {
@@ -39,6 +49,7 @@ namespace SpaceEngineersVR.Hands
         private static void LogNear(Hand hand, Vector3D palm, long now, in MatrixD trackingToModel, in MatrixD modelToWorld)
         {
             int i = (int)hand;
+            CountFromThisWorld();
             if (nearLogs >= MaxNearLogs || candidates.Count == 0 || now - nearLoggedAt[i] < NearLogEvery)
                 return;
             Candidate nearest = candidates[0];

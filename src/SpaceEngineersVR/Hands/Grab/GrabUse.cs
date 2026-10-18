@@ -34,7 +34,7 @@ namespace SpaceEngineersVR.Hands
     /// (<see cref="FingerPress.IsHandTool"/>), so with a block in hand the right grip on a cargo container, a terminal, a
     /// door or a seat uses it as on foot (build mode does not claim the grip: the left stick click turns the block).</para>
     /// <para>What it takes: the game keeps every use object as a detector box in its block's space
-    /// (<see cref="MyUseObjectsComponent.DetectorInteractiveObjects"/>), which is what <see cref="FingerPress"/> reads
+    /// (<see cref="Sandbox.Game.Components.MyUseObjectsComponent.DetectorInteractiveObjects"/>), which is what <see cref="FingerPress"/> reads
     /// too; the box nearest the palm that is taken wins. Every kind is taken (<see cref="Classify"/>) except a short list,
     /// each for a reason: the kinds other features own (the ladder: the ladder grab; the push-buttons: the fingertip), and
     /// from a seat, the other seats and pods (the game seats a standing character, not one already seated) and the
@@ -271,6 +271,7 @@ namespace SpaceEngineersVR.Hands
         private static Place lastPlace;
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(GrabUse));
         private static int takeErrors, useErrors, highlightErrors, logs, nearLogs, frame;
+        private static MySession countedIn;
         private static long logWindow;
         private static int logsInWindow;
         private static Action<IMyUseObject> highlight;

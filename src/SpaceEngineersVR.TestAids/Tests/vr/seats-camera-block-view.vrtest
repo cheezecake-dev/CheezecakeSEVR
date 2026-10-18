@@ -1,0 +1,62 @@
+# Looking through a camera block: the eyes go to a still screen showing the camera, a right-stick flick switches camera,
+# the stick up zooms, and holding Y returns to the character. Drill Ship Atmosphere mk.1's two cameras from Earth Planet.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: the head up, the world on the screen ---------------------------------------------------------------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+# remote control and cameras reach a ship only through its antenna, which this one has off
+switch Drill Ship Antenna on
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+wait 2
+headset world.png
+expect headset bright
+
+# ---- View through the bow camera (the terminal's View action, a setup step) -------------------------------------------
+# the camera's View button in the terminal
+control Camera Bow on Drill Ship Atmosphere mk.1
+wait 2
+expect log VR controls: camera over on foot within 5
+expect log Forced view: on (the view is a camera block within 5
+headset camera.png
+expect headset changed
+
+# ---- Flick the right stick right: the next camera, then left: the previous one ----------------------------------------
+stick right 1 0
+wait 0.3
+stick right 0 0
+wait 0.5
+expect log Camera view: right stick flicked right, the next camera (SWITCH_RIGHT) within 5
+stick right -1 0
+wait 0.3
+stick right 0 0
+wait 0.5
+expect log Camera view: right stick flicked left, the previous camera (SWITCH_LEFT) within 5
+
+# ---- The stick up zooms in while held, down zooms out ----------------------------------------------------------------
+stick right 0 1
+wait 1
+expect log Camera view: right stick: zoom in (CAMERA_ZOOM_IN) held within 5
+stick right 0 0
+wait 0.5
+expect log Camera view: right stick: zoom let go within 5
+stick right 0 -1
+wait 1
+expect log Camera view: right stick: zoom out (CAMERA_ZOOM_OUT) held within 5
+stick right 0 0
+wait 0.5
+
+# ---- Hold Y: back to the character and the world ----------------------------------------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+expect log Forced view: over within 5
+expect log VR controls: on foot within 5
+headset back.png
+expect headset changed
+expect headset bright

@@ -1,0 +1,46 @@
+# Hands: grab to use a door. A grip with the palm at a door's use spot takes hold of it; drawing the hand 12 cm away pulls it,
+# and that uses the door (a slide door opens or closes). Letting go of the grip without drawing the hand does not.
+# World: Earth Planet (survival, on foot, in gravity). A slide door is built 1.7 m ahead (a large block, 2.5 m). The door
+# itself is not read here: the plugin's own report is the check. The palm
+# position is a first guess: tune it from the "Grab use: right palm N cm from" lines in the log.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a slide door in front of the character --------------------------------------------------------------
+
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build LargeBlockSlideDoor 3 as Test door
+# the door's use box is the doorway's middle, about the closed door: standing in the doorway, 1.2 m from the block's
+# middle, its near side is 37 cm ahead, under the hand
+goto Test door 1.2
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.2
+hand right 0.1 1.25 -0.45
+wait 1
+expect no log Grab use: right hand took hold
+
+# ---- Grip, then let go with the hand where it is: held, but not pulled -> not used -----------------------------------------------
+
+press right grip
+wait 1
+expect log Grab use: right hand took hold of within 5
+release right grip
+wait 1
+expect no log Grab use: right hand used
+
+# ---- Grip again and draw the hand back 20 cm: the pull -> used -------------------------------------------------------------------
+
+press right grip
+wait 1
+hand right 0.1 1.25 -0.25
+wait 1
+expect log Grab use: right hand used within 5
+release right grip
+wait 1
+expect no log Exception

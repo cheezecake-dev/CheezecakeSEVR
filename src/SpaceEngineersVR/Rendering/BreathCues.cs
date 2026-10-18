@@ -1,4 +1,4 @@
-// BreathCues: the breathing sounds the game asks for and no longer defines, made from its own choking sound and its own recordings.
+// BreathCues: the breathing sounds the game asks for under names it does not define in every world, made from its own definitions and recordings.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,24 +16,24 @@ namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
     /// The game's breathing (MyCharacterBreath) asks for its sounds by name, PlayVocBreath1L at rest and PlayVocBreath2L heavy (or
-    /// what the character's definition names, BreathCalmSoundName and BreathHeavySoundName), but the game's sound definitions no
-    /// longer have them, so it breathes in silence. Its recordings are still in its content, beside the choking it does play:
-    /// Audio\REAL\PLAYER\RealPlayVocBreath1L2d and RealPlayVocBreath2L2d by RealPlayChokeALoop2d, and the female voice's
-    /// (RealFemPlay...). Each one missing is made here from the character's own choking sound (its OxygenChokeNormalSoundName,
-    /// else PlayChokeA): a copy of it, so its category, volume, loop, 2D and helmet filters are the game's, with the choking
-    /// recording's name changed to the breathing recording's in the same folder (<see cref="ChokeTake"/> to <see cref="CalmTake"/>
-    /// or <see cref="HeavyTake"/>).
+    /// what the character's definition names, BreathCalmSoundName and BreathHeavySoundName: FemPlayVocBreath1L for the female
+    /// voice), but the game defines them only under their realistic names (RealPlayVocBreath1L, Content\Data\Audio_player.sbc).
+    /// A world with arcade sounds asks for the arcade one (MySoundPair.SoundId), which does not exist, and loads no sound named
+    /// "Real..." (MyAudioExtensions.GetArcadeSoundDataFromDefinitions), so in it the astronaut breathes in silence.
     /// <para>
-    /// Under the plain name, so the game's sound pair (MySoundPair) finds it whatever the world's sound setting: a world with arcade
-    /// sounds loads no sound named "Real..." (MyAudioExtensions.GetArcadeSoundDataFromDefinitions). A character whose definition
-    /// names its own choking but no breathing (the female voice, if hers is named apart) is given breathing named after its
-    /// choking ("PlayFemChokeA" to "PlayFemVocBreath1L"), so it breathes in its own voice.
+    /// Each one missing under its plain name is made here: a copy of the game's realistic definition (its recording, volume, loop
+    /// and 2D, as the game made it) under the plain name, which the game's sound pair takes before either the arcade or the
+    /// realistic name, so the breathing is the same in any world. A character with no realistic definition either is given one
+    /// made from its own choking sound (its OxygenChokeNormalSoundName, else PlayChokeA): a copy of it with the choking
+    /// recording's name changed to the breathing recording's in the same folder (<see cref="ChokeTake"/> to <see cref="CalmTake"/>
+    /// or <see cref="HeavyTake"/>); and a character whose definition names its own choking but no breathing is given breathing
+    /// named after its choking ("PlayFemChokeA" to "PlayFemVocBreath1L"), so it breathes in its own voice.
     /// </para>
     /// <para>
     /// They go into the lists the game loads its sounds from (MyAudioExtensions.GetSoundDataFromDefinitions and the arcade one, at
     /// start-up and at each world's load and unload), not into its sound definitions: nothing is saved or sent, and only this
-    /// machine hears them. A sound the game or a mod defines is never replaced; a recording missing from the content (a game
-    /// update moved it) is left out, and logged.
+    /// machine hears them. A sound the game or a mod defines under the plain or arcade name is never replaced; a recording missing
+    /// from the content (a game update moved it) is left out, and logged.
     /// </para>
     /// </summary>
     internal static class BreathCues
@@ -78,7 +78,7 @@ namespace SpaceEngineersVR.Rendering
             }
             catch (Exception e)
             {
-                guard.Failed(e, "Helmet breathing: its sounds could not be made; the game breathes as it has it (in silence)");
+                guard.Failed(e, "Helmet breathing: its sounds could not be made; the game breathes as it has it (in silence in a world with arcade sounds)");
             }
         }
 
@@ -118,8 +118,18 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         private static void Add(List<MySoundData> made, Dictionary<string, MySoundData> sounds, string name, string choke, string take, MyCharacterDefinition character)
         {
-            if (Find(sounds, name) != null || made.Exists(data => string.Equals(data.SubtypeId.String, name, StringComparison.OrdinalIgnoreCase)))
+            if (sounds.ContainsKey(name) || sounds.ContainsKey("Arc" + name)
+                || made.Exists(data => string.Equals(data.SubtypeId.String, name, StringComparison.OrdinalIgnoreCase)))
                 return;
+            // The game's own, defined only for worlds with realistic sounds: the same sound under the plain name, for any world.
+            if (sounds.TryGetValue("Real" + name, out MySoundData realistic) && realistic.Waves != null && realistic.Waves.Count > 0)
+            {
+                MySoundData plain = ShallowCopy.Of(realistic);
+                plain.SubtypeId = MyStringHash.GetOrCompute(name);
+                made.Add(plain);
+                Once($"Helmet breathing: {name} for {character.Id.SubtypeName} made from the game's realistic sound {realistic.SubtypeId}, so a world with arcade sounds has it too");
+                return;
+            }
             MySoundData source = Find(sounds, choke);
             if (source?.Waves == null || source.Waves.Count == 0)
             {

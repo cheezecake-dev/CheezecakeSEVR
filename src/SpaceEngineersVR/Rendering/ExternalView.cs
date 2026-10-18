@@ -24,7 +24,7 @@ namespace SpaceEngineersVR.Rendering
     /// The pass is small (<see cref="TextureWidth"/> x <see cref="TextureHeight"/>, larger only for a block's camera:
     /// <see cref="FitSize"/>) but the renderer sizes its screen
     /// resources (GBuffer, light tiles, auto-exposure) once, from m_resolution, so it gets a set of its own that is
-    /// swapped in around the pass (<see cref="SwapIn"/>), together with m_resolution, ViewportResolution and
+    /// swapped in around the pass (<see cref="RenderPass"/>), together with m_resolution, ViewportResolution and
     /// FullResViewport. Everything else the pass would leave behind for the eyes' next frame is kept out of it: sun
     /// shadows (the cascades are cached between passes), spot light shadows (and their list), flares and group occlusion
     /// queries (the eyes would be culled by what the chase camera could not see: <c>MyActor.IsOccluded</c> is patched off for the

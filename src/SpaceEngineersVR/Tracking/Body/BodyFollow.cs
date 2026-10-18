@@ -18,11 +18,11 @@ namespace SpaceEngineersVR.Tracking
     /// </summary>
     internal static class BodyFollow
     {
-        /// <summary>On foot and standing, the head turns this far from the body before the body turns after it, radians; RenderDebug NeckLimit=n sets it, degrees, while the game runs.</summary>
-        internal static float NeckLimit { get; set; } = DefaultNeckLimit;
-
         /// <summary>The default of <see cref="NeckLimit"/>, 50 deg.</summary>
         internal static readonly float DefaultNeckLimit = MathHelper.ToRadians(50f);
+
+        /// <summary>On foot and standing, the head turns this far from the body before the body turns after it, radians; RenderDebug NeckLimit=n sets it, degrees, while the game runs.</summary>
+        internal static float NeckLimit { get; set; } = DefaultNeckLimit;
         private static readonly float MaxTurnPerFrame = MathHelper.ToRadians(9f); // 540 deg/s at 60 Hz
 
         /// <summary>The turns are reported at most once a second (<see cref="Note"/>).</summary>

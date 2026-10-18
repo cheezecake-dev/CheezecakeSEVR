@@ -80,9 +80,6 @@ namespace SpaceEngineersVR.Tracking
             return best;
         }
 
-        /// <summary>How far <see cref="PushOut"/> moves the offset, metres.</summary>
-        public static float PushDistance(Vector3 offset) => Vector3.Distance(offset, PushOut(offset));
-
         /// <summary>
         /// How far ahead of the head bone the body can be drawn, up to <paramref name="wanted"/>, with the eyes at this offset
         /// (unmoved body's axes) still out of it: the room between them and the body's front at their height (metres, 0 or
@@ -154,8 +151,13 @@ namespace SpaceEngineersVR.Tracking
                 return Vector3.Zero;
             if (reach <= 0f)
                 return offset;
-            float side = reach * LockSideShare;
-            float along = offset.Z < 0f ? reach : LockBack;
+            return Ellipse(offset, reach * LockSideShare, reach, LockBack);
+        }
+
+        /// <summary><see cref="LockHead"/>'s smooth hold, within an ellipse of the given half-widths.</summary>
+        private static Vector3 Ellipse(Vector3 offset, float side, float forward, float back)
+        {
+            float along = offset.Z < 0f ? forward : back;
             float u = offset.X / side, v = offset.Z / along;
             float r = (float)Math.Sqrt(u * u + v * v);
             if (r <= LockSoftFrom)
@@ -194,16 +196,37 @@ namespace SpaceEngineersVR.Tracking
         /// of it to the side, <see cref="LockBack"/> back, where the head and the body are), and up and down within
         /// <paramref name="reach"/>, as smoothly. Seated, the body does not crouch or walk under the head, so height has a limit
         /// too: stand up in the room and the view stops short of the canopy, slump and it stops short of the chest.
+        /// The seat's own eye, where a flat player sees from, is always within the part taken one to one: a seat whose eye is
+        /// further from the head than the ellipse goes (a large pilot's seat has it 10 cm back) stretches that side to it.
         /// </summary>
-        public static Vector3 LockSeat(Vector3 offset, float reach)
+        /// <param name="eye">The seat's eye from the seated character's head, in the same basis.</param>
+        public static Vector3 LockSeat(Vector3 offset, float reach, Vector3 eye)
         {
             if (!IsFinite(offset))
                 return Vector3.Zero;
             if (reach <= 0f)
                 return offset;
-            Vector3 held = LockHead(offset, reach);
-            held.Y = Soft(offset.Y, reach);
+            SeatLimits(reach, eye, out float side, out float forward, out float back, out float upDown);
+            Vector3 held = Ellipse(offset, side, forward, back);
+            held.Y = Soft(offset.Y, upDown);
             return held;
+        }
+
+        /// <summary>
+        /// <see cref="LockSeat"/>'s half-widths for a seat whose eye is <paramref name="eye"/> from the seated character's head:
+        /// the on-foot ellipse and <paramref name="reach"/> up and down, each side stretched as far as it takes to have the eye
+        /// within the part taken one to one.
+        /// </summary>
+        public static void SeatLimits(float reach, Vector3 eye, out float side, out float forward, out float back, out float upDown)
+        {
+            if (!IsFinite(eye))
+                eye = Vector3.Zero;
+            side = Math.Max(reach * LockSideShare, Math.Abs(eye.X) / (LockSoftFrom * 0.5f));
+            float u = eye.X / side;
+            float room = (float)Math.Sqrt(LockSoftFrom * LockSoftFrom - u * u);
+            forward = eye.Z < 0f ? Math.Max(reach, -eye.Z / room) : reach;
+            back = eye.Z > 0f ? Math.Max(LockBack, eye.Z / room) : LockBack;
+            upDown = Math.Max(reach, Math.Abs(eye.Y) / LockSoftFrom);
         }
 
         /// <summary>One axis held within ±<paramref name="limit"/> with the lock's smooth stop (<see cref="LockHead"/>).</summary>

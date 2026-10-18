@@ -96,7 +96,7 @@ switch as the Windows MMDevice routing.
 
 ### 7. Stall watchdog from /proc
 The Windows watchdog reads thread state through kernel32. On Linux it reports a render or main thread that stops making
-progress with kernel state, CPU time, process I/O and GC counts from `/proc` (`StallWatchdog.cs`). CoreCLR cannot sample
+progress with kernel state, CPU time, process I/O and GC counts from `/proc` (`StallWatchdog.Linux.cs`). CoreCLR cannot sample
 another thread's stack, so there is no stack. No false stalls in a menu run.
 
 ### 8. Dynamic resolution on a GPU-bound frame
@@ -124,7 +124,7 @@ the game went on at 120 frames/s in the window and VR came back after the server
 one run, with VRAM (2.55 GB), file descriptors (518-522) and threads (124-125) flat.
 
 ### 10. Where the plugin coordinates with linux-compat
-Two workarounds in this plugin exist because of linux-compat patches. They are suggestions for Viktor only where a hook
+Two workarounds in this plugin exist because of linux-compat patches. They are suggestions for CometWorks only where a hook
 in linux-compat would be cleaner than ours.
 
 | linux-compat patch | What it does | What the plugin does |

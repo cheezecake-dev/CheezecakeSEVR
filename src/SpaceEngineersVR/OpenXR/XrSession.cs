@@ -142,6 +142,9 @@ namespace SpaceEngineersVR.OpenXR
         /// </summary>
         public static float? OriginAboveFloor { get; private set; }
 
+        /// <summary>The LOCAL space's origin in the STAGE space (the floor's), with <see cref="OriginAboveFloor"/>; null when that is unknown.</summary>
+        public static VRageMath.Matrix? LocalInStage { get; private set; }
+
         /// <summary>The eye poses (in the LOCAL space: origin at the head when tracking started) and FOVs of the current frame.</summary>
         public static XrView View(int eye) => views[eye];
 
@@ -355,6 +358,8 @@ namespace SpaceEngineersVR.OpenXR
             {
                 views[0] = located[0];
                 views[1] = located[1];
+                if (Rendering.RenderDebug.EyeCant != 0)
+                    Cant(Rendering.RenderDebug.EyeCant);
             }
 
             var head = new XrSpaceLocation { Type = XrStructureType.SpaceLocation };
@@ -363,7 +368,49 @@ namespace SpaceEngineersVR.OpenXR
             if ((head.LocationFlags & headValid) == headValid)
                 Head = head.Pose;
             LocateFloor();
+            if (!eyesLogged && (viewState.ViewStateFlags & valid) == valid && (head.LocationFlags & headValid) == headValid)
+                LogEyes();
             return true;
+        }
+
+        /// <summary>Debug (RenderDebug EyeCant=n): each eye turned n degrees outward about its own up, left to the left.</summary>
+        private static void Cant(int degrees)
+        {
+            for (int eye = 0; eye < 2; eye++)
+            {
+                XrQuaternionf o = views[eye].Pose.Orientation;
+                var q = new VRageMath.Quaternion(o.X, o.Y, o.Z, o.W);
+                float angle = degrees * (float)Math.PI / 180f * (eye == 0 ? 1f : -1f);
+                q = q * VRageMath.Quaternion.CreateFromAxisAngle(VRageMath.Vector3.Up, angle);
+                views[eye].Pose.Orientation = new XrQuaternionf { X = q.X, Y = q.Y, Z = q.Z, W = q.W };
+            }
+        }
+
+        private static bool eyesLogged;
+
+        /// <summary>
+        /// Once a run: where each eye is in the head and which way it turns from the head's forward, and its field of view, as
+        /// the runtime gives them. Some headsets (and drivers) turn the eyes outward (canted displays); a part of the picture
+        /// drawn with the head's or the other eye's turn shows only on such a headset.
+        /// </summary>
+        private static void LogEyes()
+        {
+            eyesLogged = true;
+            VRageMath.Matrix headInverse = VRageMath.Matrix.Invert(Rendering.EyeRenderer.ToMatrix(Head));
+            var text = new System.Text.StringBuilder("OpenXR eyes, in the head:");
+            for (int eye = 0; eye < 2; eye++)
+            {
+                VRageMath.Matrix inHead = Rendering.EyeRenderer.ToMatrix(views[eye].Pose) * headInverse;
+                VRageMath.Vector3 p = inHead.Translation * 1000f;
+                VRageMath.Vector3 f = inHead.Forward, u = inHead.Up;
+                double yaw = Math.Atan2(-f.X, -f.Z) * 180.0 / Math.PI, pitch = Math.Asin(Math.Max(-1f, Math.Min(1f, f.Y))) * 180.0 / Math.PI;
+                double roll = Math.Atan2(-inHead.Right.Y, u.Y) * 180.0 / Math.PI;
+                XrFovf fov = views[eye].Fov;
+                const double deg = 180.0 / Math.PI;
+                text.Append(System.FormattableString.Invariant(
+                    $" {(eye == 0 ? "left" : "right")} at ({p.X:F1}, {p.Y:F1}, {p.Z:F1}) mm, turned yaw {yaw:F2} pitch {pitch:F2} roll {roll:F2} deg, fov left {fov.AngleLeft * deg:F1} right {fov.AngleRight * deg:F1} up {fov.AngleUp * deg:F1} down {fov.AngleDown * deg:F1} deg;"));
+            }
+            Log.Info(text.ToString().TrimEnd(';'));
         }
 
         private static int eyeRectWidth, eyeRectHeight;
@@ -438,6 +485,7 @@ namespace SpaceEngineersVR.OpenXR
                 Xr.xrDestroySpace(stageSpace);
             stageSpace = 0;
             OriginAboveFloor = null;
+            LocalInStage = null;
             floorLogged = false;
             if (viewSpace != 0)
                 Xr.xrDestroySpace(viewSpace);

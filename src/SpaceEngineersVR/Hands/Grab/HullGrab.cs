@@ -35,7 +35,7 @@ namespace SpaceEngineersVR.Hands
     /// (a grid's or a voxel map's); the velocity is the surface's own at that point plus
     /// <see cref="HullGrabMath.ServoVelocity"/> of the gap between the anchor and the hand. Two hands on: the one that
     /// took hold last leads, and the other's anchor follows its hand until it leads in turn. The ladder climbs by the game's
-    /// own steps (MyCharacterLadderComponent.ProceedLadderMovement): the hand's pull is banked, and a step up or down is
+    /// own steps (MyCharacterLadderComponent.ProceedLadderMovementInternal): the hand's pull is banked, and a step up or down is
     /// asked for once half a step is owed. The grip is claimed through <see cref="GripClaim"/> at
     /// <see cref="Priority"/>, after the helmet, floating items and grab-to-use, so a grip on a door stays the door's.
     /// </remarks>
@@ -140,6 +140,9 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Ladder: the climb the held hands have pulled for and not yet been given, metres, + up.</summary>
         private static float owed;
 
+        /// <summary>Ladder: whether this climb has noted a pull it could not count, or a step the game would not give.</summary>
+        private static bool ladderUncounted, ladderRefused;
+
         /// <summary>Ladder: the step asked of the game this step (+1 up, -1 down), checked after it answered.</summary>
         private static int asked;
 
@@ -185,7 +188,8 @@ namespace SpaceEngineersVR.Hands
             if (!PatchRegistry.Apply("ladder", () =>
                 {
                     ladderStep = AccessTools.FieldRefAccess<MyCharacterLadderComponent, int>("m_currentLadderStep");
-                    harmony.Patch(AccessTools.Method(typeof(MyCharacterLadderComponent), nameof(MyCharacterLadderComponent.ProceedLadderMovement)),
+                    // The public ProceedLadderMovement is a one-line forward the JIT inlines into MyCharacter's, past a patch on it.
+                    harmony.Patch(AccessTools.Method(typeof(MyCharacterLadderComponent), "ProceedLadderMovementInternal"),
                         prefix: new HarmonyMethod(typeof(HullGrab), nameof(BeforeLadderMove)),
                         postfix: new HarmonyMethod(typeof(HullGrab), nameof(AfterLadderMove)));
                     Log.Info("Hull grab: hull and ladder grabbing hooked (physics step, ladder movement)");
@@ -403,11 +407,19 @@ namespace SpaceEngineersVR.Hands
                 {
                     hold.WasOn = true;
                     owed = 0f;
+                    ladderUncounted = ladderRefused = false;
                     Note($"Hull grab: {hand} hand climbs {Describe(body.Ladder)}, {StepLength(body):F2} m a step");
                 }
                 ladders++;
                 if (!placed || !TryModel(hand, trackingToModel, out Vector3D model))
+                {
+                    if (!ladderUncounted)
+                    {
+                        ladderUncounted = true;
+                        Note($"Hull grab: {hand} hand's pull on the ladder not counted: {(placed ? "the hand is not tracked" : "the hands' place on the body is not known this step")}");
+                    }
                     continue;
+                }
                 // Model space has the body's up as +Y: a hand pulled down is a climb up.
                 if (hold.HasLast)
                 {
@@ -475,8 +487,18 @@ namespace SpaceEngineersVR.Hands
             asked = 0;
             try
             {
-                if (ladderStep == null || ladderStep(__instance) == 0 || !(__instance.Entity is MyCharacter body))
+                if (ladderStep == null || !(__instance.Entity is MyCharacter body))
                     return;
+                if (ladderStep(__instance) == 0)
+                {
+                    // MyCharacterLadderComponent climbs only onto ladder it finds above the head (or below the feet)
+                    if (!ladderRefused)
+                    {
+                        ladderRefused = true;
+                        Note($"Hull grab: the ladder gave no step {(direction > 0 ? "up" : "down")} for {owed:0.00} m of pull: no ladder {(direction > 0 ? "above the head" : "below the feet")}, or the way is blocked");
+                    }
+                    return;
+                }
                 owed -= direction * StepLength(body);
                 for (int i = 0; i < 2; i++)
                 {
@@ -541,6 +563,8 @@ namespace SpaceEngineersVR.Hands
                      $"gravity {body.Gravity.Length():F2} m/s²");
                 return true;
             }
+            if (hulls)
+                Note($"Hull grab: {hand} grip, no hull or rock within {HullReach * 100f:0} cm of the palm at {Format(model)} (the body's frame)");
             return false;
         }
 

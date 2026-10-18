@@ -263,7 +263,9 @@ namespace SpaceEngineersVR.Rendering
                     if (sentNow != traceSentBefore)
                     {
                         var queue = drawQueue.GetValue(manager) as IDictionary;
-                        string keys = queue == null ? "?" : string.Join(", ", queue.Keys.Cast<object>().Select(key => $"'{key}'"));
+                        string keys;
+                        lock (SpriteQueueLock.Gate)
+                            keys = queue == null ? "?" : string.Join(", ", queue.Keys.Cast<object>().Select(key => $"'{key}'"));
                         traceMissing = $"; a frame with none while the game was sending: game frame {frameStatus.GetValue(null)}, sprite targets waiting [{keys}]";
                     }
                 }

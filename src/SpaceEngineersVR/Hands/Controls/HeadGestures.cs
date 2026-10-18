@@ -28,8 +28,7 @@ namespace SpaceEngineersVR.Hands
     /// of its shell) off its front and right of the middle of the head (<see cref="OnRightHalf"/>) opens or closes the helmet
     /// (<c>SwitchHelmet</c>, as the HELMET key does).</item>
     /// <item><b>Lamp, by grip on its left side.</b> A grip on the left side toggles the suit lamp (<c>SwitchLights</c>, as the
-    /// key does). Either hand works on either side. Not the left hand at the helmet's mouth, the chin: that is push to talk
-    /// (<see cref="VoiceTalk"/>), which asks first.</item>
+    /// key does). Either hand works on either side.</item>
     /// <item><b>Lamp, by tap.</b> A tap of a fingertip on the side of the head (the temple, either side) toggles it the same
     /// way: the tip touches, lifts within a second and a half, and no grip was pressed meanwhile (so reaching for the helmet
     /// does not switch the lamp twice). Not with a tool in that hand.</item>
@@ -411,8 +410,7 @@ namespace SpaceEngineersVR.Hands
 
         private static void Hover(Hand hand, HandRun run, in Vector3D grip, in Frame frame, long now)
         {
-            // The left hand at the mouth is push to talk's (VoiceTalk), which takes that grip first: no helmet tick there.
-            bool on = OnHelmet(grip, frame.Head, run.Hover) && !VoiceTalk.AtMouth(hand);
+            bool on = OnHelmet(grip, frame.Head, run.Hover);
             if (on == run.Hover)
                 return;
             run.Hover = on;

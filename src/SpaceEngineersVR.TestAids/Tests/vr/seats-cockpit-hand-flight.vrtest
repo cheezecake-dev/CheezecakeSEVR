@@ -1,0 +1,52 @@
+# Flying from a cockpit with the buttons: in a cockpit that has a cockpit rig (the small cockpit here), A raises the ship and
+# the grips roll it, with the thumbsticks left to the rig's own sticks. Sat down by the game's Use (a setup step); the
+# hand entry is tested in seats-pilot-seat-enter-leave. Drill Ship Atmosphere mk.1 from Earth Planet.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: the ship's cockpit, and sit in it -----------------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+wait 1
+# the game's Use on the cockpit (the ship stands high on its landing gear, out of reach from the ground)
+control Cockpit on Drill Ship Atmosphere mk.1
+wait 2
+read character
+expect state == sitting
+expect controlledEntity.type == MyCockpit
+expect log VR controls: ship controller (Cockpit) within 5
+wait 1
+
+# ---- A held raises the ship ------------------------------------------------------------------------------------------
+read grid Drill Ship Atmosphere mk.1
+mark
+press right a
+wait 3
+release right a
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.5
+
+# ---- Right grip rolls the ship: the pilot's up turns (the seat turns with the ship) ----------------------------------
+# Hands kept at the sides, away from the cockpit's sticks.
+hand left -0.3 0.9 -0.1
+hand right 0.3 0.9 -0.1
+read character
+mark
+press right grip
+wait 2
+release right grip
+wait 0.5
+read character
+expect up moved > 0.05
+
+# ---- Hold Y to get up ------------------------------------------------------------------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+read character
+expect state != sitting

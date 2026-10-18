@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using HarmonyLib;
 using Sandbox.Definitions;
@@ -41,7 +42,10 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The game's own distance for the crosshair point (MyCharacterWeaponPositionComponent.UpdateLogicalWeaponPosition).</summary>
         private const double CrosshairDistance = 2000.0;
 
-        private static int errors, shootCalls;
+        private static int errors;
+
+        /// <summary>Shots logged since the item in hand was taken: the first three are.</summary>
+        private static int shootCalls;
 
         public static void Patch(Harmony harmony)
         {
@@ -230,17 +234,27 @@ namespace SpaceEngineersVR.Hands
 
         private static MyHandItemDefinition noted;
         private static bool notedWrist, notedMirrored;
+        private static long notedAt;
 
-        /// <summary>Once per item taken in hand: where it sits on the controller's grip, for the log.</summary>
+        /// <summary>
+        /// Once per item taken in hand: where it sits on the controller's grip, for the log. Called each frame it is held, so
+        /// a gap of half a second means it was put away and taken out again, which counts as taken in hand anew.
+        /// </summary>
         private static void NotePlacement(MyHandItemDefinition item, in MatrixD world, in MatrixD grip)
         {
-            if (ReferenceEquals(item, noted) && notedWrist == WristGrasp && notedMirrored == ItemSpots.Mirrored)
+            long now = Stopwatch.GetTimestamp(), last = notedAt;
+            notedAt = now;
+            if (ReferenceEquals(item, noted) && notedWrist == WristGrasp && notedMirrored == ItemSpots.Mirrored
+                && now - last < Stopwatch.Frequency / 2)
                 return;
             noted = item;
+            shootCalls = 0;
             notedWrist = WristGrasp;
             notedMirrored = ItemSpots.Mirrored;
             Vector3D wrist = Vector3D.Transform((Vector3D)ItemSpots.Tool(item).Translation, world);
-            Log.Info($"Hand tools: the {item.Id.SubtypeName} is held in the {ItemSpots.ToolHand.ToString().ToLowerInvariant()} hand " +
+            // The cube placer (the build and colour tools) is a type with no subtype.
+            string name = string.IsNullOrEmpty(item.Id.SubtypeName) ? item.Id.TypeId.ToString().Replace("MyObjectBuilder_", "") : item.Id.SubtypeName;
+            Log.Info($"Hand tools: the {name} is held in the {ItemSpots.ToolHand.ToString().ToLowerInvariant()} hand " +
                      $"{(WristGrasp ? "by the game's wrist spot (ToolGrasp=0)" : "by the middle of the hand")}{(ItemSpots.Mirrored ? ", the game's spots mirrored" : "")}; " +
                      $"the astronaut's wrist is {Vector3D.Distance(wrist, grip.Translation) * 100:0.0} cm from the controller's grip");
         }

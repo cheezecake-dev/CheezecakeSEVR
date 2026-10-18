@@ -1,0 +1,60 @@
+# Rain on the visor and a fingertip wiping it: out in heavy rain, drops spatter the closed visor and run down it; the right
+# index fingertip drawn across the front of the helmet wipes them, with the visor's log naming the hand.
+# Needs: Earth Planet, out in the open (under a roof the game's weather does not reach the glass); Options > VR > Display >
+# Helmet view, Weather on the visor and Wipe the visor on (the defaults). The test closes the helmet and calls the game's
+# heavy rain with its admin chat command (/weather RainHeavy), then clears it.
+# The hand is placed from the head with the index finger pointing back at the face: the forearm reaching forward, the
+# controller turned nose down (pitch -90). The drawn index fingertip is 12.6 cm along the controller's -Y from its grip
+# and 6.7 cm along its -Z (the glove's bind pose on the grip, no grip fit), so the grip 18.6 cm ahead and 6.7 cm above the
+# eyes puts the tip 6 cm ahead of them at eye height and 3 cm right of the grip: 4 cm into the helmet's front, which
+# stands 9 cm ahead of the eyes, where the drawn hand stops on it (HelmetStop) and the fingertip's touch is kept. The
+# controller's -Z pointed at the face instead would put the tip 15 cm below the eyes, under the chin.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+goto open 20
+helmet on
+read character
+expect helmet == true within 5
+
+head 0 1.6 0
+wait 2
+# out in the open the grass sways in the wind: a second apart the view differs by about 5 however still the head is
+expect headset steady 8
+headset rain-before.png
+
+key Enter
+wait 0.5
+type /weather RainHeavy
+key Enter
+expect log Visor weather: rain on the visor within 60
+wait 10
+headset rain-on.png
+expect headset changed 12
+
+# the right index fingertip across the front of the visor, left to right at eye height: the tip from 3 cm left of the
+# middle to 3 cm right of it
+hand right -0.06 1.667 -0.186 0 -90 0
+wait 0.7
+hand right -0.045 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.03 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.015 1.667 -0.186 0 -90 0
+wait 0.2
+hand right 0 1.667 -0.186 0 -90 0
+wait 0.5
+expect log Hand stop: Right hand on the helmet within 5
+expect log Visor weather: the right fingertip wipes the visor within 5
+
+key Enter
+wait 0.5
+type /weather clear
+key Enter
+expect log Visor weather: no weather falls on the visor now within 60
+expect no log Visor weather failed
+expect no log Exception
+
+cleanup
+reset

@@ -5,6 +5,7 @@ using HarmonyLib;
 using Sandbox;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Entities.Character.Components;
 using Sandbox.Game.Gui;
@@ -154,8 +155,14 @@ namespace SpaceEngineersVR.Hands
         private const int MaxNearLogs = 200;
         private static readonly double NearLogEvery = 1.5 * Stopwatch.Frequency;
 
+        /// <summary>At most this many lines a world saying a fingertip came within <see cref="GatherRadius"/> of a button.</summary>
+        private const int MaxReachLogs = 200;
+        private static int reachLogs;
+        private static object reachCountedIn;
+
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(FingerPress));
         private static int useErrors, nearLogs;
+        private static MySession nearCountedIn;
         private static bool hooked;
 
         // ---- Game side ----
@@ -216,18 +223,25 @@ namespace SpaceEngineersVR.Hands
             public long NearLoggedAt;
             public IMyUseObject Held;
 
+            /// <summary>The nearest button within <see cref="GatherRadius"/> of the tip, as last logged (null: none).</summary>
+            public IMyUseObject InRange;
+
             public void Forget()
             {
                 Touch.Reset();
                 PreviousInBody = null;
                 SeenAt = 0;
                 Held = null;
+                InRange = null;
             }
         }
 
         private static readonly HandTouch[] hands = { new HandTouch(), new HandTouch() };
         private static readonly Hand[] bothHands = { Hand.Left, Hand.Right };
         private static readonly List<MyEntity> nearby = new List<MyEntity>();
+
+        /// <summary>Gather's tip and the tip's last place as each block's buttons are reached: past that block's own face, stopped at any other.</summary>
+        private static readonly Dictionary<MyEntity, (Vector3D From, Vector3D Tip)> reached = new Dictionary<MyEntity, (Vector3D, Vector3D)>();
 
         /// <summary>Game thread, each simulation frame, for the local character.</summary>
         private static void AfterSimulation(MyCharacter __instance)
@@ -304,52 +318,6 @@ namespace SpaceEngineersVR.Hands
             IsPressSwitch(use) && use.SupportedActions != UseActionEnum.None && !ReferenceEquals(use.Owner, character)
             && !(use.Owner is MyCockpit seat && seat.Pilot == character);
 
-        private static readonly List<MyEntity> nearButton = new List<MyEntity>();
-
-        /// <summary>
-        /// Whether <paramref name="point"/> is within <paramref name="range"/> metres of the box of a push-button the
-        /// fingertip presses (not the character's own), and which (<paramref name="what"/>). Game thread.
-        /// </summary>
-        internal static bool NearButton(MyCharacter character, Vector3D point, double range, out string what)
-        {
-            what = null;
-            nearButton.Clear();
-            var sphere = new BoundingSphereD(point, GatherRadius);
-            MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, nearButton);
-            try
-            {
-                foreach (MyEntity entity in nearButton)
-                {
-                    if (entity == null || entity.Closed || entity.MarkedForClose || entity.PositionComp == null || entity.Components == null)
-                        continue;
-                    if (!entity.Components.TryGet(out MyUseObjectsComponentBase found) || !(found is MyUseObjectsComponent component))
-                        continue;
-                    MatrixD world = entity.PositionComp.WorldMatrixRef;
-                    var detectors = component.DetectorInteractiveObjects;
-                    // The game edits this table under its own lock when a block's detectors change.
-                    lock (detectors)
-                    {
-                        foreach (KeyValuePair<uint, MyUseObjectsComponent.DetectorData> pair in detectors)
-                        {
-                            IMyUseObject use = pair.Value.UseObject;
-                            if (!Pressable(use, character))
-                                continue;
-                            double distance = DistanceToBox((MatrixD)pair.Value.Matrix * world, point);
-                            if (distance > range)
-                                continue;
-                            what = $"'{use.Dummy?.Name ?? pair.Value.DetectorName}' {use.GetType().Name} on {Describe(use.Owner)}, {distance * 100:0} cm from its box";
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            }
-            finally
-            {
-                nearButton.Clear();
-            }
-        }
-
         private static void ForgetAll(MyCharacter character)
         {
             foreach (HandTouch state in hands)
@@ -374,7 +342,6 @@ namespace SpaceEngineersVR.Hands
 
             Vector3D tip = Fingertip(hand, grip);
             Tracking.HandResidual.NotePress(hand, tip);
-            tip = Reach.Limit(character, tip);
             long now = Stopwatch.GetTimestamp();
             if (state.SeenAt == 0 || now - state.SeenAt > GapSeconds * Stopwatch.Frequency)
             {
@@ -394,8 +361,14 @@ namespace SpaceEngineersVR.Hands
             state.PreviousInBody = Vector3D.Transform(tip, bodyFromWorld);
 
             state.Touch.Begin();
-            Gather(state.Touch, character, from, tip);
+            Gather(state.Touch, character, from, tip, out IMyUseObject inRange, out Vector3D inRangeMiddle);
             Touch.Outcome result = state.Touch.End(armed);
+            if (!ReferenceEquals(inRange, state.InRange))
+            {
+                state.InRange = inRange;
+                if (inRange != null)
+                    LogInRange(hand, character, grip, tip, inRange, inRangeMiddle);
+            }
 
             if (result.Released != null)
             {
@@ -416,9 +389,46 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>Every detector box of every block near the tip, as touch candidates.</summary>
-        private static void Gather(Touch touch, MyCharacter character, Vector3D from, Vector3D tip)
+        /// <summary>
+        /// Once as a fingertip comes within <see cref="GatherRadius"/> of a button (or a nearer one): how far it is, how much of
+        /// that the arm's reach leaves, and where the hand's grip goes in the STAGE space (the floor's) for the tip to rest on
+        /// the button's middle with the hand turned as it is.
+        /// </summary>
+        private static void LogInRange(Hand hand, MyCharacter character, in MatrixD grip, Vector3D tip, IMyUseObject button, Vector3D middle)
         {
+            // the budget is a world's: a new world starts it again
+            if (!ReferenceEquals(reachCountedIn, MySession.Static))
+            {
+                reachCountedIn = MySession.Static;
+                reachLogs = 0;
+            }
+            if (reachLogs >= MaxReachLogs || !(OpenXR.XrSession.LocalInStage is Matrix stage)
+                || !HandWorld.TryGetTrackingToBody(character, out MatrixD trackingToModel, out _))
+                return;
+            reachLogs++;
+            MatrixD worldToStage = MatrixD.Invert(character.WorldMatrix) * MatrixD.Invert(trackingToModel) * (MatrixD)stage;
+            Vector3D on = Vector3D.Transform(grip.Translation + (middle - tip), worldToStage);
+            // what the reach leaves of it: the arm's length from the head bone, and the first surface on the way
+            Vector3D within = Reach.Limit(character, tip, Reach.BlockOf(button.Owner as MyEntity));
+            string head = Reach.TryHead(character, out Vector3D bone) ? Format(Vector3D.Transform(bone, worldToStage)) : "unknown";
+            Log.Info($"Finger press: {hand} fingertip within {GatherRadius * 100:0} cm of '{button.Dummy?.Name}' on {Describe(button.Owner)} " +
+                     $"({Vector3D.Distance(tip, middle) * 100:0.0} cm), the arm's reach leaves the tip {Vector3D.Distance(within, middle) * 100:0.0} cm from it " +
+                     $"(the head bone at stage {head}); the hand at stage {Format(on)} m puts the tip on it");
+        }
+
+        /// <summary>
+        /// The buttons the tip, swept from <paramref name="from"/> (both where the tracked hand puts them), touches. The search
+        /// is round the tip itself; each block's buttons are then measured from the tip as the hand reaches it
+        /// (<see cref="Reach.Limit(MyCharacter, Vector3D, MySlimBlock)"/>): within the arm's length, past that block's own face,
+        /// where a button is set, and stopped at any other surface.
+        /// </summary>
+        private static void Gather(Touch touch, MyCharacter character, Vector3D from, Vector3D tip, out IMyUseObject inRange, out Vector3D inRangeMiddle)
+        {
+            inRange = null;
+            inRangeMiddle = Vector3D.Zero;
+            double inRangeDistance = double.MaxValue;
             nearby.Clear();
+            reached.Clear();
             var sphere = new BoundingSphereD(tip, GatherRadius);
             MyGamePruningStructure.GetAllEntitiesInSphere(ref sphere, nearby);
             foreach (MyEntity entity in nearby)
@@ -429,6 +439,8 @@ namespace SpaceEngineersVR.Hands
                     continue;
                 MatrixD world = entity.PositionComp.WorldMatrixRef;
                 var detectors = component.DetectorInteractiveObjects;
+                (Vector3D From, Vector3D Tip) hand = default;
+                bool measured = false;
                 // The game edits this table under its own lock when a block's detectors change.
                 lock (detectors)
                 {
@@ -437,14 +449,32 @@ namespace SpaceEngineersVR.Hands
                         IMyUseObject use = pair.Value.UseObject;
                         if (!Pressable(use, character))
                             continue;
+                        if (!measured)
+                        {
+                            if (!reached.TryGetValue(entity, out hand))
+                            {
+                                MySlimBlock block = Reach.BlockOf(entity);
+                                hand = (Reach.Limit(character, from, block), Reach.Limit(character, tip, block));
+                                reached[entity] = hand;
+                            }
+                            measured = true;
+                        }
                         MatrixD box = (MatrixD)pair.Value.Matrix * world;
-                        double distance = SweptDistanceToBox(box, from, tip);
+                        double middle = Vector3D.Distance(tip, box.Translation);
+                        if (middle <= GatherRadius && middle < inRangeDistance)
+                        {
+                            inRangeDistance = middle;
+                            inRange = use;
+                            inRangeMiddle = box.Translation;
+                        }
+                        double distance = SweptDistanceToBox(box, hand.From, hand.Tip);
                         if (distance <= NearDistance)
-                            touch.Add(use, distance, Vector3D.Distance(tip, box.Translation), use.Dummy?.Name ?? pair.Value.DetectorName);
+                            touch.Add(use, distance, Vector3D.Distance(hand.Tip, box.Translation), use.Dummy?.Name ?? pair.Value.DetectorName);
                     }
                 }
             }
             nearby.Clear();
+            reached.Clear();
         }
 
         /// <summary>The Use key's press of a use object: the character's own <c>Use()</c> with the detector answering with this object.</summary>
@@ -523,6 +553,12 @@ namespace SpaceEngineersVR.Hands
 
         private static void LogNear(Hand hand, HandTouch state, Touch.Contact nearest, long now)
         {
+            // the budget is a world's: a new world starts it again
+            if (!ReferenceEquals(nearCountedIn, MySession.Static))
+            {
+                nearCountedIn = MySession.Static;
+                nearLogs = 0;
+            }
             if (nearLogs >= MaxNearLogs || now - state.NearLoggedAt < NearLogEvery)
                 return;
             state.NearLoggedAt = now;
@@ -530,6 +566,8 @@ namespace SpaceEngineersVR.Hands
             Log.Info($"Finger press: {hand} fingertip {nearest.Distance * 100:0.0} cm from '{nearest.Tag}' " +
                      $"{(nearest.Key as IMyUseObject)?.GetType().Name} on {Describe((nearest.Key as IMyUseObject)?.Owner)}");
         }
+
+        private static string Format(Vector3D v) => $"({v.X:F3}, {v.Y:F3}, {v.Z:F3})";
 
         private static string Describe(VRage.ModAPI.IMyEntity owner)
         {

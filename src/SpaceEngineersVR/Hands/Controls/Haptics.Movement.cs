@@ -1,4 +1,4 @@
-// Haptics, movement: the jetpack's thrust, the magnetic boots locking on, and a hard landing, felt in both hands.
+// Haptics, movement: the jetpack's thrust, the magnetic boots locking on, a hard landing, and a ship's G in a seat, felt in both hands.
 using System;
 using System.Diagnostics;
 using Sandbox.Game.Entities.Character;
@@ -104,6 +104,25 @@ namespace SpaceEngineersVR.Hands
             lastVelocity = velocity;
             lastBoots = boots;
             lastSupported = supported;
+        }
+
+        // ---- G in a seat: a steady press in both hands, harder the harder the ship pulls (Common.SeatG) ----
+
+        /// <summary>The press at the least G that is felt (<see cref="Common.SeatG.RumbleFrom"/>) and at full (<see cref="Common.SeatG.RumbleFull"/>).</summary>
+        public const float SeatGLeastAmplitude = 0.1f, SeatGMostAmplitude = 0.45f;
+
+        /// <summary>
+        /// One simulation step of the press for a seated ship's G (<paramref name="load"/>, m/s², from <see cref="Common.SeatG"/>):
+        /// nothing under <see cref="Common.SeatG.RumbleFrom"/>, then a rumble in both hands that lasts a little over a step, so it
+        /// runs on while it is asked for again and lets go when the game pauses. Off with "G-forces in a seat" (<see cref="VRSettings.HapticSeatG"/>).
+        /// </summary>
+        internal static void GForceFrame(float load)
+        {
+            if (!VRSettings.HapticSeatG || load < Common.SeatG.RumbleFrom)
+                return;
+            float amplitude = MathHelper.Lerp(SeatGLeastAmplitude, SeatGMostAmplitude, Common.SeatG.Ramp(load, Common.SeatG.RumbleFrom, Common.SeatG.RumbleFull));
+            Pulse(Hand.Left, amplitude, RumbleSeconds);
+            Pulse(Hand.Right, amplitude, RumbleSeconds);
         }
     }
 }

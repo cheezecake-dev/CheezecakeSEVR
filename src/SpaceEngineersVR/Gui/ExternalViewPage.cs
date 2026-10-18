@@ -23,7 +23,7 @@ namespace SpaceEngineersVR.Gui
         /// <summary>The game's white chevron (it points right), turned for each way the camera goes.</summary>
         private const string Chevron = "Textures\\GUI\\Icons\\buttons\\ArrowSingle.dds";
 
-        internal const string PageIcon = Hud + "CameraSpectator.png";
+        internal const string PageIcon = GuiTextures.Spectator;
 
         /// <summary>Degrees round per press: a few presses are a clear new angle, twelve go all the way round.</summary>
         public const float OrbitStep = 15f;
@@ -47,7 +47,7 @@ namespace SpaceEngineersVR.Gui
             Func<bool> chase = () => ExternalView.Usable && !VRSettings.ExternalViewIsCamera;
             return new[]
             {
-                new QuickActionsScreen.QuickAction("Back", "Back to the quick actions.", Hud + "RotateCounterClockWise.png", back),
+                new QuickActionsScreen.QuickAction("Back", "Back to the quick actions.", GuiTextures.Back, back),
                 new QuickActionsScreen.QuickAction("Orbit up", "Takes the camera up over what it follows.", Chevron,
                     () => Elevate(+1), Lift, canUse: () => chase() && CanElevate(+1), whiteIcon: true, iconRotation: -MathHelper.PiOver2),
                 new QuickActionsScreen.QuickAction("Reset", "Puts the camera back behind and above at its first distance, and the screen back on the dash at its first size.",

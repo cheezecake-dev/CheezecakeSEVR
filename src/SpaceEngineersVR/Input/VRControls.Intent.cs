@@ -37,9 +37,6 @@ namespace SpaceEngineersVR.Input
             /// <summary>B or Menu pressed while a menu has focus: the game's GUI CANCEL (MyControlsGUI.CANCEL), which is not a gameplay control and has no entry in <see cref="Intents"/>.</summary>
             Back,
 
-            /// <summary>The left grip held at the helmet's mouth (<see cref="Hands.VoiceTalk"/>): the game's push to talk, VOICE_CHAT, for as long as it is held.</summary>
-            Voice,
-
             // Build mode (Hands.BuildMode): one frame each per step or tap. MoveCloser and MoveFurther are also the paste's
             // and the voxel hand's distance (VOXEL_CLOSER, VOXEL_FURTHER).
             MoveCloser,
@@ -100,7 +97,6 @@ namespace SpaceEngineersVR.Input
             [MyControlsSpace.USE_SYMMETRY] = Intent.UseSymmetry,
             [MyControlsSpace.SYMMETRY_SWITCH] = Intent.SymmetrySwitch,
             [MyControlsSpace.RELOAD] = Intent.Reload,
-            [MyControlsSpace.VOICE_CHAT] = Intent.Voice,
             [MyControlsSpace.VOXEL_CLOSER] = Intent.MoveCloser,
             [MyControlsSpace.VOXEL_FURTHER] = Intent.MoveFurther,
             [MyControlsSpace.CUBE_BUILDER_CUBESIZE_MODE] = Intent.CubeSize,

@@ -12,7 +12,8 @@ namespace SpaceEngineersVR.Rendering
     /// is (<see cref="HelmetBreath"/>). A new character starts with the sun visor up, and opening the helmet raises it with the glass
     /// (<see cref="SunVisor"/>). It also has the visor's glare look for the sun (<see cref="VisorGlare.Sample"/>), and the
     /// helmet follow the head round (<see cref="HelmetTurn.Update"/>; a new character's starts in its place), and the helmet's inside
-    /// in the scene get its picture to the renderer (<see cref="HelmetInterior.Update"/>).
+    /// in the scene get its picture to the renderer (<see cref="HelmetInterior.Update"/>). It also has the ship's G felt in a seat
+    /// (<see cref="Common.SeatG.Frame"/>), before the breathing that it can make hard.
     /// <para>
     /// By watching the state, not a method that changes it, every way the helmet changes is heard: the key, the wrist panel, the
     /// actions wheel, the grip on the helmet, a seat, and on a multiplayer client the server's change arriving through the game's
@@ -76,10 +77,12 @@ namespace SpaceEngineersVR.Rendering
                 if (!closed)
                     SunVisor.Move(false);
             }
+            Common.SeatG.Frame(alive ? character : null);
             HelmetBreath.Update(alive ? character : null);
             VisorGlare.Sample();
             HelmetTurn.Update();
             HelmetInterior.Update();
+            VisorWeather.Update(alive ? character : null);
         }
     }
 }

@@ -1,0 +1,67 @@
+# Screens: the tools wheel and the actions wheel. Holding the left grip in empty air opens the tools wheel, clicking the
+# left stick while it is open turns it into the actions wheel, and B closes it.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the astronaut on foot with nothing in hand. Nothing is built. --------------------------------
+
+log SpaceEngineersVR.log
+expect session focused within 60
+
+# Looking down at the hands, so the wheels are in view: the left hand is then about 0.5 m ahead of the eyes, 27 degrees
+# left of the middle of the view and 8 below it.
+head 0 1.6 0 0 -45
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.2 -0.3
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+expect headset steady
+headset no-wheel.png
+
+# ---- Tools wheel: hold the left grip in empty air --------------------------------------------------------------------
+
+press left grip
+wait 1
+read screen
+expect type == SlotWheelScreen
+# The toolbar's wheel is in the left hand: near, to the left of the view.
+headset tools-wheel.png
+expect headset new depth 0.2 1.0
+expect headset new at -27 -8 20
+
+# ---- Actions wheel: click the left stick while the tools wheel is open ----------------------------------------------
+
+press left stick
+wait 0.2
+release left stick
+wait 1
+read screen
+expect type == ActionsWheelScreen
+expect log Actions wheel: opened at the left hand within 5
+# The actions wheel is where the hand was when it opened (Gui/ActionsWheel.cs: at the grip, facing the head), and stays
+# there until it closes: the view moves past it as the head looks further down. What is new against the tools wheel is
+# what the actions wheel shows in its place.
+headset actions-wheel.png
+expect headset new depth 0.2 1.0
+expect headset new at -27 -8 20
+head 0 1.6 0 0 -60
+wait 1
+headset actions-wheel-look-down.png
+expect headset new follows world
+head 0 1.6 0 0 -45
+wait 1
+
+# ---- B closes it, with nothing chosen: no tool changed and the game has the focus --------------------------------------
+
+press right b
+wait 0.2
+release right b
+release left grip
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+read character
+expect weapon == null
+expect no log Exception

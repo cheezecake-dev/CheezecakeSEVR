@@ -1,0 +1,68 @@
+# Hands: pressing a button panel's button with the fingertip. The right index fingertip pushed into a button on a button
+# panel presses it, as the use key does at a flat screen; the plugin reports the press. A button reached from behind,
+# through its own block, is not pressed, as a flat player cannot press it from there: the panel's plate stops the hand.
+# World: Earth Planet (survival, on foot, in gravity). A button panel is built 3 m ahead and the astronaut stands before
+# it. Where the button sits on the model comes from the plugin's line as the fingertip comes near it.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a button panel (a large block, 2.5 m, with one button) in front of the character ----------------
+
+admin creativeTools
+# out of the starter base, where nothing is built within 10 m, to build there
+goto open
+build LargeButtonPanelPedestal 3 as Test panel
+# the panel keeps the astronaut 1.3 m from the block's middle (any nearer and the game pushes it off), with the button
+# 77 cm ahead and 33 cm below the eyes: past the arm's reach until the player leans in
+goto Test panel 1.3
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+# Left hand down at the side; the right hand low at the side, out of reach of the button, the fingertip pointing ahead.
+hand left -0.25 1.0 -0.2
+hand right 0.25 1.0 0.0
+wait 1
+# Before: no button has been pressed.
+expect no log Finger press: right fingertip pressed
+
+# ---- The fingertip goes to the button -----------------------------------------------------------------------------------
+# The astronaut leans in, then the hand comes up near the panel: the plugin says, as the fingertip comes within reach of the
+# button, where the hand goes for the tip to rest on the button's middle; the hand then moves there, the fingertip pushing in.
+# lean in 20 cm, as a player does to reach a pedestal's button
+head 0 1.55 -0.2
+wait 1.5
+hand right 0.0 1.2 -0.5
+wait 1.5
+remember button log '/Finger press: Right fingertip within .* the hand at stage \((\S+), (\S+), (\S+)\) m puts the tip on it/'
+hand right {button}
+wait 1
+# The plugin names how near the fingertip got.
+expect log Finger press: right fingertip within 5
+expect log Finger press: right fingertip pressed within 5
+expect log MyUseObjectPanelButton within 5
+expect no log Exception
+
+# ---- From behind: the fingertip reaches round a button panel's plate to its buttons, and nothing is pressed -------------
+# A button panel's plate is at the front of its block, and its buttons face out of it. The astronaut stands in the block,
+# behind the plate, and the plugin says, as the fingertip comes near a button, where the hand goes for the tip to rest on
+# it; the head is behind it. The hand is put down out of reach of any button first, so that line comes when it is raised.
+hand right 0.25 1.0 -0.3
+wait 1
+goto open
+build ButtonPanelLarge 3 0.8 as Test wall panel
+goto Test wall panel 0.3 front
+# only what happens from here on counts
+log SpaceEngineersVR.log
+head 0 1.6 0
+wait 1
+hand right 0.0 1.6 0.5
+wait 1.5
+remember behind log '/Finger press: Right fingertip within .* on MyButtonPanel ButtonPanelLarge .* the hand at stage \((\S+), (\S+), \S+\) m puts the tip on it/'
+# The tip goes through the button and 4 cm out past it (the button is 81 cm behind the head), as a press from in front
+# goes into it.
+hand right {behind} 0.85
+wait 1.5
+expect no log Finger press: right fingertip pressed
+expect no log Exception

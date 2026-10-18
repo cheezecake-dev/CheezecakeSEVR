@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using Sandbox;
 using Sandbox.Game.Entities;
@@ -32,8 +34,10 @@ namespace SpaceEngineersVR.Hands
     /// loaded sooner than the reload time, on a host or in single player any more than for another player. Partial
     /// rounds, the inventory count, infinite ammo and the reload refusals are therefore the game's own. Only a server owns the
     /// end time: as a client the drop and the seat are shown, and the weapon is loaded when the server's timer ends.</para>
-    /// <para>Which reloads go this way: the reload press of the hands (<see cref="Wanted"/>), and the game's own reload of an
-    /// empty magazine (MyCharacter starts it by itself as the last round is fired). R with rounds left stays the game's timed
+    /// <para>Which reloads go this way: the reload press of the hands (<see cref="Wanted"/>). A magazine fired empty stays in the
+    /// well until that press drops it: the game's own reload of it, which MyCharacter.UpdateShooting starts by itself as the
+    /// last round is fired, is held back (<see cref="HoldEmptyMagazine"/>). That reload runs on the server, so as a client the
+    /// empty magazine drops when the server starts it. R with rounds left stays the game's timed
     /// reload, as on the desktop.</para>
     /// <para>The well is the model's own: the subpart "magazine" at the dummy "subpart_magazine" (as <see cref="TryZone"/>),
     /// pushed in along the weapon's up. Every hand weapon's model has it; the magazine models are the ammo magazine items' own
@@ -134,6 +138,16 @@ namespace SpaceEngineersVR.Hands
         private static int lastAmmo = -1;
 
         /// <summary>
+        /// The held weapon once it has been seen with rounds in its magazine since it was drawn: only a magazine fired empty in it
+        /// stays in its well for the hands to drop (<see cref="NeedsOwnReload"/>). One drawn empty is the game's to load, on its
+        /// own timer, as it does on the desktop.
+        /// </summary>
+        private static MyAutomaticRifleGun loadedGun;
+
+        /// <summary>The held weapon drawn empty with no magazine for it in the inventory: its well is shown empty.</summary>
+        private static MyAutomaticRifleGun bareGun;
+
+        /// <summary>
         /// The rounds in the magazine as the game's reload of <see cref="reloadingGun"/> began (MyAutomaticRifleGun.Reload, on a
         /// server): the last shot and the reload it starts come in the same character update, so the frame before still had one.
         /// </summary>
@@ -190,6 +204,15 @@ namespace SpaceEngineersVR.Hands
             }
             try
             {
+                harmony.Patch(AccessTools.Method(typeof(MyCharacter), "UpdateShooting"),
+                    transpiler: new HarmonyMethod(typeof(Reload), nameof(HoldEmptyMagazine)));
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "Reload: the game's reload of a magazine fired empty could not be held back; it drops by itself");
+            }
+            try
+            {
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), "RealignMagazineWithHand"),
                     prefix: new HarmonyMethod(typeof(Reload), nameof(BeforeRealign)));
             }
@@ -219,9 +242,62 @@ namespace SpaceEngineersVR.Hands
             ammoAtReload = __instance.GunBase.CurrentAmmo;
         }
 
-        /// <summary>The game's reload of <paramref name="gun"/> began with its magazine empty: fired out, not R with rounds left.</summary>
+        /// <summary>
+        /// MyCharacter.UpdateShooting reloads a weapon fired empty by itself (on the server: CanReload, NeedsReload, then Reload and
+        /// the reload animation). Its one read of NeedsReload goes through <see cref="NeedsOwnReload"/> instead.
+        /// </summary>
+        private static IEnumerable<CodeInstruction> HoldEmptyMagazine(IEnumerable<CodeInstruction> code)
+        {
+            MethodInfo needs = AccessTools.PropertyGetter(typeof(IMyHandheldGunObject<MyDeviceBase>), nameof(IMyHandheldGunObject<MyDeviceBase>.NeedsReload));
+            MethodInfo own = AccessTools.Method(typeof(Reload), nameof(NeedsOwnReload));
+            List<CodeInstruction> list = new List<CodeInstruction>(code);
+            int found = 0;
+            foreach (CodeInstruction instruction in list)
+            {
+                if (!instruction.Calls(needs))
+                    continue;
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = own;
+                found++;
+            }
+            if (found != 1)
+                throw new InvalidOperationException($"MyCharacter.UpdateShooting reads NeedsReload {found} times, not once");
+            return list;
+        }
+
+        /// <summary>The game is to reload the weapon by itself: not one of ours fired empty with reload by hand on, whose magazine stays in until the reload press.</summary>
+        private static bool NeedsOwnReload(IMyHandheldGunObject<MyDeviceBase> gun)
+        {
+            if (!gun.NeedsReload)
+            {
+                heldEmpty = null;
+                return false;
+            }
+            try
+            {
+                if (!PhysicalOn || !(gun is MyAutomaticRifleGun rifle) || rifle.Owner == null || rifle.Owner != MySession.Static?.LocalCharacter
+                    || !ReferenceEquals(loadedGun, rifle) || rifle.GunBase == null || !rifle.GunBase.HasAmmoMagazines || !TryWell(rifle, out _, out _, out _))
+                    return true;
+                if (!ReferenceEquals(heldEmpty, rifle))
+                {
+                    heldEmpty = rifle;
+                    Log.Info($"Reload: the {Name(rifle.Owner)}'s magazine is empty; it stays in until the reload press drops it");
+                }
+                return false;
+            }
+            catch (Exception e)
+            {
+                guard.Failed(e, "Reload: holding an empty magazine in failed");
+                return true;
+            }
+        }
+
+        /// <summary>The weapon whose empty magazine <see cref="NeedsOwnReload"/> is holding in, for its one log line.</summary>
+        private static MyAutomaticRifleGun heldEmpty;
+
+        /// <summary>The game's reload of <paramref name="gun"/> began with its magazine fired empty: not R with rounds left, nor a weapon drawn empty.</summary>
         private static bool EmptiedBy(MyAutomaticRifleGun gun) =>
-            ReferenceEquals(reloadingGun, gun) ? ammoAtReload == 0 : lastAmmo == 0 && ReferenceEquals(lastGun, gun);
+            ReferenceEquals(loadedGun, gun) && (ReferenceEquals(reloadingGun, gun) ? ammoAtReload == 0 : lastAmmo == 0 && ReferenceEquals(lastGun, gun));
 
         private static bool BeforeReloadSound(MyAutomaticRifleGun __instance)
         {
@@ -264,7 +340,9 @@ namespace SpaceEngineersVR.Hands
             reloadingGun = null;
             if (!ours && !empty)
             {
-                Log.Info($"Reload: the {Name(character)}'s reload with {before} rounds left is the game's (R): timed, not by hand");
+                Log.Info(ReferenceEquals(loadedGun, rifle)
+                    ? $"Reload: the {Name(character)}'s reload with {before} rounds left is the game's (R): timed, not by hand"
+                    : $"Reload: the {Name(character)} was drawn with its magazine empty; the game loads it, timed, not by hand");
                 return;
             }
             if (!TryWell(rifle, out MatrixD rest, out _, out _))
@@ -336,6 +414,8 @@ namespace SpaceEngineersVR.Hands
                 }
             }
 
+            StepBare(character, rifle);
+
             // Placed here when the arms did not place it in this frame (hand IK off, or not in first person); see ToolPlaced.
             if (placedFrame != HandIK.Frame && (well != Well.In || inHand || !Shapes.Idle))
             {
@@ -343,6 +423,33 @@ namespace SpaceEngineersVR.Hands
                 PlaceShapes(character, hand, grip);
             }
             placedFrame = -1;
+        }
+
+        /// <summary>
+        /// A weapon drawn with its magazine empty and no magazine for it in the inventory comes out with nothing in its well, so
+        /// it shows it needs one. Once one is in the inventory the game loads it by itself (MyCharacter.UpdateShooting, timed),
+        /// and the well's magazine is shown again as that reload starts. A weapon fired empty keeps its empty magazine in.
+        /// </summary>
+        private static void StepBare(MyCharacter character, MyAutomaticRifleGun rifle)
+        {
+            if (rifle != null && rifle.GunBase != null && rifle.GunBase.CurrentAmmo > 0)
+                loadedGun = rifle;
+            bool bare = rifle != null && !rifle.Closed && hooked && !Off && VRInput.Active && well == Well.In && !inHand
+                        && !ReferenceEquals(loadedGun, rifle) && !rifle.IsReloading && rifle.GunBase != null && rifle.GunBase.HasAmmoMagazines
+                        && rifle.GunBase.CurrentAmmo == 0 && !rifle.GunBase.HasEnoughMagazines() && TryWell(rifle, out _, out _, out _);
+            if (bare)
+            {
+                if (!ReferenceEquals(bareGun, rifle))
+                    Log.Info($"Reload: the {Name(character)} was drawn with its magazine empty and none for it in the inventory; its well is empty");
+                bareGun = rifle;
+                Shapes.HideWell(rifle);
+                return;
+            }
+            if (bareGun == null)
+                return;
+            if (well == Well.In)
+                Shapes.ShowWell(bareGun);
+            bareGun = null;
         }
 
         /// <summary>The in-hand magazine follows the other hand, seats when it reaches the well, and slides in; the drops fall.</summary>
@@ -464,7 +571,9 @@ namespace SpaceEngineersVR.Hands
             handVelocity = Vector3D.Zero;
             Shapes.TakeInHand(model);
             Haptics.Pulse(off, TakeAmplitude, TakeSeconds);
-            Log.Info($"Reload: {off} hand took a {rifle.GunBase.CurrentAmmoMagazineDefinition?.Id.SubtypeName ?? "magazine"} from the pouch ({why}; {AmmoState(rifle)})");
+            string seat = SeatPlace(character, rifle);
+            Log.Info($"Reload: {off} hand took a {rifle.GunBase.CurrentAmmoMagazineDefinition?.Id.SubtypeName ?? "magazine"} from the pouch ({why}; {AmmoState(rifle)})" +
+                     (seat != null ? $"; it seats with the other hand at stage {seat}" : string.Empty));
         }
 
         /// <summary>The pouch's pull let go: a magazine still in the hand goes back in the pouch, or falls anywhere else.</summary>
@@ -564,6 +673,21 @@ namespace SpaceEngineersVR.Hands
             Vector3 holdPoint = box.Center + Vector3.Up * (box.Size.Y * (HoldAt - 0.5f));
             turn.Translation = grip.Translation - Vector3D.TransformNormal((Vector3D)holdPoint, turn);
             return turn;
+        }
+
+        /// <summary>The other hand's grip that holds the magazine (<see cref="HeldMagazine"/>) on the well's axis with its top at home: where it seats.</summary>
+        private static bool TrySeatGrip(MyAutomaticRifleGun rifle, out MatrixD grip)
+        {
+            grip = default;
+            if (!TryWell(rifle, out MatrixD rest, out BoundingBox wellBox, out _))
+                return false;
+            BoundingBox box = Shapes.HandBox;
+            MatrixD held = MatrixD.CreateWorld(Vector3D.Zero, rest.Forward, rest.Up);
+            Vector3D seated = Vector3D.Transform((Vector3D)(wellBox.Center + Vector3.Up * wellBox.Size.Y * 0.5f), rest);
+            held.Translation = seated - Vector3D.TransformNormal((Vector3D)(box.Center + Vector3.Up * box.Size.Y * 0.5f), held);
+            Vector3 holdPoint = box.Center + Vector3.Up * (box.Size.Y * (HoldAt - 0.5f));
+            grip = MatrixD.CreateWorld(held.Translation + Vector3D.TransformNormal((Vector3D)holdPoint, held), held.Up, -held.Forward);
+            return true;
         }
 
         /// <summary>The magazine in the hand is in line with the well and its top is in the column it slides up: from one length below its seated place to that place.</summary>

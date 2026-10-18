@@ -34,13 +34,14 @@ namespace SpaceEngineersVR.Input
         public const string WalkTextNoWrist = "Hold left grip: tools wheel.  Hold Menu: recentre";
 
         /// <summary>
-        /// The inventory screen, the first time it opens in a session: moving an item to the other side, the amounts (the hand
-        /// that does not point: VRControls.WantsAmount), and out.
+        /// The inventory screen, the first time it opens in a session: moving an item to the other side, a tool or gun onto the
+        /// toolbar below (Gui.InventoryToolbar) or into the hand (InventoryPull), the amounts (the hand that does not point:
+        /// VRControls.WantsAmount), and out.
         /// </summary>
         public static string InventoryText =>
             VRSettings.DominantHand == Hand.Left
-                ? "X on an item: move it to the other inventory.  Hold right grip: 10, trigger: 100, both: 1000.  B: back"
-                : "A on an item: move it to the other inventory.  Hold left grip: 10, trigger: 100, both: 1000.  B: back";
+                ? "X on an item: move it to the other inventory.  Drag a tool or gun onto the toolbar, or grip it and pull it out to hold it.  Hold right grip: 10, trigger: 100, both: 1000.  B: back"
+                : "A on an item: move it to the other inventory.  Drag a tool or gun onto the toolbar, or grip it and pull it out to hold it.  Hold left grip: 10, trigger: 100, both: 1000.  B: back";
 
         /// <summary>The hand pointing at a container (cargo, a connector, a conveyor port), or a tool in it aimed at one, or the right hand on one, the first time in a session: the stick clicks there.</summary>
         public const string ContainerText = "Left stick click: withdraw for the Build Planner.  Right stick click: put the planner in production.  Grip + right stick click: deposit all.";
@@ -56,17 +57,6 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>The reminder up is the walk or the container one: both come up on foot, and neither takes the other's place while it shows.</summary>
         private static bool onFootHint;
-
-        /// <summary>Whether the menu reminder has been shown this session.</summary>
-        internal static bool MenuShown => menuShown;
-
-        /// <summary>Test seam: forgets what was shown, so the next session shows the hints afresh.</summary>
-        internal static void Reset()
-        {
-            wasMenu = wasInventory = menuPending = menuShown = walkShown = inventoryPending = inventoryShown = containerShown = broken = false;
-            onFootHint = false;
-            current = null;
-        }
 
         /// <summary>
         /// Game thread, once per frame: <paramref name="menu"/> a menu (not the radial wheel) has focus,

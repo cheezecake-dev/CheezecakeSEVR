@@ -1,0 +1,35 @@
+# Dying as a VR player: the eyes show a still, dark space with the game's death camera on a screen ahead, and the respawn
+# screen follows, the menu in front of that screen. The harness makes the death, which is only how the test gets there.
+# Needs: Earth Planet (survival, on foot).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: alive, and the eyes show the world
+read character
+expect state == standing
+expect health >= 1
+headset alive.png
+expect headset bright
+expect no log Forced view: on
+
+# the character dies
+die
+expect applied == true
+read character
+expect state == dead within 5
+expect log Forced view: on (the character is dead) within 10
+
+# the eyes no longer show the world: the screen with the death camera stands ahead
+wait 2
+headset dead.png
+expect headset changed
+
+# the respawn screen opens, and the screen with the death camera stands behind it
+read respawn
+expect screenPresent == true within 40
+expect log Forced view: screen put behind the menu within 5

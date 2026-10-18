@@ -27,11 +27,12 @@ namespace SpaceEngineersVR.Hands
     /// follow it through the paths they already take. The other arm settles onto the tool's grip (<see cref="Settle"/>).
     /// </summary>
     /// <remarks>
-    /// <para>Grab: a grip pressed with the other hand within <see cref="GrabReach"/> of the tool's grip, claimed through
+    /// <para>Grab: a grip pressed with the other hand hovering at the tool's front grip (<see cref="SupportZone"/>, after
+    /// ColbyJack1134's: within <see cref="GrabReach"/> of it, and not nearer the magazine), claimed through
     /// <see cref="GripClaim"/> at <see cref="ClaimPriority"/>, ahead of the helmet, floating items, grab to use
-    /// and hulls: the hand is on the tool it holds, the one thing it is surely reaching for. Anywhere else the claim
-    /// declines and the grip keeps its old meaning (the toolbar wheel on foot). A light tick on the other hand marks it coming
-    /// into reach; the grab is a tick on both hands.</para>
+    /// and hulls: the hand is on the tool it holds, the one thing it is surely reaching for. At the magazine the grip reloads
+    /// (<see cref="Reload"/>); anywhere else the claim declines and the grip keeps its old meaning (the toolbar wheel on
+    /// foot). A light tick on the other hand marks it coming into either zone; the grab is a tick on both hands.</para>
     /// <para>Steady: the turn only depends on where the two grips are (no world up is used, so no flip when the hands line up
     /// with it), it fades out as the other hand comes back toward the tool hand (<see cref="SeparationNone"/>), and it only
     /// counts as far as the item's grip line runs along the tool (<see cref="AimShare"/>): a pistol's support hand cups the
@@ -51,6 +52,9 @@ namespace SpaceEngineersVR.Hands
     {
         /// <summary>Debug: no two-handed hold (<see cref="Rendering.RenderDebug"/> TwoHand=0); the other grip keeps its usual meaning (the toolbar wheel).</summary>
         public static bool Off { get; set; }
+
+        /// <summary>The other hand coming this near the second grip of a tool held in one hand says where the grip is, once.</summary>
+        private const double NearGrip = 0.5;
 
         /// <summary>Debug: overrides <see cref="VRSettings.TwoHandGripStays"/> (<see cref="Rendering.RenderDebug"/> TwoHandStay=0/1); null follows the setting.</summary>
         public static bool? StaysDebug { get; set; }
@@ -76,8 +80,8 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Asked before the helmet (10): a hand on the tool's own grip is reaching for the tool, not the helmet behind it.</summary>
         public const int ClaimPriority = 5;
 
-        /// <summary>A grip this close to the tool's grip (metres, from the other controller's grip) takes it.</summary>
-        internal const double GrabReach = 0.10;
+        /// <summary>A grip this close to the tool's grip (metres, from the other controller's grip) takes it (ColbyJack1134's reach).</summary>
+        internal const double GrabReach = 0.12;
 
         /// <summary>The other hand this far off the grip line (metres, across it or along it) lets go.</summary>
         internal const double ReleaseOff = 0.15;
@@ -94,19 +98,11 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The grab: a firm tick on both hands.</summary>
         public const float GrabAmplitude = 0.45f, GrabPulseSeconds = 0.03f;
 
-        /// <summary>The other hand comes into reach of the grip: light, like the helmet's.</summary>
-        public const float HintAmplitude = 0.2f, HintSeconds = 0.02f;
-
         /// <summary>Let go: the lightest tick on the other hand.</summary>
         public const float LetGoAmplitude = 0.15f, LetGoSeconds = 0.015f;
 
         /// <summary>A grip this near the tool's grip that is still out of reach is logged (metres).</summary>
         private const double DeclineNoted = 0.30;
-
-        /// <summary>Once in reach, the hint holds this much further out, so the edge does not tick over and over.</summary>
-        private const double HintSlack = 1.3;
-
-        private const double HintEverySeconds = 0.25;
 
         /// <summary>
         /// How much of the tool's grip line has to run along the tool (the share of it along the tool's forward) for the line to
@@ -168,8 +164,9 @@ namespace SpaceEngineersVR.Hands
         private static bool offInMainValid;
         private static long offSeen;
 
-        private static bool hinted;
-        private static long hintAt, lastStep, traceAt;
+        /// <summary>The tool whose second grip the other hand was last near (<see cref="NearGrip"/>); null: none.</summary>
+        private static MyHandItemDefinition nearGripOf;
+        private static long lastStep, traceAt;
 
         private static bool hooked;
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(TwoHand));
@@ -383,7 +380,7 @@ namespace SpaceEngineersVR.Hands
                 Apply(character, ref grip, ref aim);
                 if (!TryMeasure(grip, aim, toolGrasp, otherGrasp, offGrip.Translation, out Measure m))
                     return false;
-                if (m.Gap <= GrabReach)
+                if (SupportZone.At(character, character.CurrentWeapon as MyEntity, character.HandItemDefinition, offGrip.Translation) == SupportZone.Place.Grip)
                     return true;
                 // Near the tool but not on its grip: why the grip opened the wheel instead, for the log.
                 if (m.Gap <= DeclineNoted)
@@ -497,10 +494,40 @@ namespace SpaceEngineersVR.Hands
                 supportValid = false;
             }
 
+            // The zone the other hand hovers in: none while the tool is held in both hands, reloading, or the hand is busy.
+            // Two-handed tools off, a gun's magazine is still a zone (Reload).
+            MyEntity inHand = character.CurrentWeapon as MyEntity;
+            bool onFoot = VRInput.Active && HandTools.IsLocalOnFoot(character) && !character.IsOnLadder && !HandTools.Off;
+            Vector3D zoneOff = offPos;
+            bool zoneTracked = offTracked;
+            if (!offTracked && onFoot && inHand != null && HandWorld.TryGetNow(character, off, out MatrixD zoneGrip, out _, out _))
+            {
+                zoneOff = zoneGrip.Translation;
+                zoneTracked = true;
+            }
+            bool hovering = onFoot && !held && zoneTracked && !Reload.MagazineOut && inHand != null && !character.CurrentWeapon.IsReloading
+                            && !ToolbarWheel.Owns && !VRInput.IsPressed(off, VRButtons.Grip) && MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay;
+            SupportZone.Update(character, hovering, inHand, character.HandItemDefinition, zoneOff, off);
+
+            bool near = false;
             if (held)
                 Trace(character, m, measured, aim, now);
             else if (!Reload.MagazineOut)
-                Hint(off, item, m, measured && offTracked && main, now);
+            {
+                near = measured && offTracked && main && m.Gap <= NearGrip;
+                if (near && !ReferenceEquals(nearGripOf, item))
+                    LogNearGrip(character, off, item, m);
+            }
+            nearGripOf = near ? item : null;
+        }
+
+        /// <summary>Once as the other hand comes within <see cref="NearGrip"/> of the held tool's second grip: how far, and where the grip is in the STAGE space (the floor's).</summary>
+        private static void LogNearGrip(MyCharacter character, Hand off, MyHandItemDefinition item, in Measure m)
+        {
+            if (!(OpenXR.XrSession.LocalInStage is Matrix stage) || !HandWorld.TryGetTrackingToBody(character, out MatrixD trackingToModel, out _))
+                return;
+            Vector3D at = Vector3D.Transform(m.Support, MatrixD.Invert(character.WorldMatrix) * MatrixD.Invert(trackingToModel) * (MatrixD)stage);
+            Log.Info($"Two-hand: {off} hand within {NearGrip * 100:0} cm of the {Name(item)}'s grip ({m.Gap * 100:0.0} cm); the grip at stage ({at.X:F3}, {at.Y:F3}, {at.Z:F3}) m");
         }
 
         /// <summary>The palm's place on the tool (its LeftHand, <see cref="ItemSpots.Other"/>) from where the tool is now, in the body's own space; false while the hand is not on it.</summary>
@@ -541,7 +568,6 @@ namespace SpaceEngineersVR.Hands
             toolSpot = toolGrasp;
             otherSpot = otherGrasp;
             aimShare = AimShare(ItemSpots.Tool(item).Translation, ItemSpots.Other(item).Translation);
-            hinted = true;
             traceAt = Stopwatch.GetTimestamp();
             Haptics.Pulse(Hand.Left, GrabAmplitude, GrabPulseSeconds);
             Haptics.Pulse(Hand.Right, GrabAmplitude, GrabPulseSeconds);
@@ -566,27 +592,6 @@ namespace SpaceEngineersVR.Hands
             Note($"Two-hand: {off} hand let go of the {Name(heldItem)} ({why})");
         }
 
-        /// <summary>A light tick as the other hand comes within reach of the held tool's grip, while it is not gripping anything.</summary>
-        private static void Hint(Hand off, MyHandItemDefinition item, in Measure m, bool measured, long now)
-        {
-            if (!measured)
-            {
-                hinted = false;
-                return;
-            }
-            // A grip held (the wheel, an item, a grip that was let go of the tool) leaves the hint as it is.
-            if (VRInput.IsPressed(off, VRButtons.Grip) || !(MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay))
-                return;
-            bool near = m.Gap <= GrabReach * (hinted ? HintSlack : 1.0);
-            if (near && !hinted && now - hintAt > HintEverySeconds * Second)
-            {
-                hintAt = now;
-                Haptics.Pulse(off, HintAmplitude, HintSeconds);
-                Note($"Two-hand: {off} hand in reach of the {Name(item)}'s grip ({m.Gap * 100:0.0} cm)");
-            }
-            hinted = near;
-        }
-
         /// <summary>Once a second while held: how far the line between the hands turns the tool, and where its sensors point.</summary>
         private static void Trace(MyCharacter character, in Measure m, bool measured, in MatrixD aim, long now)
         {
@@ -599,7 +604,7 @@ namespace SpaceEngineersVR.Hands
             TryTurn(m, 1.0, out _, out double line);
             Note($"Two-hand: {Name(heldItem)} held, the hands' line is {MathHelper.ToDegrees(line):0.0} deg off the tool hand's grip line, " +
                  $"the sensors aim {turned:0.0} deg off the tool hand (share {aimShare * Ease.Smooth01(aimProgress) * Pull(m):0.00}); " +
-                 $"sensor forward ({sensor.X:F3}, {sensor.Y:F3}, {sensor.Z:F3}), other hand {m.Across * 100:0.0} cm across and {(m.T - m.Base) * 100:+0.0;-0.0} cm along" +
+                 $"sensor forward ({sensor.X:F3}, {sensor.Y:F3}, {sensor.Z:F3}), other hand {m.Across * 100:0.0} cm across and {(m.T - m.Base) * 100:+0.0;-0.0;0.0} cm along" +
                  OffArmText());
         }
 

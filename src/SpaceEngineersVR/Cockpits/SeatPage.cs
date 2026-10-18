@@ -39,7 +39,7 @@ namespace SpaceEngineersVR.Cockpits
         {
             return new[]
             {
-                new QuickActionsScreen.QuickAction("Back", "Back to the quick actions.", Hud + "RotateCounterClockWise.png", back),
+                new QuickActionsScreen.QuickAction("Back", "Back to the quick actions.", GuiTextures.Back, back),
                 Arrow("Seat forward", "Moves your view forward in the seat.", Vector3.Forward, () => Along(-SeatFit.Offset.Z, -Default.Z, "forward", "back"), -MathHelper.PiOver2),
                 Arrow("Seat up", "Moves your view up in the seat.", Vector3.Up, () => Along(SeatFit.Offset.Y, Default.Y, "up", "down"), 0f, Hud + "ValueIncrease.png"),
 

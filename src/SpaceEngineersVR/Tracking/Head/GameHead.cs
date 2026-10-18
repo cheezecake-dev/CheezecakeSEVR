@@ -62,6 +62,9 @@ namespace SpaceEngineersVR.Tracking
         private static ulong foldFrame;
         private const ulong FoldFrames = 2; // a fold nobody took up within this many frames (no first-person head built) is dropped
 
+        // The local character the anchor was last set for (NewBody): a new one, a world loaded or a respawn, faces the head.
+        private static object anchoredFor;
+
         [ThreadStatic] private static int viewDepth;
         [ThreadStatic] private static bool cameraTracked;
         private static Matrix? cameraHead;
@@ -154,12 +157,34 @@ namespace SpaceEngineersVR.Tracking
                     if (recentreAfter >= 0 && sampledAt > recentreAfter)
                         TakeRecentre();
                     else
+                    {
+                        NewBody();
                         Anchor();
+                    }
                 }
                 else if (was)
                     Lose();
                 return tracked;
             }
+        }
+
+        /// <summary>
+        /// A new local character on foot (a world loaded, a respawn): its body faces where the head looks, as the game shows a
+        /// flat player the character's own facing. The neck's turn from the last character (<see cref="BodyFollow"/> leaves
+        /// the head up to its limit off the body) is not carried into another body or another world. Seated, the sit-down
+        /// sets the anchor (<see cref="SitDown"/>). Caller holds the gate, with a head tracked.
+        /// </summary>
+        private static void NewBody()
+        {
+            var character = Sandbox.Game.World.MySession.Static?.LocalCharacter;
+            if (character == null || ReferenceEquals(character, anchoredFor))
+                return;
+            anchoredFor = character;
+            if (character.IsSitting || character.IsDead)
+                return;
+            float was = MathHelper.WrapAngle(HeadCentre.Yaw(raw) - anchor);
+            anchor = HeadCentre.Yaw(raw);
+            Log.Info($"A new body on foot ({character.DisplayName}): it faces where the head looks; the head was {MathHelper.ToDegrees(was):F0} deg off the last body's forward");
         }
 
         /// <summary>The body turned by this much (radians, + left) to follow the head; the view stays put.</summary>

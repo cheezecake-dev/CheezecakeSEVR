@@ -58,13 +58,32 @@ namespace SpaceEngineersVR
             Rendering.VisorGlass.DefaultDarkness, 0f, Rendering.VisorGlass.MostDarkness, 0.01f, unit: "%", decimals: 0, displayScale: 100f,
             tooltip: "How much light your visor's glass takes away, on average over the colours: 0 is clear glass, 13% is about the game's own visor glass. With a colour, that colour's light goes through more and the others less. Shown while the helmet is closed; it swings away with the glass as the helmet opens. Needs Helmet view. You see the change at once."));
 
+        private static readonly ChoiceSetting sunVisorColour = Add(new ChoiceSetting("sunVisorColour", "Sun visor colour", "Display",
+            Rendering.VisorGlass.ColourNames, Rendering.SunVisor.DefaultColour,
+            tooltip: "The colour of your helmet's sun visor, from the same colours as the glass: Gold is an astronaut's sun visor, holding back blue the most; Neutral darkens all colours alike; Blue, Green and Rose let their own colour through and hold back the others. Like the glass, it only ever takes light away. Needs Helmet view."));
+
         private static readonly NumberSetting sunVisorTint = Add(new NumberSetting("sunVisorTint", "Sun visor", "Display",
-            0.6f, 0.2f, 0.85f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
-            tooltip: "Your helmet has a gold sun visor on its outside, as a spacesuit does. Grip the front of your helmet and draw your hand down to lower it over the glass; grip the front and push up to raise it. It rides on the glass, so it only comes down with the helmet closed. This is how much light it takes away when down, on top of the glass's own tint. It only ever darkens, for glare off a sun or a bright planet. Needs Helmet view."));
+            0.6f, 0.2f, Rendering.SunVisor.MostDarkness, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "Your helmet has a sun visor on its outside, as a spacesuit does. Grip the front of your helmet and draw your hand down to lower it over the glass; grip the front and push up to raise it. It rides on the glass, so it only comes down with the helmet closed. This is how much light it takes away when down, on top of the glass's own tint. It only ever darkens, for glare off a sun or a bright planet. Needs Helmet view."));
 
         private static readonly NumberSetting visorGlare = Add(new NumberSetting("visorGlare", "Visor glare", "Display",
             1f, 0f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
             tooltip: "Looking toward the sun through your closed visor, its light scatters in the glass: a glow round the sun and a haze over your view. Lower the sun visor (grip the front of the helmet and draw your hand down) to cut it. Only near the sun, where the game already glares for everyone. This sets how strong it is; 0 turns it off. Needs Helmet view."));
+
+        private static readonly FlagSetting visorFrost = Add(new FlagSetting("visorFrost", "Frost on the visor", "Display", true,
+            tooltip: "Where the game says it is freezing outside (its temperature reads Freeze or Extreme freeze, as it does in space), frost grows in from the edge of your closed visor, faster in extreme cold, and melts away again in the warm. It stays round the edge, and the HUD shows over it. You can scrape it off with a fingertip; it grows back while the cold lasts. Needs Helmet view."));
+
+        private static readonly FlagSetting visorBreath = Add(new FlagSetting("visorBreath", "Breath on the visor", "Display", true,
+            tooltip: "In the cold, or when you are breathing hard after running, each breath mists the inside of your closed visor faintly at its lower edge and fades within a second. It is on the inside, so it cannot be wiped. Needs Helmet view."));
+
+        private static readonly FlagSetting visorWeather = Add(new FlagSetting("visorWeather", "Weather on the visor", "Display", true,
+            tooltip: "Out in a planet's weather with your visor closed, rain spatters it and runs down in streaks, snow settles round its edges, and a dust or sand storm coats it in the storm's own colour. A roof, a room or a closed cockpit keeps it off. It stays on the glass until you wipe it, it dries or the rain washes it. Needs Helmet view."));
+
+        private static readonly FlagSetting visorMisting = Add(new FlagSetting("visorMisting", "Visor mists up indoors", "Display", true,
+            tooltip: "Come in from the freezing cold (space, or a frozen planet) into a warm room with your visor closed and the cold glass mists over, then clears over a few seconds as it warms. A wipe clears it sooner. Needs Helmet view."));
+
+        private static readonly FlagSetting visorWipe = Add(new FlagSetting("visorWipe", "Wipe the visor", "Display", true,
+            tooltip: "Draw a fingertip across the outside of your visor to wipe away frost, mist, rain, snow or dust along its path, leaving clear trails you can draw with, as on a misted mirror. Your hand buzzes softly as it wipes. Off: the visor only clears by itself. Needs Helmet view."));
 
         private static readonly NumberSetting helmetAirVolume = Add(new NumberSetting("helmetAirVolume", "Helmet air", "Display",
             Rendering.HelmetAir.DefaultVolumePercent / 100f, 0f, 3f, 0.1f, unit: "%", decimals: 0, displayScale: 100f,
@@ -87,6 +106,15 @@ namespace SpaceEngineersVR
         private static readonly ChoiceSetting cameraShake = Add(new ChoiceSetting("cameraShake", "Camera shake", "Display",
             new[] { "Off", "Low", "Full" }, 0,
             tooltip: "How much the game moves your view when you are not moving your head: the shake of the drill, grinder and rifle, of damage and explosions, of a ship under thrust, the ship camera's sway, and the head bob when you start and stop walking. Off: the view moves only with your head. Low: a quarter of the game's. Full: as the game has it. It never changes what the tools or the ship do."));
+        private static readonly FlagSetting seatGPush = Add(new FlagSetting("seatGPush", "Pushed into the seat", "Display", true,
+            tooltip: "In a seat, when the ship speeds up, brakes or turns hard, your view eases a few centimetres back into the seat (or forward against the straps, or down), the harder the more, and back as it eases. Turn it off if any movement of the view you did not make yourself is uncomfortable."));
+
+        private static readonly FlagSetting seatGGreyOut = Add(new FlagSetting("seatGGreyOut", "Grey-out under G", "Display", true,
+            tooltip: "In a seat, under hard acceleration held for a few seconds (from about 2 g, as a light ship on full thrust or dampeners pulls), the edges of your view dim inward, and clear again a moment after it eases. The middle always stays clear. Turn it off if you would rather see the whole view at all times."));
+
+        private static readonly FlagSetting seatGBreathing = Add(new FlagSetting("seatGBreathing", "Breathing hard under G", "Display", true,
+            tooltip: "In a seat with your helmet closed, your astronaut breathes hard under hard acceleration (from about 2 g) and for a while after, as after a sprint. Needs Breathing in the helmet."));
+
         private static readonly FlagSetting levelChaseCamera = Add(new FlagSetting("levelChaseCamera", "Level chase camera", "Display", true,
             tooltip: "Third person in a ship: the camera follows the ship but keeps the horizon level, and only turns with its heading, so rolling and pitching the ship does not turn the world around you. Off: the game's own camera, locked to the ship. Needs \"Allow third person\"."));
 
@@ -104,6 +132,12 @@ namespace SpaceEngineersVR
         private static readonly NumberSetting hudTextBacking = Add(new NumberSetting("hudTextBacking", "HUD text backing", "Interface",
             0f, 0f, 0.9f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
             tooltip: "Darkens behind the HUD's text on the visor, so it can be read against a bright sky or planet: with Helmet view on, a soft dark band round the visor's rim behind the HUD; with it off, a dark plate behind each block of text. The number is how dark; 0 draws none. Needs HUD on the visor. You see the change once the menu is closed."));
+        private static readonly ChoiceSetting hudColour = Add(new ChoiceSetting("hudColour", "HUD colour", "Interface",
+            Rendering.HudVisor.ColourNames, 0,
+            tooltip: "The colour of the HUD on the visor. Game's colours shows it as the game draws it; Green, Amber and Cyan are a helmet display's colours, filtering its light to that colour, so a part the game draws in another colour (a red warning) shows dimmer. Needs HUD on the visor; the flat panel and the desktop window keep the game's colours. You see the change once the menu is closed."));
+        private static readonly NumberSetting hudOpacity = Add(new NumberSetting("hudOpacity", "HUD opacity", "Interface",
+            1f, 0.1f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
+            tooltip: "How strongly the HUD on the visor shows: 100% as bright as it is drawn, lower fades it, its text backing with it, and lets more of the world through. Needs HUD on the visor; the flat panel and the desktop window are not faded. You see the change once the menu is closed."));
         private static readonly FlagSetting hudVisor = Add(new FlagSetting("hudVisor", "HUD on the visor", "Interface", true,
             tooltip: "The HUD's parts sit on your helmet's visor, with the middle of your view clear. With Helmet view on the HUD is projected onto the glass as one display curved round your head, laid out whole as the game lays it out: light on the glass that you see through, focused at the HUD distance so your eyes can rest on it, and swinging up with the glass when the helmet opens. With it off, each part moves out toward its own edge or corner, curves round your head and faces your eyes. Markers on things in the world (ore, antennas, target locks, the selection box) and the crosshair stay where they are. Off: the whole HUD on one flat panel ahead of you, as before. The distance and width under HUD set how far and how wide the visor is."));
         private static readonly FlagSetting showToolbarOnFoot = Add(new FlagSetting("showToolbarOnFoot", "Toolbar on the HUD", "Interface", false,
@@ -112,6 +146,10 @@ namespace SpaceEngineersVR
             tooltip: "Short reminders on the HUD: \"B: back, right stick: scroll\" the first time a menu opens, where the tools wheel and the wrist panel are the first time you walk, and how to move an item to the other inventory the first time the inventory opens. Off: none. B and the left Menu button close a menu either way."));
         private static readonly FlagSetting externalView = Add(new FlagSetting("externalView", "External view", "Interface", false,
             tooltip: "A small screen on the dash showing your ship (or you, on foot) from behind and above, or the view from one of the ship's cameras, while you stay in the cockpit. On the desktop it is in the lower left of the picture. Costs a third scene pass. The actions wheel's External view entry turns it on and off and chooses what it shows; its size and source are under Display."));
+        private static readonly FlagSetting suitPowerFailing = Add(new FlagSetting("suitPowerFailing", "Suit power failing", "Interface", true,
+            tooltip: "As your suit's battery runs low, the HUD on the visor flickers, more often the lower it gets, and dims; at zero it goes fully dark, and the wrist status screen with it, each with a brief flicker as it dies. The suit lamp sputters the same way before the game's own fade turns it out. Recharging brings the HUD and the wrist screen back the way the HUD powers on when your helmet seals. Off: the HUD and the lamp are only ever as the game itself draws them."));
+        private static readonly FlagSetting lowStatWarnings = Add(new FlagSetting("lowStatWarnings", "Low stat warnings at the HUD's edge", "Interface", true,
+            tooltip: "A small flashing icon at the edge of the HUD for each of health, food, energy, oxygen and hydrogen while it is at the game's own critical mark for that stat - the same mark the game's own HUD bar already warns you about, never sooner. They die with the HUD under Suit power failing; the energy one is the last to go."));
 
         private static readonly NumberSetting menuDistance = Add(new NumberSetting("menuDistance", "Menu distance", "Menus",
             2f, 0.5f, 6f, 0.05f, unit: "m", decimals: 2,
@@ -159,7 +197,7 @@ namespace SpaceEngineersVR
 
         private static readonly ChoiceSetting playPosition = Add(new ChoiceSetting("playPosition", "Play position", "Height",
             new[] { "Standing", "Seated" }, 0,
-            tooltip: "Standing: your real height drives your view (calibrate it below), and crouching for real crouches your character. Seated: your head's height when you switch, and wherever your head is when you recentre, becomes your character's eyes, standing tall on foot or at the seat's eyes in a seat, and leaning down never crouches."));
+            tooltip: "Standing: your real height drives your view (calibrate it below), and with Crouch when you crouch on, crouching for real crouches your character. Seated: your head's height when you switch, and wherever your head is when you recentre, becomes your character's eyes, standing tall on foot or at the seat's eyes in a seat, and leaning down never crouches."));
 
         private static readonly NumberSetting eyeHeight = Add(new NumberSetting("eyeHeight", "Eye height", "Height",
             null, 0.3f, 3f, 0.01f, unit: "m", decimals: 2, hidden: true, optional: true,
@@ -179,8 +217,8 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting bodyClearance = Add(new FlagSetting("bodyClearance", "Keep eyes out of the body", "Height", true,
             tooltip: "On foot, lean or step so your head would be inside your character's chest, shoulders or backpack and the view stops at the surface instead. Off: the view goes where your head goes, through the body."));
 
-        private static readonly FlagSetting crouchWithHead = Add(new FlagSetting("crouchWithHead", "Crouch when you crouch", "Height", true,
-            tooltip: "On foot, in Standing play, crouch for real (head 30 cm or more below standing for a moment) and your character crouches, standing up when you do. Off, and always in Seated play: only the crouch key crouches."));
+        private static readonly FlagSetting crouchWithHead = Add(new FlagSetting("crouchWithHead", "Crouch when you crouch", "Height", false,
+            tooltip: "On foot, in Standing play, crouch for real (head 30 cm or more below standing for a moment) and your character crouches, standing up when you do. Off (the default), and always in Seated play: only the crouch key crouches."));
 
         private static readonly NumberSetting seatReach = Add(new NumberSetting("seatReach", "Seat head reach", "Height",
             0.25f, 0.1f, 1f, 0.05f, unit: "cm", decimals: 0, displayScale: 100f,
@@ -266,6 +304,8 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting hapticHeartbeat = Add(new FlagSetting("hapticHeartbeat", "Heartbeat", "Controls", true,
             tooltip: "A slow double pulse in both controllers while your health or your suit's oxygen is low, until it recovers. Off: hits and tools still buzz."));
+        private static readonly FlagSetting hapticSeatG = Add(new FlagSetting("hapticSeatG", "G-forces in a seat", "Controls", true,
+            tooltip: "In a seat, a steady press in both controllers while the ship speeds up, brakes or turns hard (from about 1 g), stronger the harder it pulls. Scaled by Haptic strength."));
         private static readonly FlagSetting grabToUse = Add(new FlagSetting("grabToUse", "Grab to use", "Controls", true,
             tooltip: "Closing the grip with your hand on anything the Use key works on uses it, as the key does: seats, terminals, screens, cargo and connectors, medical rooms (heals while held), stores and the rest. A door or hatch has to be pulled or pushed a hand's width while held; a vending machine's Buy held for a moment. In a seat it works on what is within arm's reach, not the seat itself. With nothing in reach the grip keeps its usual job. Ladders and buttons have their own grab and fingertip. Not while that hand holds a tool, a menu is up or you are on a ladder."));
 
@@ -274,10 +314,10 @@ namespace SpaceEngineersVR
             tooltip: "How wide the quick-actions panel is when it opens on your left wrist, in metres. A larger one is easier to read and to point at, and covers more of your view. You see the change as the panel opens."));
 
         private static readonly FlagSetting wristPanel = Add(new FlagSetting("wristPanel", "Wrist panel", "Controls", true,
-            tooltip: "On foot and on the jetpack, Y on the left controller opens the quick-actions panel on your left wrist (inventory, terminal, G menu, lights, helmet, heal, dampeners, broadcast, symmetry, colour picker, the external view and the datapad); Y again closes it. Off: Y does nothing there."));
+            tooltip: "On foot and on the jetpack, Y on the left controller opens the quick-actions panel on your left wrist (inventory, terminal, G menu, lights, helmet, heal, dampeners, broadcast, symmetry, colour picker and the external view); Y again closes it. Off: Y does nothing there."));
 
         private static readonly NumberSetting datapadWidth = Add(new NumberSetting("datapadWidth", "Datapad size", "Controls",
-            0.34f, 0.22f, 0.5f, 0.01f, unit: "m", decimals: 2,
+            0.34f, 0.22f, 0.5f, 0.01f, unit: "m", decimals: 2, hidden: Hands.Datapad.Shelved,
             tooltip: "How wide the datapad's screen is: the game's own datapad, drawn larger than the item. Take it out with the wrist panel's Datapad tile: it comes out in your left hand, with chat, your GPS list and the terminal; touch it with your right fingertip. Grip it with your right hand to take it over; grip it and let go and it stands in the air for a few seconds, or in a seat stays where you let it go, and comes out there again in that kind of seat. Y or B puts it away. Larger is easier to touch and read, smaller is lighter to hold up."));
 
         private static readonly TextSetting datapadSeatSpots = Add(new TextSetting("datapadSeatSpots", "Datapad spots in seats", "Controls", hidden: true,
@@ -312,8 +352,23 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting twoHandGripStays = Add(new FlagSetting("twoHandGripStays", "Two-hand grip stays on", "Controls", true,
             tooltip: "Once your other hand has taken the tool's front grip, the astronaut's hand stays on it for as long as you hold that grip button, however far your real hand moves. Up to 15 cm off the grip your other hand still aims the tool; further off, its pull eases away and the tool points where your tool hand points. Let go of the button to go back to one hand. Off: pulling the hand 15 cm off the grip lets go as well."));
 
+        private static readonly FlagSetting toolHolsters = Add(new FlagSetting("toolHolsters", "Tool holsters", "Controls", false, hidden: Hands.Holsters.Shelved,
+            tooltip: "A holster on your body for each of the welder, the grinder and the hand drill. Reach to one with your tool hand and grip: the best tool of that kind in your inventory comes into your hand (a firm tick; two light ticks: there is none). Grip there again with it in your hand and it goes back. Where each holster is: the three settings below."));
+
+        private static readonly ChoiceSetting welderHolster = Add(new ChoiceSetting("welderHolster", "Welder holster", "Controls",
+            Hands.Holsters.PlaceNames, 1, hidden: Hands.Holsters.Shelved, tooltip: "Where on your body the welder's holster is, with Tool holsters on."));
+
+        private static readonly ChoiceSetting grinderHolster = Add(new ChoiceSetting("grinderHolster", "Grinder holster", "Controls",
+            Hands.Holsters.PlaceNames, 2, hidden: Hands.Holsters.Shelved, tooltip: "Where on your body the grinder's holster is, with Tool holsters on."));
+
+        private static readonly ChoiceSetting drillHolster = Add(new ChoiceSetting("drillHolster", "Hand drill holster", "Controls",
+            Hands.Holsters.PlaceNames, 5, hidden: Hands.Holsters.Shelved, tooltip: "Where on your body the hand drill's holster is, with Tool holsters on."));
+
         private static readonly FlagSetting physicalReload = Add(new FlagSetting("physicalReload", "Reload by hand", "Controls", true,
-            tooltip: "Reloading a hand weapon is done with your hands. Click the gun hand's stick, or pull your other hand's trigger at the magazine, and the magazine drops out. Once it is out, reach down to your other hand's hip, or anywhere at belt height or lower (your lap, seated), and pull that trigger to take a fresh one: a tick says you have it, two light ticks that there are none for this weapon. Keep the trigger pulled, push the magazine up into the well under the gun and it clicks home; the weapon is loaded then, or when the game's own reload time is up if that is later. Let go of the trigger anywhere else and it falls, or back at your hip and it goes back; neither costs a magazine. The rounds left in a dropped magazine are lost, as with the game's own reload. An empty weapon drops its magazine by itself. R on the keyboard still reloads the game's way. Off: the click reloads on the game's timer."));
+            tooltip: "Reloading a hand weapon is done with your hands. Click the gun hand's stick, or pull your other hand's trigger or close its grip at the magazine (a light tick tells you the hand is there), and the magazine drops out. Once it is out, reach down to your other hand's hip, or anywhere at belt height or lower (your lap, seated), and pull that trigger to take a fresh one: a tick says you have it, two light ticks that there are none for this weapon. Keep the trigger pulled, push the magazine up into the well under the gun and it clicks home; the weapon is loaded then, or when the game's own reload time is up if that is later. Let go of the trigger anywhere else and it falls, or back at your hip and it goes back; neither costs a magazine. The rounds left in a dropped magazine are lost, as with the game's own reload. A magazine fired empty stays in until you click (in multiplayer as a client, the server drops it). R on the keyboard still reloads the game's way. Off: the click reloads on the game's timer."));
+
+        private static readonly FlagSetting colbyAimDownSights = Add(new FlagSetting("colbyAimDownSights", "Aim down the sights", "Controls", true,
+            tooltip: "Raise a gun and look down its sights, your eye in line with the sight and the muzzle, and you are aiming down the sights as the iron sight button does in flat play: tighter shots, a slower walk and no sprinting. A light tick on the gun hand tells you when you start and stop. Your view is not zoomed. Off: never aiming down the sights."));
 
         private static readonly ChoiceSetting kickback = Add(new ChoiceSetting("kickback", "Tool and weapon kickback", "Controls", new[] { "Off", "Light", "Full" }, 2,
             tooltip: "A gun or tool made for two hands (the rifles, rocket launchers, grinders and hand drills) kicks hard when you use it in one hand: a gun climbs, snaps and shoves back with every shot while the trigger stays down. A grinder or drill fights you whenever it runs, cutting or not: it yanks as it spins up, climbs and pulls to the side more the longer you hold it, and jerks hard; the drill twists your wrist against its spin. A pistol in one hand flips up with each shot and comes back on its own: time your shots to it, or it walks up. Let go of the trigger and it settles back into your hand. Hold it in both hands and it stays steady. Only the tool and where it points move, never your view; the game's own recoil is left out of a shot only when this kick is at least as strong (see Game recoil in VR). Light: half as hard. Off: no kick."));
@@ -341,7 +396,7 @@ namespace SpaceEngineersVR
             new[] { "Faction only", "Faction, else global chat", "Off" }, 0,
             tooltip: "Where a ping's chat line goes. Faction only: your faction's channel (with no faction the ping stays your own marker). Faction, else global chat: your faction's, or the global channel when you have no faction (everyone on the server reads it). Off: nowhere (the marker is then only yours)."));
         private static readonly FlagSetting shipModel = Add(new FlagSetting("shipModel", "Ship model in your hand", "Interface", true,
-            tooltip: "The actions wheel's Ship model entry holds a small hologram of your ship above your off hand, and the datapad's Ship tab stands it on the pad: seated, the ship you are in; on foot, the one your hand points at or the nearest. Only ships that are yours or shared with your faction; other players' ships, neutral and unowned ones are never shown. Grip it with either hand to turn it over, with both to make it bigger or smaller; let go and it stays there. Damaged blocks show red, blocks lost while it is out show dark, and pointing at a block on it outlines the real block with its name and integrity. The same entry puts it away. Off: no entry on the wheel, and the datapad's Ship tab says it is off."));
+            tooltip: "The actions wheel's Ship model entry holds a small hologram of your ship above your off hand: seated, the ship you are in; on foot, the one your hand points at or the nearest. Only ships that are yours or shared with your faction; other players' ships, neutral and unowned ones are never shown. Grip it with either hand to turn it over, with both to make it bigger or smaller; let go and it stays there. Damaged blocks show red, blocks lost while it is out show dark, and pointing at a block on it outlines the real block with its name and integrity. The same entry puts it away. Off: no entry on the wheel."));
         private static readonly FlagSetting shipModelThrusters = Add(new FlagSetting("shipModelThrusters", "Ship model: thrusters", "Interface", true,
             tooltip: "The ship model shows the thrusters in orange. Also switched on the actions wheel's Model overlays page."));
         private static readonly FlagSetting shipModelPower = Add(new FlagSetting("shipModelPower", "Ship model: power", "Interface", true,
@@ -370,6 +425,12 @@ namespace SpaceEngineersVR
             1080f, 360f, 2160f, 40f, unit: "px", decimals: 0, restart: true, integer: true,
             tooltip: "Height of the game window on your monitor."));
 
+        private static readonly FlagSetting desktopView = Add(new FlagSetting("desktopView", "Desktop view", "Advanced", true,
+            tooltip: "The game window on your monitor shows what the headset sees. Off: the window is hidden while the headset shows the game (on Linux it stays, black), and the GPU does not spend time on it; a hidden window takes no keyboard or mouse, so play is by the controllers alone. What you see in the headset is the same either way. You see the change at once."));
+
+        private static readonly FlagSetting mirrorLayers = Add(new FlagSetting("mirrorLayers", "Headset layers in the desktop window", "Advanced", true,
+            tooltip: "The game window on your monitor shows what the headset does: the visor and the HUD on it, menus, the laser and the external view's screen over the eye. Off: the window shows the eye alone, without them, and the headset's frames take a little less time to draw. What you see in the headset is the same either way."));
+
         private static readonly FlagSetting freeMouse = Add(new FlagSetting("freeMouse", "Mouse can leave the window", "Advanced", true,
             tooltip: "While VR runs, the game does not hold the desktop mouse inside its window (it does that whenever the cursor is hidden in play), so the mouse can reach your other monitors. Off: the game's own confinement. You see the change at once. Windows only."));
 
@@ -380,6 +441,15 @@ namespace SpaceEngineersVR
 
         /// <summary>Interpupillary distance used when no headset supplies eye poses (-ipd 0.064), metres.</summary>
         public static float FallbackIpd => ipd.Value;
+
+        /// <summary>The desktop window shows the headset's picture; off, it is hidden (<see cref="Rendering.DesktopWindow"/>; -vrnodesktop turns it off for the run).</summary>
+        public static bool DesktopView => desktopView.Value && !desktopOffForRun;
+
+        /// <summary>-vrnodesktop: the desktop view is off for this run only, and the setting the options save is left as it is.</summary>
+        private static bool desktopOffForRun;
+
+        /// <summary>The desktop window shows the headset's layers over the eye (<see cref="Rendering.MirrorLayers"/>).</summary>
+        public static bool MirrorLayers => mirrorLayers.Value;
 
         /// <summary>Size of the desktop mirror window (-vrmirror 1920x1080).</summary>
         public static int MirrorWidth => (int)mirrorWidth.Value;
@@ -420,6 +490,12 @@ namespace SpaceEngineersVR
             refreshRate.Offer(names);
         }
 
+        /// <summary>The HUD's colour on the visor, an index into <see cref="Rendering.HudVisor.ColourNames"/>; 0 the game's own.</summary>
+        public static int HudColour => hudColour.Value;
+
+        /// <summary>How strongly the HUD on the visor shows, 0.1 to 1: its light and its coverage alike (<see cref="Rendering.HudVisor"/>).</summary>
+        public static float HudOpacity => hudOpacity.Value;
+
         /// <summary>How large the HUD's parts on the visor are, 1 as the HUD width gives (<see cref="Rendering.HudVisor"/>).</summary>
         public static float HudTextSize => hudTextSize.Value;
 
@@ -444,11 +520,29 @@ namespace SpaceEngineersVR
         /// <summary>How much light the visor's glass takes away, 0 (clear) to <see cref="Rendering.VisorGlass.MostDarkness"/>, averaged over the colours by brightness.</summary>
         public static float VisorTint => visorTint.Value;
 
-        /// <summary>How much light the sun visor takes away when lowered (<see cref="Rendering.SunVisor"/>), gold.</summary>
+        /// <summary>The sun visor's colour, an index into <see cref="Rendering.VisorGlass.ColourNames"/> (<see cref="Rendering.SunVisor.DefaultColour"/> gold).</summary>
+        public static int SunVisorColour => sunVisorColour.Value;
+
+        /// <summary>How much light the sun visor takes away when lowered (<see cref="Rendering.SunVisor"/>), in its colour.</summary>
         public static float SunVisorTint => sunVisorTint.Value;
 
         /// <summary>How strong the sun's glare in the visor's glass is, 0 none to 1 (<see cref="Rendering.VisorGlare"/>).</summary>
         public static float VisorGlare => visorGlare.Value;
+
+        /// <summary>Frost grows in from the closed visor's edge where the game's temperature is Freeze or below (<see cref="Rendering.VisorWeather"/>).</summary>
+        public static bool VisorFrost => visorFrost.Value;
+
+        /// <summary>Each breath mists the inside of the closed visor in the cold or breathing hard (<see cref="Rendering.VisorWeather"/>).</summary>
+        public static bool VisorBreath => visorBreath.Value;
+
+        /// <summary>Rain, snow and dust from the planet's weather land on the closed visor (<see cref="Rendering.VisorWeather"/>).</summary>
+        public static bool VisorWeather => visorWeather.Value;
+
+        /// <summary>The closed visor mists over coming from freezing cold into warm air (<see cref="Rendering.VisorWeather"/>).</summary>
+        public static bool VisorMisting => visorMisting.Value;
+
+        /// <summary>A fingertip on the visor's outside wipes what is on it (<see cref="Rendering.VisorWeather"/>).</summary>
+        public static bool VisorWipe => visorWipe.Value;
 
         /// <summary>How loud the helmet's air is as it opens and closes, a share of the game's vent cue (<see cref="Rendering.HelmetAir"/>).</summary>
         public static float HelmetAirVolume => helmetAirVolume.Value;
@@ -581,10 +675,6 @@ namespace SpaceEngineersVR
             set => externalViewDistance.Set(Clamp(value, externalViewDistance.Min, externalViewDistance.Max));
         }
 
-        public static float ExternalViewDistanceMin => externalViewDistance.Min;
-
-        public static float ExternalViewDistanceMax => externalViewDistance.Max;
-
         /// <summary>Where the screen was moved by hand (see the setting's tooltip); empty for the dash.</summary>
         public static string ExternalViewPlace
         {
@@ -711,6 +801,18 @@ namespace SpaceEngineersVR
         /// <summary>The jetpack, the magnetic boots and hard landings are felt in the hands (<see cref="Hands.Haptics"/>).</summary>
         public static bool HapticMovement => hapticMovement.Value;
 
+        /// <summary>A ship's G is felt in both hands in a seat (<see cref="Hands.Haptics.GForceFrame"/>).</summary>
+        public static bool HapticSeatG => hapticSeatG.Value;
+
+        /// <summary>In a seat, the eye eases back against the ship's acceleration (<see cref="Common.SeatG.Push"/>).</summary>
+        public static bool SeatGPush => seatGPush.Value;
+
+        /// <summary>In a seat, the view's edges dim under G held (<see cref="Common.SeatG.GreyOut"/>).</summary>
+        public static bool SeatGGreyOut => seatGGreyOut.Value;
+
+        /// <summary>In a seat, the helmet's breathing goes hard under G (<see cref="Common.SeatG.BreathingHard"/>).</summary>
+        public static bool SeatGBreathing => seatGBreathing.Value;
+
         /// <summary>How far a thumbstick has to be pushed before it counts, 0 to 1.</summary>
         public static float StickDeadzone => stickDeadzone.Value;
 
@@ -802,6 +904,12 @@ namespace SpaceEngineersVR
         /// <summary>The suit and body status is on a screen on the gauntlet, and not on the HUD (<see cref="Rendering.WristStatus"/>).</summary>
         public static bool WristStatus => wristStatus.Value;
 
+        /// <summary>The HUD and lamp flicker and dim as the suit battery runs low, and go dark at zero, with the wrist screen (<see cref="Rendering.SuitPower"/>).</summary>
+        public static bool SuitPowerFailing => suitPowerFailing.Value;
+
+        /// <summary>A flashing icon at the HUD's edge for each stat at the game's own critical mark (<see cref="Rendering.SuitPower"/>).</summary>
+        public static bool LowStatWarnings => lowStatWarnings.Value;
+
         /// <summary>Closing the grip on anything the Use key works on uses it, on foot and from a seat (<see cref="Hands.GrabUse"/>).</summary>
         public static bool GrabToUse => grabToUse.Value;
 
@@ -832,11 +940,22 @@ namespace SpaceEngineersVR
         /// <summary>The other hand's grip on the held tool's front grip holds it in both hands, aimed along the line between them (<see cref="Hands.TwoHand"/>).</summary>
         public static bool TwoHandedTools => twoHandedTools.Value;
 
+        /// <summary>Looking down a gun's sights aims down them, the game's iron sight (ColbyJack1134's, <see cref="Hands.IronSight"/>).</summary>
+        public static bool ColbyAimDownSights => colbyAimDownSights.Value;
+
         /// <summary>The other hand stays on the tool's grip while its grip button is held, however far the hand moves (<see cref="Hands.TwoHand.Stays"/>).</summary>
         public static bool TwoHandGripStays => twoHandGripStays.Value;
 
         /// <summary>A hand weapon's reload press drops its magazine, and a fresh one is taken from the hip and pushed into the well by hand (<see cref="Hands.Reload"/>).</summary>
         public static bool PhysicalReload => physicalReload.Value;
+
+        /// <summary>The tool hand's grip at a holster on the body takes the best tool of its kind from the inventory (<see cref="Hands.Holsters"/>).</summary>
+        public static bool ToolHolsters => !Hands.Holsters.Shelved && toolHolsters.Value;
+
+        /// <summary>Where each tool's holster is: an index into <see cref="Hands.Holsters.PlaceNames"/>, 0 for none.</summary>
+        public static int WelderHolster => welderHolster.Value;
+        public static int GrinderHolster => grinderHolster.Value;
+        public static int DrillHolster => drillHolster.Value;
 
         /// <summary>The kickback setting: 0 Off, 1 Light, 2 Full (<see cref="Hands.Kickback"/>).</summary>
         public static int KickbackLevel => kickback.Value;
@@ -901,6 +1020,16 @@ namespace SpaceEngineersVR
         }
 
         // ---- The list, for the options screen. ----
+
+        /// <summary>Bug Swarm is held for a later release: its setting stays hidden and off. Its code is not exported.</summary>
+        internal static readonly bool BugSwarmShelved = true;
+
+        private static readonly FlagSetting swarmBlocks = Add(new FlagSetting("swarmBlocks", "Bug Swarm on button panels", "Bug Swarm", false,
+            tooltip: "A button panel's control panel gets a Bug Swarm section, which makes it a swarm block: pressing it wakes waves of bugs that go for a block you choose. In a world you host, swarm blocks work only with this on. Off, button panels are the game's own.",
+            hidden: BugSwarmShelved));
+
+        /// <summary>Whether button panels can be swarm blocks: never while Bug Swarm is shelved, whatever the settings file says.</summary>
+        public static bool SwarmBlocks => !BugSwarmShelved && swarmBlocks.Value;
 
         /// <summary>Every setting, in the order they were declared.</summary>
         public static IReadOnlyList<Setting> All => all;

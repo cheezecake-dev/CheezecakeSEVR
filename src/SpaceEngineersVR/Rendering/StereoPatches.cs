@@ -40,7 +40,11 @@ namespace SpaceEngineersVR.Rendering
                 prefix: new HarmonyMethod(typeof(StereoPatches), nameof(KeepVRDeviceSettings)));
             harmony.Patch(AccessTools.Method(typeof(MyVideoSettingsManager), nameof(MyVideoSettingsManager.WriteCurrentSettingsToConfig)),
                 postfix: new HarmonyMethod(typeof(StereoPatches), nameof(KeepUserVideoConfig)));
+            TestAidsWithoutVR(harmony);
         }
+
+        // The test aids' hooks that work in the flat game too; compiled away without them.
+        static partial void TestAidsWithoutVR(Harmony harmony);
 
         /// <summary>
         /// Second phase: the file system is up and the render device does not exist yet. Each feature patches through
@@ -69,6 +73,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(DebugShapes), DebugShapes.Patch);
             Feature(nameof(VisorFilters), VisorFilters.Patch);
             PatchRegistry.Apply(nameof(HelmetInterior), HelmetInterior.Register);
+            PatchRegistry.Apply(nameof(VisorWeather), VisorWeather.Register);
             if (!Hands.Datapad.Shelved)
                 PatchRegistry.Apply(nameof(Hands.DatapadModel) + "Material", Hands.DatapadModel.Register);
             Feature(nameof(GpuPasses), GpuPasses.Patch);
@@ -80,7 +85,11 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(HudCamera), HudCamera.Patch);
             Feature(nameof(HudToolbar), HudToolbar.Patch);
             Feature(nameof(WristStatus), WristStatus.Patch);
+            Feature(nameof(SpriteQueueLock), SpriteQueueLock.Patch);
+            Feature(nameof(ModelLoadRace), ModelLoadRace.Patch);
+            Feature(nameof(SteamOnlineCache), SteamOnlineCache.Patch);
             Feature(nameof(HudVisor), HudVisor.Patch);
+            Feature(nameof(SuitPower), SuitPower.Patch);
             Feature(nameof(ConformalHorizon), ConformalHorizon.Patch);
             Feature(nameof(WorldMenu), WorldMenu.Patch);
             Feature(nameof(MainMenu), MainMenu.Patch);
@@ -121,6 +130,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(InputPatches), InputPatches.Patch);
             Feature(nameof(Laser), Laser.Patch);
             Feature(nameof(DoubleClickTolerance), DoubleClickTolerance.Patch);
+            Feature(nameof(Gui.InventoryToolbar), Gui.InventoryToolbar.Patch);
             Feature(nameof(CursorClip), CursorClip.Patch);
             Feature(nameof(HandIK), HandIK.Patch);
             Feature(nameof(HandResidual), HandResidual.Patch);
@@ -138,7 +148,6 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(Hands.QuickInventory), Hands.QuickInventory.Patch);
             Feature(nameof(Hands.Ping), Hands.Ping.Patch);
             Feature(nameof(Hands.HeadGestures), Hands.HeadGestures.Patch);
-            PatchRegistry.Apply(nameof(Hands.VoiceTalk), Hands.VoiceTalk.Register);
             Feature(nameof(Hands.ItemGrab), Hands.ItemGrab.Patch);
             Feature(nameof(Hands.HullGrab), Hands.HullGrab.Patch);
             Feature(nameof(Hands.TwoHand), Hands.TwoHand.Patch);
@@ -146,6 +155,9 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(Hands.HelmetStop), Hands.HelmetStop.Patch);
             Feature(nameof(Hands.Kickback), Hands.Kickback.Patch);
             Feature(nameof(Hands.Reload), Hands.Reload.Patch);
+            // Shelved until they are reworked (Hands.Holsters.Shelved).
+            if (!Hands.Holsters.Shelved)
+                Feature(nameof(Hands.Holsters), Hands.Holsters.Patch);
             Feature(nameof(WristButton), WristButton.Patch);
             // Shelved until it is reworked (Hands.Datapad.Shelved).
             if (!Hands.Datapad.Shelved)

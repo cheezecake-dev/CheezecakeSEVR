@@ -1,0 +1,40 @@
+# G-forces in a seat: the ship's pull on the seat moves the eye a few centimetres, presses in the hands, and under a hard
+# load greys the view out and makes the astronaut breathe hard. Sitting still on the ground is felt as nothing; lifting
+# off and stopping is. The plugin logs each mark the pull or the load crosses ("Seat G: rising ..." and "easing").
+# Drill Ship Atmosphere mk.1 from Earth Planet, flown up with A as in seats-cockpit-hand-flight.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: the ship's cockpit, and sit in it ---------------------------------------------------------------------
+admin creativeTools
+own Drill Ship Atmosphere mk.1
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+wait 1
+control Cockpit on Drill Ship Atmosphere mk.1
+wait 3
+read character
+expect state == sitting
+
+# ---- Sitting still on the ground: no pull is felt (the planet's gravity is the seat's 1 g, not G) -----------------
+wait 3
+expect no log Seat G:
+
+# ---- A held lifts the ship for 6 s, letting go the dampeners stop it: the pull crosses the first mark, and eases -------------
+press right a
+wait 6
+release right a
+expect log '/Seat G: rising in \S+: the ship pulls [0-9.]+ m.s/' within 6
+expect log '/Seat G: easing in \S+: /' within 10
+
+# ---- Pushed into the seat off: the same lift moves the eye by nothing, and the log says so ---------------------------
+include vr-option.inc seatGPush false isChecked was_seatGPush
+wait 3
+press right a
+wait 6
+release right a
+expect log '/Seat G: rising in \S+: .*push 0.0 cm [(]off[)]/' within 6
+
+cleanup
+include vr-option.inc seatGPush {was_seatGPush} isChecked _

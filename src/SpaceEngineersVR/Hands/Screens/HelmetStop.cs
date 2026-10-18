@@ -29,8 +29,7 @@ namespace SpaceEngineersVR.Hands
     /// out to the surface over <see cref="EngageSeconds"/>, not in one frame. A hand deeper than a real head would let it
     /// (<see cref="MinReach"/>) is not pushed at all.
     ///
-    /// Only the drawn hand: the gestures at the head (<see cref="HeadGestures"/>: the helmet grip, the temple tap, and push to
-    /// talk at the chin, <see cref="VoiceTalk"/>) read the controller, the real hand, which goes on to the real head, and work
+    /// Only the drawn hand: the gestures at the head (<see cref="HeadGestures"/>: the helmet grip and the temple tap) read the controller, the real hand, which goes on to the real head, and work
     /// as they did. Nor a second tick: the helmet's own (HeadGestures) marks the hand reaching it, and this contact is
     /// <see cref="HandContact.Silent"/>. Not stopped: a hand holding a tool (the arm solver puts it on the tool, past the hand
     /// stop), the helmet's visor open or shut (one shape for both), and anything drawn in the hand.
@@ -86,11 +85,24 @@ namespace SpaceEngineersVR.Hands
 
         private sealed class PerHand
         {
-            public long LastAt, EngagedAt;
+            public long LastAt, EngagedAt, TipAt;
             public bool Engaged, Ramping;
+            public Vector3D TipOn;
         }
 
         private readonly PerHand[] hands = { new PerHand(), new PerHand() };
+
+        /// <summary>
+        /// The drawn index fingertip of <paramref name="hand"/> rests on the helmet's surface now (it touched in the hand stop's
+        /// last frame, within <see cref="GapSeconds"/>), and <paramref name="point"/> is where, in the world, on the surface. For
+        /// what the fingertip does on the helmet (<see cref="Rendering.VisorWeather"/>'s wipe). Game thread.
+        /// </summary>
+        public static bool TipOnHelmet(Hand hand, out Vector3D point)
+        {
+            PerHand h = instance.hands[(int)hand];
+            point = h.TipOn;
+            return h.TipAt != 0 && Stopwatch.GetTimestamp() - h.TipAt < GapSeconds * Stopwatch.Frequency;
+        }
 
         public static void Patch(Harmony harmony)
         {
@@ -128,8 +140,9 @@ namespace SpaceEngineersVR.Hands
                 double margin = MarginMm / 1000.0;
 
                 // The palm, the fingertip with the palm's push on it, the palm again: one push, continuous in the hand's place.
-                Vector3D push = Vector3D.Zero, onShape = Vector3D.Zero;
+                Vector3D push = Vector3D.Zero, onShape = Vector3D.Zero, tipOn = Vector3D.Zero;
                 double biggest = 0.0;
+                bool tipTouches = false;
                 for (int pass = 0; pass < 3; pass++)
                 {
                     Vector3D on;
@@ -139,6 +152,11 @@ namespace SpaceEngineersVR.Hands
                     {
                         biggest = length;
                         onShape = on;
+                    }
+                    if (pass == 1 && length > 0.0)
+                    {
+                        tipTouches = true;
+                        tipOn = on;
                     }
                     push += step;
                 }
@@ -172,6 +190,11 @@ namespace SpaceEngineersVR.Hands
                     return false;
 
                 MatrixD worldFromShape = MatrixD.Invert(shapeFromWorld);
+                if (tipTouches)
+                {
+                    h.TipOn = Vector3D.Transform(tipOn, worldFromShape);
+                    h.TipAt = now;
+                }
                 contact = new HandContact
                 {
                     Point = Vector3D.Transform(onShape, worldFromShape),

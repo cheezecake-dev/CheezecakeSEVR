@@ -10,7 +10,8 @@ namespace SpaceEngineersVR.Rendering
     /// The GUI and HUD as a flat panel in front of the eyes. The game draws all of its 2D - menus, HUD, cursor - in one
     /// sprite pass laid out for one flat screen (<see cref="GuiLayout"/>); drawn straight over the window it spans both
     /// eyes. Instead it goes into a texture of its own, shown as a panel: with a headset as an OpenXR quad layer (the
-    /// runtime composites it, so text stays sharp), and in the window drawn into each eye where that eye sees it.
+    /// runtime composites it, so text stays sharp), and in the window drawn into each eye where that eye sees it; with a
+    /// headset the window shows it as the headset does, with the HUD on the visor (<see cref="MirrorLayers"/>).
     /// In plain gameplay it is a head-locked visor, <see cref="VRSettings.HudDistance"/> ahead and
     /// <see cref="VRSettings.HudWidthDegrees"/> wide, and the HUD's fixed parts are on the visor round it in the headset
     /// (<see cref="HudVisor"/>); while a menu is open it stays where it was put when the menu
@@ -36,6 +37,11 @@ namespace SpaceEngineersVR.Rendering
         private const double PlacementFreshSeconds = 0.5;
 
         private static readonly object placementGate = new object();
+
+        /// <summary>All of the panel, as shares of its width and height from its top left.</summary>
+        internal static readonly RectangleF Whole = new RectangleF(0f, 0f, 1f, 1f);
+
+        // after Whole: statics are set in the order they are written
         private static Matrix placedPose = Matrix.Identity;
         private static float placedHalfWidth, placedHalfHeight;
         private static long placedAt;
@@ -153,8 +159,11 @@ namespace SpaceEngineersVR.Rendering
                     layer = panel;
                 }
 
-                // The window shows the whole HUD on the flat panel, as without the visor.
-                HudVisor.Finish(shown);
+                // With a headset over the eyes the window shows what the headset does: the panel as its layer has it, the beam and
+                // the HUD on the visor, and none of them where the headset has none. Otherwise the whole HUD on the flat panel.
+                bool mirror = headset && eyesDrawn && MirrorLayers.Ready;
+                if (!mirror)
+                    HudVisor.Finish(shown);
                 object window = EyeRenderer.Window;
                 Vector2I windowSize = EyeRenderer.WindowSize;
                 var whole = new MyViewport(windowSize.X, windowSize.Y);
@@ -164,9 +173,11 @@ namespace SpaceEngineersVR.Rendering
                     {
                         areas[i] = EyeRenderer.Eyes[i].Window;
                         inAreas[i] = areas[i].Width > 0f ? InWindow(EyeRenderer.Eyes[i], inHead, halfWidth, halfHeight) : default;
-                        if (inAreas[i].Width > 0f && !onModel)
+                        if (!mirror && inAreas[i].Width > 0f && !onModel)
                             BlendWithin(window, shown, inAreas[i], areas[i], whole);
                     }
+                    if (mirror && layer.HasValue)
+                        MirrorLayers.Show(shown, size, inHead, halfWidth, halfHeight, locked);
                 }
                 else
                 {
@@ -175,7 +186,8 @@ namespace SpaceEngineersVR.Rendering
                     areas[1] = inAreas[1] = default;
                     EyeRenderer.Blend(window, shown, inAreas[0]);
                 }
-                PanelCursor.Shown(areas, inAreas);
+                // In the headset the player sees the panel, not the window: the mouse goes over the whole of it from the window.
+                PanelCursor.Shown(areas, inAreas, headset ? Fit(whole) : default);
                 return layer;
             }
             finally

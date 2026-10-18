@@ -10,10 +10,52 @@ It is a plugin for [Pulsar](https://github.com/SpaceGT/Pulsar), installed from t
 
 <!-- SCREENSHOT 1 (hero): first-person view in a hangar, both hands visible, welder in the right hand mid-weld with
      sparks. Save as images/hero.png and replace this comment with: ![Welding in VR](images/hero.png)
-     Use images/, not docs/images/: docs/ is export-ignored, so git archive would leave the picture out. -->
+     Use images/, not docs/images/, and add the file to .gitattributes and tools/export-public.ps1's SHIP list: git
+     archive leaves out anything they do not list. -->
 
 > **Early access:** it has been played on one setup, and a lot of it is new. Expect rough edges. Please
 > [report what you find](#reporting-bugs): reports from other headsets and graphics cards help most.
+
+## Features
+
+**Your body**
+- Real depth: the game draws the world once for each eye, at the headset's own field of view.
+- Neck and body: turn your head and the body follows past a natural neck turn; crouch for real if you want to (off by
+  default); calibrate your height and arm span standing.
+- Lean into a wall, canopy or dashboard and the view fades to black instead of clipping through it.
+
+**Your hands**
+- Tools sit in your hands and aim where you point: welder, grinder, drill and guns. A rifle, grinder or drill in one hand
+  kicks; take it in both hands for control. Each gun is felt as that gun through the controllers.
+- Reload by hand: pull the magazine out and put a new one in. Raise a gun and look along its sights to aim down them.
+- Press buttons, panels and cockpit screens with a fingertip; close a hand on a seat, door, terminal or container to use it.
+- Pull yourself along hulls and asteroids in zero g and climb ladders; your hands stop on glass and screens instead of passing through.
+- Take a tool from the inventory screen into your hand; catch, throw and stow floating items.
+
+**Toolbar, menus and wrist**
+- The toolbar on a wheel in your hand, with a nested actions wheel: pages, ping, and a small hologram of your ship.
+- A wrist panel of quick actions (inventory, terminal, helmet, lights, dampeners and more), and your status on your wrist.
+- Menus stand in the world where you opened them, used with a laser or the mouse.
+
+**Inside the helmet**
+- You are inside the astronaut's helmet: a padded interior, real tinted glass, and the HUD projected on the visor.
+- Lower the sun visor by hand to cut the glare when you look toward the sun.
+- Hear your own breathing in the suit, hard after a sprint or under G.
+- Weather on the visor: rain drops and trails, snow, dust storms, frost creeping in from the edge in the cold, mist when
+  you come in from the cold, and your breath fogging the bottom of the glass. Wipe it with a fingertip, or open the helmet
+  and it closes again clean.
+- When the suit's power runs low the HUD flickers and fails; health, food, energy, oxygen and hydrogen flash at the HUD's edge at the game's own critical marks.
+
+**Flying and seats**
+- Cockpits: hold the stick and throttle with your hands, from ColbyJack1134's SpaceEngineersVR (see Credits).
+- A touch toolbar on a cockpit screen, and an optional external view screen on the dash.
+- G-forces: pressed into the seat, the view greys out under sustained G.
+- Comfort: snap or smooth turning, a comfort vignette, a zero-g comfort grid, camera shake off, fades on camera cuts.
+
+**And**
+- A desktop window mirroring the headset for anyone watching, or hidden entirely.
+- Linux with native Pulsar (early, see below).
+- An API for mods to work with VR players: [docs/MOD_API.md](docs/MOD_API.md).
 
 ## Requirements
 
@@ -30,7 +72,11 @@ It is a plugin for [Pulsar](https://github.com/SpaceGT/Pulsar), installed from t
     [Space VR](https://github.com/gronkh68-rgb/space-engineers-vr) (MIT).
 - **A graphics card with room to spare.** The world is drawn twice every frame. **Dynamic resolution** (on by default)
   draws the eyes at down to 70% resolution while the GPU cannot keep up. To make the game cheaper still, lower the
-  render resolution in your headset's PC software (for Link, in the Meta Horizon Link app's graphics settings).
+  render resolution in your headset's PC software (for Link, in the Meta Horizon Link app's graphics settings), and turn off
+  **Headset layers in the desktop window** (Options > VR > Display > Performance): the window on your monitor then shows
+  the eye alone, without the visor, HUD, menus and laser, and the headset's frames take a little less time to draw. Turning off
+  **Desktop view** (Options > VR > Display > Desktop window) hides the window and saves the time of drawing it; play is then by
+  the controllers alone, as a hidden window takes no keyboard or mouse.
 
 ## Install with Pulsar
 
@@ -102,7 +148,8 @@ Proton the plugin is not offered: use native Pulsar.
   half a second**, until you feel a firm tick. A quick tap of Menu still opens the game menu. Recentre whenever you
   turn your chair or move in the room. Sitting in a seat recentres on it by itself.
 - **Play position:** Options > VR > Display > **Play position**, `Standing` (the default) or `Seated`.
-  - Standing: your real height drives your view, and a real crouch crouches your astronaut.
+  - Standing: your real height drives your view. With **Crouch when you crouch** on (off by default), a real crouch
+    crouches your astronaut.
   - Seated: your head becomes your astronaut's eyes, standing tall, wherever it is when you recentre.
 - **Height (Standing):** set up the headset's play area first, so it knows where the floor is. Then go to Options > VR
   > **Calibrate height**, stand straight and click. Your eye height is measured after 3 seconds and saved. Then hold both
@@ -114,15 +161,25 @@ Proton the plugin is not offered: use native Pulsar.
   - a comfort vignette;
   - a comfort grid: on the jetpack in zero g, a faint grid at your real floor that stays still around you (off by default);
   - camera shake (off by default);
-  - zero-g pitch and roll.
+  - zero-g pitch and roll;
+  - G-forces in a seat, all on by default: when the ship speeds up, brakes or turns hard you are eased a few
+    centimetres back into the seat (**Pushed into the seat**), from about 2 g held for a few seconds the edges of your
+    view dim inward and clear again after (**Grey-out under G**; the middle stays clear), and with the helmet closed you
+    breathe hard and for a while after (**Breathing hard under G**). Both controllers press steadily from about 1 g
+    (Hands > Haptics > **G-forces in a seat**). Turn off the push and the grey-out if view movement you did not make
+    yourself is uncomfortable. Nothing of this on foot or on the jetpack.
 - **Inside your helmet:** Options > VR > Display > **Helmet view** (on by default) puts you inside your astronaut's
   helmet, on foot and in a seat.
   - The helmet's padded inside and the visor's seal sit round the edge of your view, as close to your eyes as a real
-    helmet's. They are lit by the light through the visor and by your suit lamp. Looking ahead, they only cover the edge
+    helmet's, and the helmet closes all the way round your head: there is no edge to look past, seated or on foot. They are lit by the light through the visor and by your suit lamp. Looking ahead, they only cover the edge
     your headset adds: everything a player without a headset sees stays in view. **Helmet interior** turns it off.
-  - The helmet sits on your suit's neck ring. It turns a little with your head, about 12 degrees each way. Turn your head
-    further and it turns inside the helmet, and the helmet's side comes into view, as in a real suit. Turn your body (the
-    stick) to look round freely.
+  - The helmet's inside is drawn in the game's own 3D view, a closed sphere round your head on any headset. Floating
+    windows (the external view, camera views, menus, the wrist panel) show over its rim.
+  - The helmet sits on your suit's neck ring. It turns a little with your head, about 12 degrees each way and further
+    when you look down, and the visor reaches low, so looking down is easy. Turn your head further and it turns inside
+    the helmet, and the helmet's side comes into view, as in a real suit. A quick turn of the head leaves the helmet a
+    moment behind, so you see the visor's edge before the helmet and your body come round. Turn your body (the stick) to
+    look round freely.
   - You look out through the visor's glass, tinted as real tinted glass is: it filters the light and never adds any.
     **Visor tint colour** sets the colour: Neutral, Gold (an astronaut's sun visor), Blue, Green or Rose. **Visor tint**
     sets how much light it takes, from clear to 60%; 13% is about the game's own glass.
@@ -132,18 +189,39 @@ Proton the plugin is not offered: use native Pulsar.
     vignette; menus and the wrist panel stay readable.
   - The HUD is projected onto the glass (see below). It stays with the helmet, so glancing far round looks away from it;
     **HUD fixed to the helmet** off makes it follow your head instead. It powers on with a flicker as the visor seals.
-  - **Sun visor:** grip the brow of your helmet and draw your hand down to lower its gold sun visor over the glass, and
-    push up to raise it. **Sun visor** sets how dark it is.
+  - **Sun visor:** grip the front of your helmet, anywhere from the brow to the chin, and draw your hand down to lower its
+    sun visor over the glass, and push up to raise it. A grip on the front is only
+    ever the sun visor. It rides on the glass, so it only comes down with the helmet closed. **Sun visor colour** sets its colour, gold
+    as on a spacesuit or any of the glass's colours, and **Sun visor** how dark it is, up to 85%.
   - **Glare:** look toward the sun through the closed visor and its light scatters in the glass, a glow and a haze. Lower
     the sun visor to cut it. **Visor glare** sets how strong it is, down to none.
+  - **Weather on the glass:** the closed visor takes what the world gives it, from the game's own temperature and weather,
+    and the HUD stays clear above all of it. Each has its setting, all on to start with:
+    - **Frost on the visor:** in freezing air frost creeps in from
+      the visor's rim, further and faster the colder it is, and melts away in the warm.
+    - **Breath on the visor:** in the cold, or breathing hard after a run, each breath out mists the inside of the glass
+      at its lower edge for a moment.
+    - **Weather on the visor:** out in the rain, drops spatter the glass and run down it; in snow, flakes melt in the
+      middle and settle at the edges; in a dust or sand storm, dust coats it. Under cover it stops.
+    - **Visor mists up indoors:** come in from freezing cold to warm air and the cold glass mists over, clearing in a
+      few seconds as it warms.
+    - **Wipe the visor:** draw a fingertip across the front of the visor and it wipes the frost, water, snow, dust and
+      mist off where it passes, leaving trails, with a soft buzz in that hand. Whatever caused it slowly comes back.
   - Open the helmet and the air hisses out. The glass swings up, taking its tint and the HUD with it, and the helmet
     stays round you. Close it and the air hisses back in.
-  - With the helmet closed you hear yourself breathe, harder after a sprint and more strained as your suit's air runs
-    low. **Breathing in the helmet** sets Off, Quiet (the default) or Normal. Only you hear it.
+  - With the helmet closed you hear yourself breathe: the game's own breathing and its own recordings, made inside the
+    helmet, whatever your world's sound setting (the game itself plays it only with realistic sounds), harder after
+    running or a sprint, under hard G in a seat, and more strained as your suit's air runs low. **Breathing in the helmet** sets Normal (the game's own volume, the default), Quiet or Off; Off still lets you
+    hear yourself choke when the suit is empty. Only you hear it.
 - **Walls:** lean your head into a wall, a canopy or a dashboard and the view fades to black rather than going through
   it. It does so in third person and while you steer a remote control too.
 - **Menus:** point at them with your right hand. The trigger clicks, the grip right-clicks, the stick scrolls, and B goes
   back.
+- **Tools and guns from the inventory:** the inventory screen shows your toolbar along its bottom. Drag a hand tool or a
+  gun from your inventory onto one of its slots and it goes there, as in the G menu; drop it on the slot in your hand
+  and you hold it straight away. Or squeeze the grip on it and pull your hand back toward you, as if taking it off a
+  shelf, and it comes into your hand. Only what you carry (in survival), and only tools and guns: blocks and the rest
+  still come from the G menu.
 - **The HUD is on your visor:** the toolbar, suit status, block info, notifications, chat and the rest of the HUD sit
   toward the edges of your view, curved round your head like a helmet visor, with the middle of your view clear. With
   the helmet view on, the HUD is projected onto the glass as one display, laid out whole as the game lays it out. It is
@@ -151,36 +229,46 @@ Proton the plugin is not offered: use native Pulsar.
   HUD distance, where your eyes can rest on it. Without the helmet view, each part keeps its side and corner and turns
   to face your eyes. Markers and the crosshair stay where they point. In a cockpit, the artificial horizon lies on the
   real horizon, and the altitude sits under the crosshair. To have
-  the whole HUD on one flat panel ahead of you instead, turn off Options > VR > Interface > **HUD on the visor**. The
-  desktop window shows the HUD flat either way.
+  the whole HUD on one flat panel ahead of you instead, turn off Options > VR > Interface > **HUD on the visor**. On the
+  visor, **HUD colour** filters the HUD to a helmet display's green, amber or cyan, and **HUD opacity** fades it. The
+  desktop window shows the HUD as the headset does, on the visor.
+- **Suit power failing:** as your suit's battery runs low, the HUD on the visor flickers, more often the lower it gets,
+  and dims; at zero it goes fully dark, and the status screen on your wrist with it, each with a brief flicker as it
+  dies; the suit lamp sputters the same way before it goes out. Recharge at a medical room, a survival kit or a seat on
+  a powered grid and both come back the way the HUD powers on as your helmet seals. **Suit power failing** turns it off:
+  the HUD and the lamp are then only ever as the game itself draws them.
+- **Low stat warnings at the HUD's edge:** a small flashing icon at the edge of the HUD for each of health, food,
+  energy, oxygen and hydrogen while it is at the game's own critical mark for that stat - never sooner than the game's
+  own HUD bar already warns you. They die with the HUD under Suit power failing above, and the energy one is the last
+  to go. **Low stat warnings at the HUD's edge** turns it off.
 - **Settings:** everything is in **Options > VR**, on five tabs: Display, Comfort, Controls, Hands and Interface.
-- **For mod authors:** a mod that draws a HUD can find out where the VR HUD is through the plugin's API, so it reads
-  right in a headset. See [docs/MOD_API.md](docs/MOD_API.md).
   - Each setting's tooltip says what it does.
   - Every way out keeps your changes. **Undo changes** puts back what you had when you opened the screen.
   - The file is `SpaceEngineersVR.cfg` in the game's own folder beside `SpaceEngineers.cfg`: `%APPDATA%\SpaceEngineers\`
     (`~/.config/SpaceEngineers/` on Linux), or the folder given to the game with `-appdata`.
+- **For mod authors:** a mod that draws a HUD can find out where the VR HUD is through the plugin's API, so it reads
+  right in a headset. See [docs/MOD_API.md](docs/MOD_API.md).
 
 ## Controls
 
 Button names are the Quest (Touch) controller's: A and B are on the right controller, and X, Y and Menu on the left.
 This is the default right-handed setup. With **Left-handed** on, the left hand points the menu laser and holds the tools
 and guns, and the right hand takes the front grip. With a gun or tool in hand on foot the triggers swap (the left one
-fires, welds, grinds and drills; the right is the secondary) and the left stick click reloads; the datapad stows on the right forearm. Building and seats keep the buttons below.
+fires, welds, grinds and drills; the right is the secondary) and the left stick click reloads. Building and seats keep the buttons below.
 The keyboard, mouse and a gamepad keep working alongside the controllers. The game's own prompts name these buttons, for
 example "Press [Right grip] to open".
 
 | | On foot / jetpack | Seat: cockpit, rover, remote control | Turret, searchlight | Build mode (block in hand) |
 |---|---|---|---|---|
-| Left stick | walk / fly, the way your head faces | forward, back, strafe (rover: throttle, steer) | - | as on foot / jetpack |
+| Left stick | walk / fly, the way your head faces | forward, back, strafe (rover: throttle, steer); not in a cockpit with its own sticks (see Cockpit sticks) | - | as on foot / jetpack |
 | Left stick click | sprint; jetpack in zero g, held: the right stick pitches and rolls you. Pointing at a container, or right hand on one: withdraw for the Build Planner (no sprint or roll) | lights | - | held: the right hand, right stick, A and B work the block (see Building); no sprint, no zero-g roll |
-| Right stick left / right | snap turn (or smooth turn) | yaw | turn | snap turn; with the left stick click held, a push turns the block 90 deg |
-| Right stick up / down | on foot: up jumps, down crouches; jetpack: up / down | pitch | pitch | as on foot / jetpack; with the left stick click held, a push moves the block farther (up) or nearer (down) |
+| Right stick left / right | snap turn (or smooth turn) | yaw; not in a cockpit with its own sticks | turn | snap turn; with the left stick click held, a push turns the block 90 deg |
+| Right stick up / down | on foot: up jumps, down crouches; jetpack: up / down | pitch; not in a cockpit with its own sticks | pitch | as on foot / jetpack; with the left stick click held, a push moves the block farther (up) or nearer (down) |
 | Right stick click | reload, with a hand weapon. Pointing at a container, or right hand on one: put the Build Planner in production; with the right grip held: deposit all | landing gear | - | large / small block |
 | Right trigger | primary: fire, weld, grind, drill (Left-handed with a gun or tool: secondary) | primary | fire | place the block |
 | Left trigger | secondary (with a gun: nothing; raise the gun to your eye to use its sight. Left-handed with a gun or tool: primary) | secondary | - | remove the block (creative; in survival the grinder removes blocks) |
-| Right grip | use, or grab what your hand is on; on the right of your helmet: open or close it; on the left: suit lamp. At a container the use waits until you let go of the grip | hold the flight stick: tilt it to roll or pitch, twist it to yaw (see below); on your helmet: as on foot | - | as on foot: use, or grab what your hand is on |
-| Left grip | in empty air: tools wheel; on something: grab; on the right of your helmet: open or close it; on the left: suit lamp; at its mouth: push to talk | hold the throttle; on your helmet: as on foot; at the mouth: push to talk | at the mouth: push to talk | as on foot / jetpack |
+| Right grip | use, or grab what your hand is on; on the right side of your helmet: open or close it; on the left side: suit lamp; on the front: sun visor (see above). At a container the use waits until you let go of the grip | take the cockpit's right stick, wheel or handlebar (see Cockpit sticks); holding nothing: roll right; on your helmet: as on foot | - | as on foot: use, or grab what your hand is on |
+| Left grip | in empty air: tools wheel; on something: grab; on the right side of your helmet: open or close it; on the left side: suit lamp; on the front: sun visor | take the cockpit's left stick or throttle; holding nothing: roll left; on your helmet: as on foot | - | as on foot / jetpack |
 | A | jump; jetpack: up | up | zoom in, held | jump; jetpack: up. With the left stick click held: the block's next stage |
 | B | jetpack on / off | down | zoom out, held | jetpack on / off. With the left stick click held: the previous stage |
 | X | tap: dampeners on / off; hold: ping what you point at (see Ping) | tap: dampeners on / off; hold: ping where you look | - | tap: symmetry on / off; hold: next symmetry plane (creative) |
@@ -209,20 +297,16 @@ example "Press [Right grip] to open".
   you let go of the grip, so a deposit does not also open it; a deposit made with the grip held cancels the use. A
   container you may not use leaves the clicks as they were. A reminder shows the first time you point at one or your
   hand is on one.
-- **Flying with your hands on the controls** (on by default): in a cockpit, the ship flies only while you hold its
-  controls, where the astronaut's hands rest. Close your right grip near the stick and your left near the throttle. A
-  light buzz tells you when a hand is close enough.
-  - The throttle hand gives the left stick and A / B.
-  - The stick hand gives the right stick and the triggers, and flies like a flight stick: tilt it sideways to roll,
-    forward to put the nose down, back to pull it up, and twist it to yaw. The right stick's pitch and yaw work too.
-    Options > VR > Controls has **Yaw from twisting the stick hand** and **Yaw from the thumbstick** (both on): turn
-    either off to leave the yaw to the other. Pitch and roll by tilting are always on.
-  - Let go and that hand's input stops. A control stays held for as long as the grip stays closed, wherever the hand
-    goes, so it keeps working with the hand out of the headset's view.
-  - X, Y, Menu and the stick clicks work without holding anything.
-  - In a remote control, or a seat whose pose has no hand on a control, the grips roll instead.
-- **Hand flying** (off by default, Options > VR > Controls): fly by moving the controller while you hold the stick or
-  throttle.
+- **Cockpit sticks** (on by default; Options > VR > Controls, **Cockpits (from ColbyJack1134's SpaceEngineersVR)**): in
+  one of the game's cockpits, the sticks in the seat move with your hands. Reach a hand to one and squeeze the grip to
+  take hold of it: tilt the right stick to pitch and roll and twist it to yaw; push and pull the left one to move, and
+  twist it to go up and down. Let go and it springs back to centre. In a rover, buggy or speeder, take the wheel or
+  handlebars the same way and turn them to steer.
+  - The thumbsticks fly such a cockpit too only with **Thumbstick controls in cockpits** on. A remote control, and a seat
+    without sticks of its own (a modded cockpit), fly on the thumbsticks.
+  - The dashboard's switches, covers and handles work by hand: touch one with your fingertip and pull the trigger or
+    squeeze the grip. The quick panel's **Seat** page moves your seat and the sticks.
+  - A grip that holds nothing rolls the ship. X, Y, Menu and the stick clicks work without holding anything.
 - **Camera block view:** the game gives a camera block, a turret or a searchlight no look-around, so its view is on a
   screen ahead of you, in the dark, at the game's field of view. Your head does not turn it; it turns only as the block
   is aimed. A sideways flick of the right stick switches camera. Hold the stick up or down to zoom, and the zoom shows on
@@ -253,8 +337,8 @@ controls table above applies to it.
 
 - There is no X: the dampeners are on the wrist panel and the actions wheel.
 - Recentre with SteamVR's own reset. The plugin follows it.
-- In a seat the right pad's up and down are thrust, so pitch comes from tilting the stick hand (see **Flying with your
-  hands on the controls**).
+- In a seat the right pad's up and down are thrust, so in a cockpit pitch comes from tilting its right stick (see
+  **Cockpit sticks**).
 - In menus and the tools wheel, the right pad clicked up or down is the stick, and a tap of the right Menu button is B.
 
 ### Menus
@@ -263,14 +347,18 @@ controls table above applies to it.
 |---|---|
 | Right hand's laser | where it hits the menu is the mouse cursor |
 | Its trigger / grip / stick | left click / right click / scroll |
+| The mouse | moves the cursor over the whole menu as on a flat screen, wherever you look; it keeps it until the laser's trigger or grip is pressed on the menu |
 | B, or a tap of the left Menu button | back |
 | Click a text box | an on-screen keyboard opens (a real keyboard works too) |
 | Terminal: the other hand's grip / trigger held | moves or queues x10 / x100 (both: x1000) |
+| Inventory: a tool or gun dragged onto the toolbar at the bottom | goes in that slot (on the slot in your hand: you hold it) |
+| Inventory: the grip on a tool or gun, then the hand pulled back | you hold it |
 
 ### Tools wheel, actions wheel, wrist
 
 - **Tools wheel** (your toolbar):
-  - To open it: on foot, **hold the left grip** in empty air; in a seat, **tap Y**.
+  - To open it: on foot, **hold the left grip** in empty air; in a seat, **tap Y**. It opens at your left hand, facing
+    you, and stays there until it closes; the actions wheel opens in its place.
   - It opens on its middle, which is the empty hand: open it and pull a trigger straight away, and your hand is empty.
     Letting go of the grip without moving the stick only closes the wheel, so a missed grab does not holster your tool.
   - To pick a slot: push the left stick at it, then let go of the grip or pull a trigger. The stick back in the middle
@@ -284,7 +372,7 @@ controls table above applies to it.
   Grip it with either hand to turn it, with both to make it bigger or smaller; let go and it stays where you left it.
   Damaged blocks are red and blocks lost while it is out are dark. Point at a block on it and the real block is
   outlined in the world, with its name and integrity beside it. The same entry puts it away. Options > VR > Interface >
-  **Ship model** turns the entry off.
+  **Ship model in your hand** turns the entry off.
 - **Model overlays**: while the model is out, the actions wheel has a Model overlays page. Thrusters (orange), Power
   (yellow), Doors (green) and Weapons (outlined red) each switch on and off there, and the wheel stays up for the next.
   The same switches are in Options > VR > Interface.
@@ -303,8 +391,10 @@ controls table above applies to it.
   In a pilot seat it is where you look. A quick tap of X is still the dampeners, now as you let go. The actions
   wheel's Ping and Mark GPS do the same with X up: point, pull the trigger, or B to cancel. Options > VR > Controls >
   Ping sets how long a ping lasts and where its chat line goes, or turns the hold on X off.
-- **Wrist panel**: on foot, press **Y**. It has big buttons for Inventory, Terminal, G menu, Lights, Helmet, Dampeners,
-  Relative, Heal, Broadcast, Symmetry and Colour. Press them with the laser. You can keep walking while it is open.
+- **Wrist panel**: on foot, press **Y**. It has big buttons for Inventory, Terminal, G menu, Lights, Helmet, Heal,
+  Dampeners, Relative, Broadcast, Symmetry and Colour, then External view. Press them with the laser. You can keep walking
+  while it is open. In a seat: tap **Y** for the tools wheel, click the left stick for the actions wheel, then its
+  **Quick actions** entry (the tools wheel says so); there it has the ship's switches.
 - **Status on the wrist**: the screen on your left gauntlet shows your suit and body status: health, energy, oxygen,
   hydrogen, inventory fill and more. Turn your forearm up to read it, as you would a watch. While it is on, the HUD
   leaves those parts out.
@@ -320,16 +410,25 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
 - **Two-handed tools:** close your other hand on the front of the tool or gun. A rifle, grinder or drill held in one hand
   kicks hard (**Tool and weapon kickback** sets how hard). The game's own recoil applies only when that kick
   is weaker, and on foot it turns the gun, not the view; **Game recoil in VR** Off leaves it out in single player.
-- **Reload:** click the gun hand's stick (or close your other hand's grip at the gun's magazine) and the magazine drops
-  out. Left-handed, that is the left stick, and sprint moves to the right stick click while the gun is held (on the
+- **Reload:** click the gun hand's stick (or pull your other hand's trigger, or close its grip, at the gun's magazine:
+  below a pistol's grip, under a rifle; a light tick tells you the hand is there) and the magazine drops
+  out. A magazine fired empty stays in until you do. A gun you draw with its magazine empty is loaded by the game as it comes out if you carry a magazine for it, and has none in it if you do not. Left-handed, that is the left stick, and sprint moves to the right stick click while the gun is held (on the
   jetpack with zero-g roll on, the left click stays the roll's and reload stays on the right).
-  Then reach to your other hand's hip, close the grip to take a fresh one, and push it up into the well under the gun until
-  it clicks. The gun is loaded then, or when the game's own reload time is up if that is later: reloading by hand is never
+  Then reach down to your other hand's hip, or anywhere at belt height or lower (your lap, if you play seated), pull that
+  trigger to take a fresh one, and keep it pulled while you push the magazine up into the well under the gun until it
+  clicks. The trigger is used rather than the grip, so a reach that misses never opens the tools wheel. The gun is loaded then, or when the game's own reload time is up if that is later: reloading by hand is never
   quicker than the game's (**Reload by hand**; off, the click reloads on the game's timer).
+  On the game's timer (R, or **Reload by hand** off) the magazine drops out of the gun and into your other hand, and
+  goes back in as the reload ends. A buzz in your other hand says the reload has started, and one in your gun hand that the
+  gun is loaded.
+- **Aim down the sights:** raise a gun and look along its sights, and you are aiming as with the iron sight button in flat
+  play: tighter shots, a slower walk, no sprint. A light tick in the gun hand marks starting and stopping. Your view is not
+  zoomed (**Aim down the sights**, under **Guns (from ColbyJack1134's SpaceEngineersVR)**).
 - **Helmet and suit lamp:** on foot or in a seat, grip the right side of your helmet, with either hand, to open or close
   it, and the left side to switch the suit lamp (in a seat too it is your suit's lamp, not the ship's lights); or tap the side of your head with a fingertip for the lamp (**Helmet and lamp by hand**). With
   **Helmet view** off, either side switches the lamp. The helmet and the lamp are also on the wrist panel and the actions wheel.
-- **Push to talk:** hold the left grip with your hand at your helmet's mouth.
+- **Voice chat:** use the game's voice activation (Options, Audio); there is no push-to-talk gesture, so the grip at
+  your helmet stays the helmet's.
 - **Fingertip buttons:** touch a button panel's button with your index fingertip.
 - **Grab to use:** close your hand on a seat, door, terminal, cargo container, medical room or anything else the Use key
   works on.
@@ -345,9 +444,14 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
 - **External view** (off by default, Options > VR > Interface): a small screen on the dash shows your ship from behind.
   Grip it to move it.
 
-<!-- SCREENSHOT 3 (cockpit): seated in a cockpit, both hands on the stick and throttle, ideally with the External view
+<!-- SCREENSHOT 3 (cockpit): seated in a cockpit, both hands on the cockpit's sticks, ideally with the External view
      screen on the dash. Save as images/cockpit.png and replace this comment with:
-     ![Flying with your hands on the controls](images/cockpit.png) -->
+     ![Flying with the cockpit's sticks](images/cockpit.png) -->
+
+## Bug Swarm
+
+A wave-defence scenario on button panels, with its own world. Both are held for a later release while the scenario is
+reworked for multiplayer; this release puts no worlds in your saves.
 
 ## Known issues
 
@@ -382,8 +486,8 @@ This is **early access**. These are the known issues and limits:
   unaffected.
 - **Multiplayer has not been tested.** Your arms and where you hold your tool are only shown on your own PC. Other players
   see your tool where their game animates it, but your shots still go where your hand points.
-- **Hands are for on foot.** In a seat your hands hold the stick and throttle, and cockpit buttons cannot be pressed
-  with a finger (the touch toolbar screen can).
+- **Seated, your fingertip works the cockpit's own switches and screens,** not button panel blocks in reach of the
+  seat.
 - **Left-handed:** the status screen stays on the left gauntlet: the astronaut model has its screen only there.
 - **Game updates** can change the code the plugin hooks. A hook that fails is logged and skipped. If the renderer
   cannot be hooked, the game starts without VR.
@@ -424,11 +528,14 @@ Before you report, check these:
   with his permission: the particle density setting, the double-click tolerance for lists and tables, the free mouse, the
   controller pose guard, the lens-mask margin and the menu fallback when the VR view fails are adapted from his code, and
   the cockpits are his: the moving sticks, throttles, wheels and handlebars, the touchable switches, covers and handles,
-  the seat panel and seat fit, and the per-cockpit flight settings. His description of the game's artificial horizon
+  the seat panel and seat fit, and the per-cockpit flight settings. From his gun handling: aiming down the sights by the
+  sight line (his measurements of each gun's sights), telling the other hand's place at a gun's front grip from its
+  magazine, the magazine following the hand in the game's timed reload, and the reload's buzzes. His description of the game's artificial horizon
   layout was the reference for ours.
 
 This is a separate project from Math0424's earlier SpaceEngineersVR plugin, and is not related to it.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The code ported from ColbyJack1134's SpaceEngineersVR is included under it with his
+permission; see [NOTICE.md](NOTICE.md).

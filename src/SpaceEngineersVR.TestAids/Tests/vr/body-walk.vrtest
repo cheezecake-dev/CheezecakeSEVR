@@ -1,0 +1,67 @@
+# Walking and strafing: the left stick walks the astronaut forward, back and sideways, the way the body faces.
+# Needs: Earth Planet (survival, on foot, in gravity). Each leg is about one second, so the start base has room for it.
+plugin SpaceEngineersVR
+world game:Earth Planet
+# open ground: room to walk, nothing in the way
+goto open
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+# a moment's walk first: walking turns the body to the way the head faces, and goto left the body facing elsewhere
+stick left 0 1
+wait 0.3
+stick left 0 0
+wait 1
+
+# before: with the stick at rest the astronaut stays where it is
+read character
+mark
+wait 1
+read character
+expect position moved < 0.1
+
+# the left stick forward: the astronaut walks ahead and does not turn
+read character
+mark
+stick left 0 1
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1
+
+# the left stick back: the astronaut walks backward and still faces the same way
+read character
+mark
+stick left 0 -1
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1
+
+# the left stick right: the astronaut sidesteps and still faces the same way
+read character
+mark
+stick left 1 0
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1
+
+# the left stick left
+read character
+mark
+stick left -1 0
+wait 1
+stick left 0 0
+wait 0.5
+read character
+expect position moved > 1.5
+expect forward moved < 0.1

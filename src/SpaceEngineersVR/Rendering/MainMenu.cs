@@ -158,7 +158,6 @@ namespace SpaceEngineersVR.Rendering
                 return false;
             Vector2I eye = EyeRenderer.EyeResolution;
             bool toHeadset = XrSession.InFrame && XrSession.ShouldRender;
-            Matrix head = EyeRenderer.Head;
 
             MyViewport[] windows = Windows(toHeadset, window, eye);
             Matrix inverseHead = toHeadset ? Matrix.Invert(EyeRenderer.ToMatrix(XrSession.Head)) : Matrix.Identity;
@@ -222,7 +221,7 @@ namespace SpaceEngineersVR.Rendering
         /// After the panel was blended into the window: the beam again, over it, in each eye of the window, so that the
         /// desktop view shows where the ray goes across the panel too. In the eye images (as in game, where the beam is
         /// a billboard in the scene) the panel hides the part of the beam that passes behind it. With a headset the
-        /// window is only a mirror of one eye and this is skipped, to keep the frame light.
+        /// window shows the headset's beam layer instead (<see cref="MirrorLayers"/>).
         /// </summary>
         public static void ShowBeam()
         {

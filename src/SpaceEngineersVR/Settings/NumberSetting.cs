@@ -81,6 +81,13 @@ namespace SpaceEngineersVR
             Assign(ref effective, ref effectiveSet, value);
         }
 
+        /// <summary>Sets both values for the command line, held to the setting's own range, as the options screen holds it.</summary>
+        public void ForceWithin(float value)
+        {
+            if (!float.IsNaN(value))
+                Force(Math.Max(Min, Math.Min(Max, value)));
+        }
+
         private bool Accept(ref float? value)
         {
             if (!value.HasValue)

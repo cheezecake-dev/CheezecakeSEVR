@@ -18,6 +18,8 @@ namespace SpaceEngineersVR.Rendering
     /// The texture is centred on the eye's optical axis (the projection's off-centre shift), so a headset whose field
     /// of view is not symmetric still gets a vignette that closes in on the middle of the lens. The panel (HUD and
     /// menus) is a separate layer over the eyes and is not darkened. Setting: ComfortVignette (0 = off).
+    /// The same vignette is the grey-out under G in a seat (<see cref="Common.SeatG.GreyOut"/>, its own setting): the darker of
+    /// the two is drawn.
     /// Debug (<see cref="RenderDebug"/>): Vignette=0 turns it off, VignetteTest=1 draws it at full strength without motion.
     /// </remarks>
     internal static class Vignette
@@ -28,7 +30,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Debug: strength 1 whatever the motion and the setting (<see cref="RenderDebug"/> VignetteTest=1).</summary>
         public static bool Test { get; set; }
 
-        /// <summary>The strength the eyes were drawn with this frame, 0 to 1: motion, smoothed, times the setting.</summary>
+        /// <summary>The strength the eyes were drawn with this frame, 0 to 1: motion, smoothed, times the setting, or the grey-out under G if darker.</summary>
         public static float Strength { get; private set; }
 
         // ---- Tuning ----
@@ -195,7 +197,8 @@ namespace SpaceEngineersVR.Rendering
                 {
                     var motion = VRControls.Motion;
                     float level = Advance(ref state, Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency, motion.Move, motion.Turn, motion.Snaps);
-                    Strength = Off ? 0f : Test ? 1f : level * VRSettings.ComfortVignette;
+                    // The comfort vignette, or the grey-out under G in a seat (Common.SeatG), whichever is darker.
+                    Strength = Off ? 0f : Test ? 1f : Math.Max(level * VRSettings.ComfortVignette, Common.SeatG.GreyOut);
                 }
                 if (Strength <= Visible)
                     return;

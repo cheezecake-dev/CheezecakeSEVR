@@ -27,7 +27,7 @@ namespace SpaceEngineersVR.Rendering
     /// </para>
     /// <para>
     /// The sun visor (<see cref="SunVisor"/>), lowered by hand over the outside of the helmet, is a second pane the same way,
-    /// gold, as dark as <see cref="VRSettings.SunVisorTint"/>, sliding down from the top; it is the helmet's, so it shows with the
+    /// in its own colour (<see cref="VRSettings.SunVisorColour"/>), as dark as <see cref="VRSettings.SunVisorTint"/>, sliding down from the top; it is the helmet's, so it shows with the
     /// glass open too.
     /// </para>
     /// <para>
@@ -91,13 +91,14 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>
         /// The glass's transmission, red, green and blue, for colour <paramref name="colour"/> taking <paramref name="darkness"/> of
         /// the light on average: 1 less darkness times the colour's absorption, the absorption scaled so its brightness-weighted
-        /// average is 1, each channel kept between <see cref="LeastTransmission"/> and 1. Pure.
+        /// average is 1, each channel kept between <see cref="LeastTransmission"/> and 1; the darkness no more than
+        /// <paramref name="most"/> (the glass's <see cref="MostDarkness"/>, or the sun visor's). Pure.
         /// </summary>
-        internal static Vector3 Transmission(int colour, float darkness)
+        internal static Vector3 Transmission(int colour, float darkness, float most = MostDarkness)
         {
             Vector3 absorption = Absorption[colour >= 0 && colour < Absorption.Length ? colour : 0];
             absorption /= Vector3.Dot(absorption, Luminance);
-            float d = MathHelper.Clamp(darkness, 0f, MostDarkness);
+            float d = MathHelper.Clamp(darkness, 0f, most);
             return new Vector3(
                 MathHelper.Clamp(1f - d * absorption.X, LeastTransmission, 1f),
                 MathHelper.Clamp(1f - d * absorption.Y, LeastTransmission, 1f),
@@ -133,7 +134,7 @@ namespace SpaceEngineersVR.Rendering
                 if (glass)
                     Filter(eyeTarget, eye, multiply, Transmission(VRSettings.VisorTintColour, glassDarkness), glassCover);
                 if (sun)
-                    Filter(eyeTarget, eye, multiply, Transmission(SunVisor.Colour, sunDarkness), sunCover);
+                    Filter(eyeTarget, eye, multiply, Transmission(SunVisor.Colour, sunDarkness, SunVisor.MostDarkness), sunCover);
             }
             catch (Exception e)
             {
@@ -147,7 +148,7 @@ namespace SpaceEngineersVR.Rendering
                 Vector3 pass = Transmission(VRSettings.VisorTintColour, glassDarkness);
                 Log.Info($"Visor glass: {ColourNames[Math.Max(0, Math.Min(ColourNames.Length - 1, VRSettings.VisorTintColour))]} at {glassDarkness:P0}, passing " +
                          $"red {pass.X:P0}, green {pass.Y:P0}, blue {pass.Z:P0}, multiplied into each eye while the helmet is on and closed, swinging away with the glass; " +
-                         $"the sun visor, when down, gold at {sunDarkness:P0} over it (RenderDebug VisorGlass=0 turns both off)");
+                         $"the sun visor, when down, {ColourNames[Math.Max(0, Math.Min(ColourNames.Length - 1, SunVisor.Colour))]} at {sunDarkness:P0} over it (RenderDebug VisorGlass=0 turns both off)");
             }
         }
 
@@ -170,7 +171,7 @@ namespace SpaceEngineersVR.Rendering
                     pass *= Vector3.Lerp(Vector3.One, Transmission(VRSettings.VisorTintColour, VRSettings.VisorTint), glassCover);
                 float sunCover = SunVisor.Cover;
                 if (sunCover > 0f && VRSettings.SunVisorTint > 0f)
-                    pass *= Vector3.Lerp(Vector3.One, Transmission(SunVisor.Colour, VRSettings.SunVisorTint), sunCover);
+                    pass *= Vector3.Lerp(Vector3.One, Transmission(SunVisor.Colour, VRSettings.SunVisorTint, SunVisor.MostDarkness), sunCover);
                 return pass;
             }
         }

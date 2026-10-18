@@ -1,0 +1,43 @@
+# Jumping: A on the right controller, or the right stick pushed up, jumps.
+# Needs: Earth Planet (survival, on foot, in gravity).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: standing still, nothing moves the astronaut
+read character
+expect state == standing
+mark
+wait 0.5
+read character
+expect position moved < 0.05
+
+# A: the astronaut is in the air a moment later (a jump rises about a metre)
+mark
+press right a
+wait 0.3
+read character
+expect position moved > 0.25
+release right a
+wait 2
+
+# the right stick pushed up jumps too
+read character
+mark
+stick right 0 1
+wait 0.3
+read character
+expect position moved > 0.25
+stick right 0 0
+wait 2
+
+# and the stick back at rest does not
+read character
+mark
+wait 0.5
+read character
+expect position moved < 0.05

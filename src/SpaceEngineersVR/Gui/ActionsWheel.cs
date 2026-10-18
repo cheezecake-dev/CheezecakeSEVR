@@ -52,8 +52,11 @@ namespace SpaceEngineersVR.Gui
 
         public static bool Enabled => !Off && VRSettings.VRActionsWheel;
 
-        /// <summary>Width of the GUI panel while the wheel is up, metres: the whole 16:9 GUI, of which the ring is the middle.</summary>
-        public const float PanelWidth = 0.5f;
+        /// <summary>Width of the GUI panel while the wheel is up, metres (<see cref="WheelAtHand.Width"/>, as the tools wheel's).</summary>
+        public const float PanelWidth = WheelAtHand.Width;
+
+        /// <summary>Where the wheel stands while it is up: at the hand that opened it, fixed until it closes.</summary>
+        internal static readonly WheelAtHand Panel = new WheelAtHand();
 
         /// <summary>How far the hand moves from where the wheel opened before it points at an entry, metres.</summary>
         public const float PointDistance = 0.035f;
@@ -66,9 +69,6 @@ namespace SpaceEngineersVR.Gui
         private const string SystemItemType = "Sandbox.Game.Screens.Helpers.MyRadialMenuItemSystem";
 
         private static FieldInfo systemAction;
-        private static readonly object gate = new object();
-        private static Matrix panel;
-        private static bool anchored;
 
         /// <summary>One choice on the wheel: one of the game's items, a page of them, Back, or Inventory.</summary>
         internal sealed class Entry
@@ -180,14 +180,7 @@ namespace SpaceEngineersVR.Gui
         /// was when it opened, facing the head as it was then. Fixed for as long as the wheel is up, so it does not move with
         /// the hand that is pointing into it.
         /// </summary>
-        public static bool TryGetPanel(out Matrix pose)
-        {
-            lock (gate)
-            {
-                pose = panel;
-                return anchored;
-            }
-        }
+        public static bool TryGetPanel(out Matrix pose) => Panel.TryGet(out pose);
 
         /// <summary>
         /// Opens the wheel at <paramref name="hand"/>, for what the player controls now. <paramref name="gripHeld"/>: the
@@ -215,7 +208,7 @@ namespace SpaceEngineersVR.Gui
                 GameControlEntries.AddTo(top);
                 PingEntries.AddTo(top);
                 ShipModelEntries.AddTo(top);
-                Vector3 at = Anchor(hand, out float fromHead);
+                Vector3 at = Panel.Open(hand, out float fromHead);
                 MyGuiSandbox.AddScreen(new ActionsWheelScreen(top, hand, gripHeld));
                 Log.Info($"Actions wheel: opened at the {hand.ToString().ToLowerInvariant()} hand, fixed at ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}), {fromHead:0.00} m from the head; {subtype}, {top.Count} entries ({Names(top)}); left out: {left}");
                 return true;
@@ -227,48 +220,14 @@ namespace SpaceEngineersVR.Gui
             }
         }
 
-        /// <summary>The panel's pose: at the hand's grip, facing the head, upright to it; the frame the hand points in.</summary>
-        private static Vector3 Anchor(Hand hand, out float fromHead)
-        {
-            HandState state = VRInput.Get(hand);
-            Matrix head = EyeRenderer.Head;
-            Vector3 at = state.Tracked ? state.Grip.Translation : head.Translation + head.Forward * 0.4f + head.Down * 0.15f;
-            Vector3 toHead = head.Translation - at;
-            if (toHead.LengthSquared() < 1e-4f)
-                toHead = -head.Forward;
-            fromHead = toHead.Length();
-            toHead.Normalize();
-            Vector3 up = Math.Abs(Vector3.Dot(head.Up, toHead)) > 0.98f ? head.Forward : head.Up;
-            lock (gate)
-            {
-                panel = Matrix.CreateWorld(at, -toHead, up);
-                anchored = true;
-            }
-            return at;
-        }
-
         /// <summary>The wheel has closed: the panel goes back to the HUD's and the menus' places.</summary>
-        internal static void Closed()
-        {
-            lock (gate)
-                anchored = false;
-        }
+        internal static void Closed() => Panel.Close();
 
         /// <summary>
         /// Where the hand points on the wheel, in the panel's plane (x right, y up, metres from where the wheel opened);
         /// zero when the hand is not tracked.
         /// </summary>
-        internal static Vector2 HandOffset(Hand hand, Vector3 from)
-        {
-            HandState state = VRInput.Get(hand);
-            if (!state.Tracked)
-                return Vector2.Zero;
-            Matrix pose;
-            lock (gate)
-                pose = panel;
-            Vector3 d = state.Grip.Translation - from;
-            return new Vector2(Vector3.Dot(d, pose.Right), Vector3.Dot(d, pose.Up));
-        }
+        internal static Vector2 HandOffset(Hand hand, Vector3 from) => Panel.Offset(hand, from);
 
         internal static Vector3 HandAt(Hand hand)
         {

@@ -22,8 +22,8 @@ namespace SpaceEngineersVR.Hands
     /// <item>the character taking damage: a pattern for the kind of damage, and a slow heartbeat at low health or oxygen
     /// (<c>Haptics.Damage.cs</c>);</item>
     /// <item>a block placed from the cube builder: a short click on the dominant hand;</item>
-    /// <item>movement, in both hands: the jetpack's thrust, the magnetic boots locking on and letting go, a hard landing
-    /// (<c>Haptics.Movement.cs</c>).</item>
+    /// <item>movement, in both hands: the jetpack's thrust, the magnetic boots locking on and letting go, a hard landing, and
+    /// in a seat a steady press while the ship pulls hard (<c>Haptics.Movement.cs</c>, <see cref="Common.SeatG"/>).</item>
     /// </list>
     /// All of it is scaled by the "Haptic strength" setting (0 is off), and <c>Haptics=0</c> in the render debug file
     /// switches it off. A pulse goes through <see cref="VRInput.Haptic"/>, so the headset's controllers play it, or the

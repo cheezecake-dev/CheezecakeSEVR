@@ -1,4 +1,5 @@
 using System;
+using HarmonyLib;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.World;
@@ -128,6 +129,10 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The right stick is pushed mostly sideways with the colour tool in hand: the flick's, not a turn (the zero-g roll's while that is held).</summary>
         public static bool TakesStick(Vector2 stick) => Active && Math.Abs(stick.X) > Math.Abs(stick.Y) && !VRControls.ZeroGHeld;
 
+        /// <summary>The grid the game's builder has in sight, which its colour tool paints (a protected property of the game's).</summary>
+        private static readonly Func<MyCubeBuilder, MyCubeGrid> currentGrid =
+            AccessTools.MethodDelegate<Func<MyCubeBuilder, MyCubeGrid>>(AccessTools.PropertyGetter(typeof(MyCubeBuilder), "CurrentGrid"));
+
         /// <summary>From VRControls with this frame's triggers as the game is given them (a trigger kept by a closing radial menu is not a pull).</summary>
         internal static void Triggers(bool paint, bool pick)
         {
@@ -137,7 +142,8 @@ namespace SpaceEngineersVR.Hands
                 BrushControl = a && b ? MyControlsSpace.RECOLOR_WHOLE_GRID : a ? MyControlsSpace.MEDIUM_COLOR_BRUSH
                     : b ? MyControlsSpace.LARGE_COLOR_BRUSH : MyControlsSpace.RECOLOR;
                 painting = true;
-                Log.Info($"Paint: pull, {BrushControl} with {Describe()}");
+                // The game paints only the grid its builder has in sight along the hand's ray (MyCubeBuilder.CurrentGrid).
+                Log.Info($"Paint: pull, {BrushControl} with {Describe()}, at {(MyCubeBuilder.Static is MyCubeBuilder builder ? currentGrid(builder)?.DisplayName : null) ?? "no grid (none along the hand's ray in reach)"}");
             }
             if (!paint)
                 painting = false;

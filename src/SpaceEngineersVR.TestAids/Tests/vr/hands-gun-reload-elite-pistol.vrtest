@@ -1,0 +1,4 @@
+# Hands: reloading the S-10E elite pistol by hand: one shot fired, the right stick click drops the magazine, the left trigger takes a fresh
+# one from the hip and seats it in the well (see gun-reload.inc).
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
+include gun-reload.inc ElitePistolItem ElitePistolMagazine

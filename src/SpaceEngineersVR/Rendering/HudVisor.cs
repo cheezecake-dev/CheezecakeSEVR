@@ -70,7 +70,7 @@ namespace SpaceEngineersVR.Rendering
     /// where it moved it. It fails safe: tags that do not pair, or a part with no layer or no room in the visor image,
     /// leave that frame's HUD on the flat panel as without the visor; after <see cref="FaultsToStop"/> such frames, or
     /// any error, or a frame the runtime refuses, the whole HUD stays on the flat panel for the rest of the run. The
-    /// desktop window shows the whole HUD flat. The setting "HUD on the visor" off, or RenderDebug HudVisor=0:
+    /// desktop window shows the visor as the headset does (<see cref="MirrorLayers"/>). The setting "HUD on the visor" off, or RenderDebug HudVisor=0:
     /// all of it on the flat panel.
     /// </para>
     /// </summary>
@@ -125,6 +125,24 @@ namespace SpaceEngineersVR.Rendering
         public static float Projected { get; set; } = DefaultProjected;
 
         public const float DefaultProjected = 0.6f;
+
+        /// <summary>The HUD's colours on the visor, in the options screen's order; <see cref="VRSettings.HudColour"/> is an index into it.</summary>
+        public static readonly string[] ColourNames = { "Game's colours", "Green", "Amber", "Cyan" };
+
+        /// <summary>
+        /// Each colour's filter on the display's light, red, green and blue (<see cref="Colour"/>): the game's own colours pass
+        /// whole; the others are a helmet display's phosphor colours, the game's white text coming out in that colour.
+        /// </summary>
+        private static readonly Vector3[] ColourFilters =
+        {
+            new Vector3(1f, 1f, 1f),
+            new Vector3(0.35f, 1f, 0.45f),
+            new Vector3(1f, 0.72f, 0.2f),
+            new Vector3(0.35f, 0.95f, 1f),
+        };
+
+        /// <summary>The least <see cref="VRSettings.HudOpacity"/> may fade the display to: always something of it shows.</summary>
+        private const float LeastOpacity = 0.1f;
 
         /// <summary>Frames whose HUD has to go on the flat panel (<see cref="Fault"/>) before it stays there for the run.</summary>
         private const int FaultsToStop = 3;
@@ -618,7 +636,9 @@ namespace SpaceEngineersVR.Rendering
             try
             {
                 var queue = (IDictionary)drawQueue.GetValue(spritesManager.GetValue(null));
-                object data = queue?[DefaultTarget];
+                object data;
+                lock (SpriteQueueLock.Gate)
+                    data = queue?[DefaultTarget];
                 if (data == null)
                     return;
                 var messages = (MyList<MySpriteDrawRenderMessage>)queueMessages.GetValue(data);
@@ -1085,12 +1105,21 @@ namespace SpaceEngineersVR.Rendering
                     if (piece.Messages.Count > 0 && (!display || piece.InImage.Width > 0))
                         Draw(image, piece, true);
                 }
+                Colour(image);
                 if (display)
                 {
                     Glow(image);
                     Project(image);
-                    PowerOn(image);
                 }
+                if (display && VRSettings.LowStatWarnings)
+                    SuitPower.DrawIndicators(image, imageSize);
+                Fade(image, Opacity);
+                float suitPowerLevel = SuitPower.Level;
+                Fade(image, suitPowerLevel);
+                if (display && VRSettings.LowStatWarnings && suitPowerLevel > 0f)
+                    SuitPower.DrawEnergyIndicator(image, imageSize);
+                if (display)
+                    PowerOn(image);
                 SharpDX.Direct3D11.Texture2D swapImage = XrSession.AcquireVisorImage(imageSize.X, imageSize.Y);
                 try
                 {
@@ -1186,13 +1215,41 @@ namespace SpaceEngineersVR.Rendering
             GameSprites.DrawTextures(image, size, new Color(k, k, k, 1f), GameSprites.Multiply, (Gui.GuiTextures.Blank, whole));
         }
 
-        /// <summary>How long the display takes to power on as the visor seals, seconds: short, so the HUD's information is not held back.</summary>
-        private const double PowerOnSeconds = 0.22;
+        /// <summary>
+        /// The parts' light filtered to the HUD's colour (<see cref="VRSettings.HudColour"/>, a multiply): white comes out in it, other
+        /// colours dimmer by what the filter holds back. The game's own colours, or without the blend state, as drawn.
+        /// </summary>
+        private static void Colour(object target)
+        {
+            int colour = VRSettings.HudColour;
+            if (colour <= 0 || colour >= ColourFilters.Length || GameSprites.Multiply == null)
+                return;
+            Vector3 filter = ColourFilters[colour];
+            GameSprites.DrawTextures(target, imageSize, new Color(filter.X, filter.Y, filter.Z, 1f), GameSprites.Multiply,
+                (Gui.GuiTextures.Blank, new RectangleF(0f, 0f, imageSize.X, imageSize.Y)));
+        }
+
+        /// <summary>How strongly the HUD shows (<see cref="VRSettings.HudOpacity"/>), at least <see cref="LeastOpacity"/>; 1 without the blend states.</summary>
+        private static float Opacity => GameSprites.Multiply == null || GameSprites.ScaleAlpha == null
+            ? 1f
+            : MathHelper.Clamp(VRSettings.HudOpacity, LeastOpacity, 1f);
+
+        /// <summary>The image faded to <paramref name="level"/>: its light and its coverage alike (a multiply, then an alpha scale), so it fades as light and never as a dark sheet.</summary>
+        private static void Fade(object target, float level)
+        {
+            if (level >= 1f || GameSprites.Multiply == null || GameSprites.ScaleAlpha == null)
+                return;
+            var whole = new RectangleF(0f, 0f, imageSize.X, imageSize.Y);
+            GameSprites.DrawTextures(target, imageSize, new Color(level, level, level, 1f), GameSprites.Multiply, (Gui.GuiTextures.Blank, whole));
+            GameSprites.DrawTextures(target, imageSize, new Color(0f, 0f, 0f, level), GameSprites.ScaleAlpha, (Gui.GuiTextures.Blank, whole));
+        }
+
+        /// <summary>How long the display takes to power on as the visor seals, seconds: short, so the HUD's information is not held back. Also <see cref="SuitPower"/>'s own ramp back from a dead battery, the same effect reused rather than a second one invented.</summary>
+        internal const double PowerOnSeconds = 0.22;
 
         /// <summary>
         /// The projector powering on as the visor seals (<see cref="HelmetHud.RestoredAt"/>): for <see cref="PowerOnSeconds"/> the
-        /// display comes up from a third of its light with two quick flickers, its colour and its coverage dimmed alike (a multiply,
-        /// then an alpha scale), so it fades in as light and never as a dark sheet. Every part is there from the first frame.
+        /// display comes up from a third of its light with two quick flickers (<see cref="Fade"/>). Every part is there from the first frame.
         /// Without the blend states it comes up at once.
         /// </summary>
         private static void PowerOn(object target)
@@ -1201,12 +1258,16 @@ namespace SpaceEngineersVR.Rendering
             double t = since / (PowerOnSeconds * System.Diagnostics.Stopwatch.Frequency);
             if (HelmetHud.RestoredAt == 0 || t >= 1.0 || t < 0.0 || GameSprites.Multiply == null || GameSprites.ScaleAlpha == null)
                 return;
+            Fade(target, PowerOnLevel(t));
+        }
+
+        /// <summary>The power-on ramp's own shape, from a third of the light at t=0 to full at t=1, with two quick flickers along the way - shared with <see cref="SuitPower"/>'s own recovery from a dead battery.</summary>
+        internal static float PowerOnLevel(double t)
+        {
             float level = 0.35f + 0.65f * (float)t;
             if ((t > 0.22 && t < 0.3) || (t > 0.52 && t < 0.58))
                 level *= 0.4f;
-            var whole = new RectangleF(0f, 0f, imageSize.X, imageSize.Y);
-            GameSprites.DrawTextures(target, imageSize, new Color(level, level, level, 1f), GameSprites.Multiply, (Gui.GuiTextures.Blank, whole));
-            GameSprites.DrawTextures(target, imageSize, new Color(0f, 0f, 0f, level), GameSprites.ScaleAlpha, (Gui.GuiTextures.Blank, whole));
+            return level;
         }
 
         /// <summary>The share of the display's coverage <see cref="Project"/> keeps this frame: 1 when it does not run.</summary>
@@ -1278,7 +1339,20 @@ namespace SpaceEngineersVR.Rendering
             panel.VisorCylinder = cylinder;
         }
 
-        /// <summary>After the headset has its copy of the panel: the parts on the visor drawn into it too, for the desktop window.</summary>
+        /// <summary>
+        /// This frame's visor as the headset has it, for the desktop window (<see cref="MirrorLayers"/>): the image and the pieces
+        /// of it, head-locked. False when the HUD is not on the visor this frame. Until <see cref="Discard"/>.
+        /// </summary>
+        public static bool TryGetVisor(out object visorImage, out XrSession.VisorPiece[] visorPieces, out int count, out bool curved)
+        {
+            visorImage = onHeadset ? image : null;
+            visorPieces = placed;
+            count = onHeadset ? placedCount : 0;
+            curved = cylinder;
+            return visorImage != null && count > 0;
+        }
+
+        /// <summary>After the headset has its copy of the panel: the parts on the visor drawn into it too, for a window that shows the HUD flat.</summary>
         public static void Finish(object panel)
         {
             if (onHeadset)

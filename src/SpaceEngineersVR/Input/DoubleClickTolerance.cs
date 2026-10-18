@@ -39,11 +39,37 @@ namespace SpaceEngineersVR.Input
             typeof(MyGuiControlMultiSelectTable), typeof(MyGuiControlResearchGraph),
         };
 
+        private static Harmony pending;
+
         /// <summary>
-        /// Each control on its own, so one the game changes shape costs only its own tolerance. Patching these controls runs their
-        /// class constructors, which need the game's renderer, so this is for after startup (the play features).
+        /// Patching these controls runs their class constructors, which ask the renderer for texture sizes. The play features
+        /// can be patched before the game is even made (the headset is found at once), when the renderer has no textures yet:
+        /// the constructors then fail, the runtime keeps the failure, and the game's own preload of the same types ends the
+        /// process. So until the game's first update the controls wait for <see cref="Update"/>.
         /// </summary>
         public static void Patch(Harmony harmony)
+        {
+            if (Sandbox.MySandboxGame.Static?.IsFirstUpdateDone != true)
+            {
+                pending = harmony;
+                Log.Info("Double-click tolerance: waits for the game's first update to hook the menus' controls");
+                return;
+            }
+            PatchControls(harmony);
+        }
+
+        /// <summary>Game thread, once a frame: hooks the controls once the game has run its first update.</summary>
+        public static void Update()
+        {
+            if (pending == null || Sandbox.MySandboxGame.Static?.IsFirstUpdateDone != true)
+                return;
+            Harmony harmony = pending;
+            pending = null;
+            PatchControls(harmony);
+        }
+
+        /// <summary>Each control on its own, so one the game changes shape costs only its own tolerance.</summary>
+        private static void PatchControls(Harmony harmony)
         {
             int hooked = 0;
             foreach (Type control in Controls)

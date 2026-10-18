@@ -1,9 +1,9 @@
 // Adapted from ColbyJack1134's SpaceEngineersVR (Player/SeatFit.cs, Patches/SeatFitPatch.cs), with his permission.
 // Phase 7 of docs/COCKPIT_PORT.md. His SeatFitPatch is not carried as a patch: CockpitHead already owns
-// MyCockpit.GetHeadMatrix, and adds his offset there through Head below, so the camera and his SeatLocal see one head.
-// Dropped with the features they belong to: his RemoteView seat and his BodyFit seat origin (Player.SeatOrigin). His
-// Config.SeatFits is the settings file's colbySeatFits, written when a move ends rather than each frame. The seat is his
-// only while his cockpit setting is on and his rig owns it (CockpitControls.OwnsSeat).
+// MyCockpit.GetHeadMatrix, and adds his offset to the eye there, before its hold, through Shift below, so the camera and
+// his SeatLocal see one head. Dropped with the features they belong to: his RemoteView seat and his BodyFit seat origin
+// (Player.SeatOrigin). His Config.SeatFits is the settings file's colbySeatFits, written when a move ends rather than
+// each frame. The seat is his only while his cockpit setting is on and his rig owns it (CockpitControls.OwnsSeat).
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -102,13 +102,11 @@ namespace SpaceEngineersVR.Cockpits
         public static void Reset() { Save(); Seat=null; Offset=Vector3.Zero; }
 
         /// <summary>
-        /// His SeatFitPatch's postfix, called by CockpitHead on the local pilot's seat head matrix: the eye moved by the fit, in
-        /// the seat's own axes. Nothing for any other seat, or with his cockpit setting off.
+        /// His SeatFitPatch's postfix, as CockpitHead uses it on the local pilot's seat head matrix: how far the fit moves the
+        /// seat's eye, in world axes (the fit is in the seat's own). CockpitHead adds it to the eye before its hold, and not
+        /// while the eye is held for a failed wall fade. Zero for any other seat, or with his cockpit setting off.
         /// </summary>
-        internal static void Head(MyCockpit cockpit,ref MatrixD head)
-        {
-            if (cockpit==Seat && Offset!=Vector3.Zero && Eligible(cockpit))
-                head.Translation+=Vector3D.TransformNormal(Offset,cockpit.WorldMatrix);
-        }
+        internal static Vector3D Shift(MyCockpit cockpit) =>
+            cockpit==Seat && Offset!=Vector3.Zero && Eligible(cockpit) ? Vector3D.TransformNormal(Offset,cockpit.WorldMatrix) : Vector3D.Zero;
     }
 }

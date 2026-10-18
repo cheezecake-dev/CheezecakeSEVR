@@ -123,7 +123,13 @@ namespace SpaceEngineersVR.Hands
         /// is taken as blocked at its start: the head bone, so in that frame the hand reaches nothing beyond it. Unchanged
         /// only when there is no character to measure from.
         /// </summary>
-        public static Vector3D Limit(MyCharacter character, Vector3D hand) => Stop(character, hand, ArmLength, SurfaceGive);
+        public static Vector3D Limit(MyCharacter character, Vector3D hand) => Stop(character, hand, ArmLength, SurfaceGive, null);
+
+        /// <summary>
+        /// <see cref="Limit(MyCharacter, Vector3D)"/>, with the line passing through <paramref name="target"/>: for reaching
+        /// something set into that block's own face (a button panel's button), which every other surface still stops.
+        /// </summary>
+        public static Vector3D Limit(MyCharacter character, Vector3D hand, MySlimBlock target) => Stop(character, hand, ArmLength, SurfaceGive, target);
 
         /// <summary>
         /// <paramref name="point"/> brought back to the near side of the first solid thing on the line from the character's
@@ -131,9 +137,9 @@ namespace SpaceEngineersVR.Hands
         /// may be farther out than a hand reaches but not on the far side of a wall. A line that cannot be checked puts it
         /// at the head bone, as <see cref="Limit"/> does.
         /// </summary>
-        public static Vector3D Unblocked(MyCharacter character, Vector3D point) => Stop(character, point, double.MaxValue, 0.0);
+        public static Vector3D Unblocked(MyCharacter character, Vector3D point) => Stop(character, point, double.MaxValue, 0.0, null);
 
-        private static Vector3D Stop(MyCharacter character, Vector3D point, double maxLength, double give)
+        private static Vector3D Stop(MyCharacter character, Vector3D point, double maxLength, double give, MySlimBlock target)
         {
             if (!TryHead(character, out Vector3D head))
                 return point;
@@ -148,7 +154,7 @@ namespace SpaceEngineersVR.Hands
             object blocker = null;
             try
             {
-                checkedLine = Sweep(head, head + way * length, null, ClosedSeat(character), null, out first, out blocker);
+                checkedLine = Sweep(head, head + way * length, target, ClosedSeat(character), null, out first, out blocker);
             }
             catch (Exception e)
             {

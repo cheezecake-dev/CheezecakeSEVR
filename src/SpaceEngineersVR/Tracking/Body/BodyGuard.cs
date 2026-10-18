@@ -274,6 +274,26 @@ namespace SpaceEngineersVR.Tracking
                 standHeight = standHeight.HasValue ? Math.Max(standHeight.Value, headY) : headY;
         }
 
+        /// <summary>A head crouch the character may not make now has been noted (until one may be made again).</summary>
+        private static bool refusedNoted;
+
+        /// <summary>Once, a head low enough to crouch that may not crouch the character, and why.</summary>
+        private static void NoteRefused(MyCharacter character, bool allowed, bool enabled)
+        {
+            if (allowed || !enabled)
+            {
+                refusedNoted &= !allowed;
+                return;
+            }
+            if (refusedNoted || !GameHead.Take() || -GameHead.Head.Translation.Y < CrouchDriver.EnterDrop)
+                return;
+            refusedNoted = true;
+            string why = !(character.IsInFirstPersonView || character.ForceFirstPersonCamera) ? "the view is not first person"
+                : character.IsSitting ? "seated" : character.IsDead ? "dead" : character.JetpackRunning ? "the jetpack is on"
+                : character.IsOnLadder ? "on a ladder" : character.IsFalling ? "falling" : "the head is not tracked";
+            Log.Info($"Head crouch: head {-GameHead.Head.Translation.Y:F2} m below standing, but the character does not crouch: {why}");
+        }
+
         /// <summary>
         /// Once per simulation frame, before the character moves: the head's crouch, as the key's. Switched off while the
         /// head's crouch holds the character down, it is stood up as a head back at standing height would stand it.
@@ -298,6 +318,7 @@ namespace SpaceEngineersVR.Tracking
                            && !__instance.IsOnLadder && !__instance.IsFalling && GameHead.Take();
             float drop = allowed && enabled ? Math.Max(0f, -GameHead.Head.Translation.Y) : 0f;
             bool crouching = (__instance.MovementFlags & MyCharacterMovementFlags.Crouch) != 0;
+            NoteRefused(__instance, allowed, enabled);
             CrouchAction action = driver.Update(Step, drop, crouching, allowed);
             if (action == CrouchAction.None)
                 return;

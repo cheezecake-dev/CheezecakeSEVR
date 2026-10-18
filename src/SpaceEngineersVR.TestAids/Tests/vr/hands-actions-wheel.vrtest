@@ -1,0 +1,66 @@
+# Hands: choosing from the actions wheel. With the tools wheel up, a click of the left stick turns it into the actions wheel
+# (opened where the left hand is); the left stick picks an entry and letting go of the grip uses it. The first entry, straight
+# up, is Inventory; Dampeners is the next, one sector clockwise.
+# World: Earth Planet (survival, on foot, in gravity). Nothing is built. The wheel has as many sectors as entries (see the
+# "Actions wheel: opened" line, "N entries"): the angle for Dampeners below assumes 16 and is tuned from that line.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the dampeners on, so the Dampeners entry has something to switch off ---------------------------------
+
+dampeners on
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.2 -0.3
+wait 1
+read character
+expect dampeners == true
+
+# ---- Dampeners: the entry next to the top one, 360/16 = 22.5 degrees clockwise -> the dampeners go off ---------------------------
+
+press left grip
+wait 1
+press left stick
+wait 0.2
+release left stick
+wait 1
+read screen
+expect type == ActionsWheelScreen
+stick left 0.383 0.924
+wait 0.7
+release left grip
+wait 0.3
+stick left 0 0
+wait 1.5
+expect log Actions wheel: picked Toggle Dampeners within 5
+read character
+expect dampeners == false
+
+# ---- Inventory: the top entry, straight up -> the inventory screen opens ----------------------------------------------------------
+
+press left grip
+wait 1
+press left stick
+wait 0.2
+release left stick
+wait 1
+stick left 0 1
+wait 0.7
+release left grip
+wait 0.3
+stick left 0 0
+wait 1.5
+expect log Actions wheel: picked Inventory within 5
+read screens
+expect result contains MyGuiScreenTerminal
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+expect no log Exception

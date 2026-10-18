@@ -1,0 +1,34 @@
+# Crouching for real: the player's head goes down 30 cm or more and stays there, and the astronaut crouches; the head back
+# up and the astronaut stands.
+# Needs: Earth Planet. Sets Options > VR > Display > Play position to Standing and Crouch when you crouch on (off by default)
+# for the test, and both back after.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+include vr-option.inc playPosition 0 selectedIndex was_playPosition
+include vr-option.inc crouchWithHead true isChecked was_crouchWithHead
+
+head 0 1.6 0
+wait 2
+
+# before: standing, and still standing a moment later
+read character
+expect state == standing
+
+# the head at 1.0 m (a deep crouch): the astronaut crouches
+head 0 1.0 0
+wait 1.5
+read character
+expect state == crouching
+
+# the head back at 1.6 m: the astronaut stands
+head 0 1.6 0
+wait 1.5
+read character
+expect state == standing
+
+cleanup
+reset
+include vr-option.inc playPosition {was_playPosition} selectedIndex _
+include vr-option.inc crouchWithHead {was_crouchWithHead} isChecked _

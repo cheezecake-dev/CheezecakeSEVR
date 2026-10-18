@@ -1,0 +1,47 @@
+# Hands: a gun drawn with its magazine empty and no magazine for it in the inventory comes out with nothing in its well, so
+# it shows it needs one; a magazine picked up then, the game loads it by itself, timed, and the well shows the magazine.
+# Nothing drops and no reload by hand is asked for.
+# World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default). The S-10 pistol: the character
+# starts the world with the MR-20 rifle and ten of the magazines it takes, and none for the pistol.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the pistol in toolbar slot 1 and no magazine for it -------------------------------------------
+
+give PhysicalGunObject/SemiAutoPistolItem
+toolbar 1 PhysicalGunObject/SemiAutoPistolItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+# ---- The pistol into the right hand: the tools wheel's first slot --------------------------------------------------------
+
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.3 -0.4 0 -5 0
+wait 1
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains SemiAutoPistolItem
+
+# ---- No magazine: the well is empty, and nothing reloads ------------------------------------------------------------------
+
+expect log none for it in the inventory; its well is empty within 5
+wait 2
+expect no log "Reload: the game's reload"
+expect no log magazine dropped
+
+# ---- A magazine into the inventory: the game loads the pistol, timed --------------------------------------------------------
+
+give AmmoMagazine/SemiAutoPistolMagazine 1
+expect log was drawn with its magazine empty; the game loads it within 10
+expect log /Reload: done after .*[(]magazine [1-9]/ within 15
+expect no log magazine dropped
+expect no log Exception

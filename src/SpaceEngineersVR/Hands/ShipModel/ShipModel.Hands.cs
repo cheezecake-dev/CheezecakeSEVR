@@ -14,7 +14,7 @@ namespace SpaceEngineersVR.Hands
 
         private const string ClaimName = "ship model";
 
-        /// <summary>After two-handed tools (5), reloading (7), push to talk (8) and the helmet (10); before the external view screen (15) and the rest.</summary>
+        /// <summary>After two-handed tools (5), reloading (7) and the helmet (10); before the external view screen (15) and the rest.</summary>
         private const int ClaimPriority = 12;
 
         /// <summary>How far outside the model a grip still takes it, metres.</summary>

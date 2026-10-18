@@ -17,6 +17,8 @@ namespace SpaceEngineersVR.Rendering
     /// It is the same panel, so the HUD stays with the menu meanwhile.
     /// </summary>
     /// <remarks>
+    /// The wheels the hand opens (the tools wheel and the actions wheel) stand where the hand was when they opened instead
+    /// (<see cref="WheelAtHand"/>).
     /// The one menu that is not left in the world is the quick-actions screen (<see cref="QuickActionsScreen"/>, opened from
     /// <see cref="WristButton"/>): while it has the focus the panel is on the left wrist instead, <see cref="VRSettings.WristPanelWidth"/> wide,
     /// following the hand every frame (<see cref="WristPose"/>), so the other hand can point at it (<see cref="Laser"/>
@@ -46,10 +48,16 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The menu that has the focus is the quick-actions screen, which belongs on the wrist.</summary>
         private static volatile bool wrist;
 
-        /// <summary>The menu that has the focus is the actions wheel (<see cref="ActionsWheel"/>), which stands where the hand opened it.</summary>
-        private static volatile bool wheel;
+        /// <summary>
+        /// The menu that has the focus is a wheel the hand opened, which stands where the hand opened it: the tools wheel
+        /// (<see cref="SlotWheelScreen"/>) or the actions wheel (<see cref="ActionsWheel"/>); null for any other.
+        /// </summary>
+        private static volatile WheelAtHand wheel;
 
-        private static bool placed, onWrist, onWheel, onPad;
+        private static bool placed, onWrist, onPad;
+
+        /// <summary>Render thread: the wheel the panel is at the hand for this frame; null when it is not at a hand.</summary>
+        private static WheelAtHand onWheel;
 
         /// <summary>Render thread: the panel is on the datapad this frame (<see cref="Locked(in Matrix, out Matrix, out float)"/> put it there).</summary>
         internal static bool OnPad => onPad;
@@ -76,11 +84,15 @@ namespace SpaceEngineersVR.Rendering
                 MyGuiScreenBase focus = MyScreenManager.GetScreenWithFocus();
                 open = focus != null && !(focus is MyGuiScreenGamePlay);
                 wrist = open && focus is QuickActionsScreen;
-                wheel = open && focus is ActionsWheelScreen;
+                wheel = !open ? null
+                    : focus is ActionsWheelScreen ? ActionsWheel.Panel
+                    : focus is SlotWheelScreen ? SlotWheelScreen.Panel
+                    : null;
             }
             catch (Exception e)
             {
-                open = wrist = wheel = false;
+                open = wrist = false;
+                wheel = null;
                 Log.Error(e, "Could not tell whether a menu is open");
             }
         }
@@ -101,9 +113,10 @@ namespace SpaceEngineersVR.Rendering
             width = 0f;
             if (Off || !open)
             {
-                if (placed || onWrist || onWheel || onPad)
+                if (placed || onWrist || onWheel != null || onPad)
                     Log.Info("Menu closed; the panel is a visor again");
-                placed = onWrist = onWheel = onPad = false;
+                placed = onWrist = onPad = false;
+                onWheel = null;
                 panel = default;
                 return false;
             }
@@ -114,26 +127,30 @@ namespace SpaceEngineersVR.Rendering
                 if (!onPad)
                     Log.Info("Menu opened on the datapad; the panel is posed to the pad");
                 onPad = true;
-                placed = onWrist = onWheel = false;
+                placed = onWrist = false;
+                onWheel = null;
                 width = padWidth;
                 return true;
             }
             onPad = false;
 
-            // The actions wheel: where the hand was when it opened, facing the head as it was then, fixed until it closes.
-            if (wheel && ActionsWheel.TryGetPanel(out panel))
+            // A wheel the hand opened (the tools wheel, the actions wheel): where the hand was when it opened, facing the head
+            // as it was then, fixed until it closes.
+            WheelAtHand atHand = wheel;
+            if (atHand != null && atHand.TryGet(out panel))
             {
-                if (!onWheel)
+                if (onWheel != atHand)
                 {
                     Vector3 at = panel.Translation;
-                    Log.Info($"Menu opened as the actions wheel; panel {ActionsWheel.PanelWidth} m wide, fixed at the hand ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}) in the tracking space");
+                    string name = atHand == ActionsWheel.Panel ? "the actions wheel" : "the tools wheel";
+                    Log.Info($"Menu opened as {name}; panel {WheelAtHand.Width} m wide, fixed at the hand ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}) in the tracking space");
                 }
-                onWheel = true;
+                onWheel = atHand;
                 placed = onWrist = false;
-                width = ActionsWheel.PanelWidth;
+                width = WheelAtHand.Width;
                 return true;
             }
-            onWheel = false;
+            onWheel = null;
 
             if (wrist && WristButton.Enabled && WristButton.TryGetWristGrip(out Matrix grip) && WristPose(grip, head, out panel))
             {
@@ -166,7 +183,7 @@ namespace SpaceEngineersVR.Rendering
         {
             from = anchor;
             along = ahead;
-            return placed && !onWrist && !onWheel && !onPad && !Off;
+            return placed && !onWrist && onWheel == null && !onPad && !Off;
         }
 
         /// <summary>

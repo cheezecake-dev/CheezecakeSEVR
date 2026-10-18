@@ -32,7 +32,7 @@ namespace SpaceEngineersVR.Hands
     /// <para>
     /// In a seat the pad let go stays where it was let go, for as long as the player sits there: it is kept in the pilot's
     /// own space, which the seat carries, and placed in the tracking space from it each frame by the move the arms are solved
-    /// by (<see cref="HandWorld.TryGetTrackingToBody"/>), so it rides with the ship and stays put in the cockpit when the view
+    /// by (<see cref="Tracking.HandWorld.TryGetTrackingToBody"/>), so it rides with the ship and stays put in the cockpit when the view
     /// is recentred. Each kind of seat (its block's subtype) remembers the spot in the settings file
     /// (<see cref="VRSettings.DatapadSeatSpots"/>): taken out again in that kind of seat, the pad comes out to it. Put away
     /// from the hand there instead, it comes out into the hand again. Leaving the seat sends a pad standing in it back into
@@ -59,7 +59,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The name the grip is claimed under.</summary>
         public const string ClaimName = "Datapad";
 
-        /// <summary>After push to talk (8), before the helmet (10): a grip on the pad held up to the face is the pad's, not the helmet's.</summary>
+        /// <summary>Before the helmet (10): a grip on the pad held up to the face is the pad's, not the helmet's.</summary>
         public const int ClaimPriority = 9;
 
         /// <summary>The hand it comes out into: the one the wrist panel is on.</summary>
@@ -173,7 +173,7 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// Game thread, from the wrist panel's Datapad tile as the panel closes: the screen goes up and the pad comes out where
-        /// the panel was, into <paramref name="hand"/> (the wrist panel's hand unless a test aid says otherwise).
+        /// the panel was, into the wrist panel's hand (<see cref="OutHand"/>).
         /// </summary>
         internal static void Open() => Open(OutHand, false);
 

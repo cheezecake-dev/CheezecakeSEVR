@@ -53,9 +53,6 @@ namespace SpaceEngineersVR.Input
         internal static bool WalksBesidePanel(object menu, VRContext c, bool wheelOwns) =>
             !wheelOwns && (menu is QuickActionsScreen || menu is DatapadScreen) && (c == VRContext.OnFoot || c == VRContext.Jetpack);
 
-        /// <summary>The hands walk, turn, jump and fly beside the wrist panel this frame (<see cref="WalkBesidePanel"/> runs).</summary>
-        internal static bool WalkingBesidePanel => panelWalk;
-
         /// <summary>
         /// Game thread, once per frame after <see cref="Update()"/>: while the wrist panel has the focus the game does not
         /// read the controls for walking, because it hands the input to the screen with the focus only, and the gameplay

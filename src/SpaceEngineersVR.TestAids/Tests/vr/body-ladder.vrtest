@@ -1,0 +1,137 @@
+# Ladders: a grip with the hand on a ladder takes the astronaut onto it, pulling the hand down climbs, and letting go of
+# the grip lets go of the ladder.
+# Needs: Earth Planet (survival, on foot, in gravity). The test builds a ladder three shafts tall 1.6 m ahead (2.5 m cubes, the
+# near face 35 cm ahead of the astronaut) with creative tools. The hand is put 55 cm ahead of the head, inside the shaft's cell.
+plugin SpaceEngineersVR
+world game:Earth Planet
+admin creativeTools
+# open ground: room to walk, nothing in the way
+goto open
+# three shafts, one on another: the game climbs only where there is ladder above the head
+build LadderShaft 3 5
+build LadderShaft 3 2.5
+build LadderShaft 3 as Test ladder
+# its near face 35 cm ahead (the cell is 2.5 m: its centre 1.6 m away)
+goto Test ladder 1.6
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: standing on the ground, nothing gripped
+read character
+expect state == standing
+expect no log Hull grab: Right hand takes
+
+# the right hand into the ladder, grip: the astronaut is on the ladder
+hand right 0.2 1.2 -0.55
+wait 0.7
+press right grip
+wait 1
+expect log Hull grab: Right hand takes within 5
+read character
+expect state == ladder
+
+# hand over hand, as a player climbs: the hand that holds pulls down 80 cm, the other takes the ladder higher up and the
+# first lets go. A step of the game's ladder (0.83 m here) starts at half a step's pull, then one for each step's pull,
+# so four pulls of 80 cm climb four steps
+mark
+hand right 0.2 1.3 -0.55
+wait 0.3
+hand right 0.2 1.2 -0.55
+wait 0.2
+hand right 0.2 1.1 -0.55
+wait 0.2
+hand right 0.2 1.0 -0.55
+wait 0.2
+hand right 0.2 0.9 -0.55
+wait 0.2
+hand right 0.2 0.8 -0.55
+wait 0.2
+hand right 0.2 0.7 -0.55
+wait 0.2
+hand right 0.2 0.6 -0.55
+wait 0.2
+hand right 0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+hand left -0.2 1.3 -0.55
+wait 0.4
+press left grip
+wait 0.4
+release right grip
+wait 0.2
+expect log Hull grab: Left hand takes within 5
+hand left -0.2 1.2 -0.55
+wait 0.2
+hand left -0.2 1.1 -0.55
+wait 0.2
+hand left -0.2 1.0 -0.55
+wait 0.2
+hand left -0.2 0.9 -0.55
+wait 0.2
+hand left -0.2 0.8 -0.55
+wait 0.2
+hand left -0.2 0.7 -0.55
+wait 0.2
+hand left -0.2 0.6 -0.55
+wait 0.2
+hand left -0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+hand right 0.2 1.3 -0.55
+wait 0.4
+press right grip
+wait 0.4
+release left grip
+wait 0.2
+hand right 0.2 1.2 -0.55
+wait 0.2
+hand right 0.2 1.1 -0.55
+wait 0.2
+hand right 0.2 1.0 -0.55
+wait 0.2
+hand right 0.2 0.9 -0.55
+wait 0.2
+hand right 0.2 0.8 -0.55
+wait 0.2
+hand right 0.2 0.7 -0.55
+wait 0.2
+hand right 0.2 0.6 -0.55
+wait 0.2
+hand right 0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+hand left -0.2 1.3 -0.55
+wait 0.4
+press left grip
+wait 0.4
+release right grip
+wait 0.2
+hand left -0.2 1.2 -0.55
+wait 0.2
+hand left -0.2 1.1 -0.55
+wait 0.2
+hand left -0.2 1.0 -0.55
+wait 0.2
+hand left -0.2 0.9 -0.55
+wait 0.2
+hand left -0.2 0.8 -0.55
+wait 0.2
+hand left -0.2 0.7 -0.55
+wait 0.2
+hand left -0.2 0.6 -0.55
+wait 0.2
+hand left -0.2 0.5 -0.55
+wait 0.2
+wait 1.2
+read character
+expect state == ladder
+expect position moved > 2.0
+expect log Hull grab: ladder step up within 5
+
+# the grip let go: the plugin lets go of the ladder
+release left grip
+wait 1
+expect log lets go of the ladder within 5

@@ -2,6 +2,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using VRageMath;
 using VRageRender;
 
 namespace SpaceEngineersVR.Rendering
@@ -48,6 +49,24 @@ namespace SpaceEngineersVR.Rendering
                 return false;
             texture = args[1];
             return texture != null;
+        }
+
+        /// <summary>
+        /// The size to give MyRenderProxy.CreateGeneratedTexture for a texture with mipmaps: the renderer counts one level too
+        /// many when a side is not a power of two (MyResourceUtils.GetMipLevels gives 12 for 1920, where 11 is all there is),
+        /// which Direct3D 11 on Windows refuses (E_INVALIDARG; DXVK lets it pass). The game's own screens are powers of two;
+        /// any other size is stretched until its longer side is the next one up, the shorter side in proportion.
+        /// </summary>
+        public static Vector2I MipmappedSize(Vector2I size)
+        {
+            int longer = Math.Max(size.X, size.Y);
+            int side = 1;
+            while (side < longer)
+                side <<= 1;
+            if (side == longer)
+                return size;
+            return new Vector2I(Math.Max(1, (int)Math.Round(size.X * (double)side / longer)),
+                                Math.Max(1, (int)Math.Round(size.Y * (double)side / longer)));
         }
 
         /// <summary>

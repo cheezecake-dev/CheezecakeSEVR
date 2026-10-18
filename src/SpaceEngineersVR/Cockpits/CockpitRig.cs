@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using HarmonyLib;
+using VRage.FileSystem;
 using VRageMath;
 using VRageRender.Import;
 using VRageRender.Messages;
@@ -292,7 +293,9 @@ namespace SpaceEngineersVR.Cockpits
         private CockpitGeometry Load(string content)
         {
             var importer=new MyModelImporter();
-            using(var reader=new BinaryReader(File.OpenRead(Path.Combine(content,geometryModel.Replace('/',Path.DirectorySeparatorChar)))))
+            // Through the game's file system: on Linux, linux-compat resolves the model's folder case there (Cubes/Large is cubes/large on disk).
+            string path=Path.Combine(content,geometryModel.Replace('/',Path.DirectorySeparatorChar));
+            using(var reader=new BinaryReader(MyFileSystem.OpenRead(path) ?? throw new FileNotFoundException("Cockpit model not found",path)))
                 AccessTools.Method(typeof(MyModelImporter),"LoadTagData").Invoke(importer,new object[] {reader,new[] {"Vertices","TexCoords0","MeshParts","Normals","Tangents"}});
             var tags=importer.GetTagData();
             var actors=Enumerable.Range(0,ActorCount).Select(_=>new MyModelData()).ToArray();

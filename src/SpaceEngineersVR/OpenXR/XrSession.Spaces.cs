@@ -2,6 +2,7 @@
 
 using System;
 using System.Diagnostics;
+using VRageMath;
 
 namespace SpaceEngineersVR.OpenXR
 {
@@ -58,6 +59,9 @@ namespace SpaceEngineersVR.OpenXR
             {
                 // LOCAL's position in STAGE: STAGE's up is the vertical and its origin is on the floor, so Y is the height.
                 OriginAboveFloor = location.Pose.Position.Y;
+                LocalInStage = (location.LocationFlags & XrConst.SpaceLocationOrientationValid) != 0
+                    ? Rendering.EyeRenderer.ToMatrix(location.Pose)
+                    : Matrix.CreateTranslation(location.Pose.Position.X, location.Pose.Position.Y, location.Pose.Position.Z);
                 floorSeenAt = now;
                 if (!floorLogged)
                 {
@@ -68,6 +72,7 @@ namespace SpaceEngineersVR.OpenXR
             else if (OriginAboveFloor.HasValue && now - floorSeenAt > Stopwatch.Frequency)
             {
                 OriginAboveFloor = null;
+                LocalInStage = null;
                 floorLogged = false;
                 Log.Warn($"OpenXR floor lost (xrLocateSpace {result}, flags {location.LocationFlags:X}); height cannot be corrected until it is back");
             }

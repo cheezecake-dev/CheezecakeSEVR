@@ -1,0 +1,36 @@
+# Snap turning: one flick of the right stick turns the astronaut 30 degrees, once however long the stick is held; a flick
+# the other way turns it back.
+# Needs: Earth Planet; Options > VR > Comfort at its defaults (snap turn 30 degrees, smooth turn off).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# before: nothing pushed, the astronaut faces the same way
+read character
+mark
+wait 1
+read character
+expect forward moved < 0.05
+
+# a flick right and the stick held there: one 30 degree turn (the forward vector moves by about 0.52), not a steady one
+stick right 1 0
+wait 2
+read character
+expect forward moved > 0.35
+expect forward moved < 0.7
+expect log Snap turn right 30 deg within 5
+stick right 0 0
+wait 0.5
+
+# a flick left turns it back
+stick right -1 0
+wait 1
+stick right 0 0
+wait 0.5
+read character
+expect forward moved < 0.1
+expect log Snap turn left 30 deg within 5

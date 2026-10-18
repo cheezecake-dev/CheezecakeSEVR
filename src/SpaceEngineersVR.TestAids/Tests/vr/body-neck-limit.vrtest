@@ -1,0 +1,37 @@
+# The body follows the head past a neck's limit: turning the head 30 degrees leaves the body facing the same way,
+# turning it 90 degrees makes the body turn after it until the head is 50 degrees off the body (it turns about 40 degrees).
+# Needs: Earth Planet (survival, on foot, in gravity).
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+wait 2
+
+# the head turned within the limit: the body stays
+read character
+mark
+head 0 1.6 0 30
+wait 1.5
+read character
+expect forward moved < 0.05
+expect no log Body followed the head
+
+# the head turned past the limit: the body follows (a 40 degree turn moves the forward vector by about 0.68)
+head 0 1.6 0 90
+wait 2
+read character
+expect forward moved > 0.5
+expect forward moved < 0.85
+expect log Body followed the head by within 5
+expect log neck limit within 5
+
+cleanup
+# Put back: the head ahead and a short walk, which turns the body all the way to the head, so the tests after this one
+# start with the body facing where the head looks (standing still, the body stays up to 50 degrees off the head).
+head 0 1.6 0
+stick left 0 1
+wait 0.5
+stick left 0 0
+wait 0.5

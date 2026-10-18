@@ -26,7 +26,8 @@ namespace SpaceEngineersVR.Gui
         /// </summary>
         private const string FromColby = " (from ColbyJack1134's SpaceEngineersVR)";
 
-        private const string ColbyCockpits = "Cockpits" + FromColby, ColbyHeadset = "Headset" + FromColby, ColbyDesktop = "Desktop window" + FromColby;
+        private const string ColbyCockpits = "Cockpits" + FromColby, ColbyHeadset = "Headset" + FromColby, ColbyDesktop = "Desktop window" + FromColby,
+            ColbyGuns = "Guns" + FromColby;
 
         /// <summary>The tab, the group in it, and the setting's key (its name in VRSettings and the settings file).</summary>
         private static readonly (string Tab, string Group, string Key)[] Places =
@@ -40,8 +41,14 @@ namespace SpaceEngineersVR.Gui
             (Display,   "Helmet",         "hudOnHelmet"),
             (Display,   "Helmet",         "visorTintColour"),
             (Display,   "Helmet",         "visorTint"),
+            (Display,   "Helmet",         "sunVisorColour"),
             (Display,   "Helmet",         "sunVisorTint"),
             (Display,   "Helmet",         "visorGlare"),
+            (Display,   "Helmet",         "visorFrost"),
+            (Display,   "Helmet",         "visorBreath"),
+            (Display,   "Helmet",         "visorWeather"),
+            (Display,   "Helmet",         "visorMisting"),
+            (Display,   "Helmet",         "visorWipe"),
             (Display,   "Helmet",         "helmetAirVolume"),
             (Display,   "Helmet",         "helmetBreathing"),
             (Display,   "External view",  "externalViewSize"),
@@ -53,8 +60,10 @@ namespace SpaceEngineersVR.Gui
             (Display,   "Headset",        "ipd"),
             (Display,   ColbyHeadset,     "lensMask"),
             (Display,   ColbyHeadset,     "particleDensity"),
+            (Display,   "Performance",    "mirrorLayers"),
             (Display,   "Third person",   "thirdPerson"),
             (Display,   "Third person",   "levelChaseCamera"),
+            (Display,   "Desktop window", "desktopView"),
             (Display,   "Desktop window", "mirrorWidth"),
             (Display,   "Desktop window", "mirrorHeight"),
             (Display,   ColbyDesktop,     "freeMouse"),
@@ -65,7 +74,11 @@ namespace SpaceEngineersVR.Gui
             (Comfort,   "Turning",        "zeroGTurn"),
             (Comfort,   "Motion",         "comfortVignette"),
             (Comfort,   "Motion",         "comfortGrid"),
+            (Comfort,   "Motion",         "comfortFade"),
             (Comfort,   "Motion",         "cameraShake"),
+            (Comfort,   "G-forces in a seat", "seatGPush"),
+            (Comfort,   "G-forces in a seat", "seatGGreyOut"),
+            (Comfort,   "G-forces in a seat", "seatGBreathing"),
             (Comfort,   "Head",           "headLock"),
             (Comfort,   "Head",           "headReach"),
             (Comfort,   "Head",           "bodyClearance"),
@@ -99,9 +112,15 @@ namespace SpaceEngineersVR.Gui
             (Hands,     "Tools",          "physicalReload"),
             (Hands,     "Tools",          "kickback"),
             (Hands,     "Tools",          "gameRecoil"),
+            (Hands,     ColbyGuns,        "colbyAimDownSights"),
+            (Hands,     "Holsters",       "toolHolsters"),
+            (Hands,     "Holsters",       "welderHolster"),
+            (Hands,     "Holsters",       "grinderHolster"),
+            (Hands,     "Holsters",       "drillHolster"),
             (Hands,     "Haptics",        "hapticStrength"),
             (Hands,     "Haptics",        "hapticHeartbeat"),
             (Hands,     "Haptics",        "hapticMovement"),
+            (Hands,     "Haptics",        "hapticSeatG"),
             (Hands,     GripFitSettings.GroupName, "gripFitPitch"),
             (Hands,     GripFitSettings.GroupName, "gripFitRoll"),
             (Hands,     GripFitSettings.GroupName, "gripFitYaw"),
@@ -118,6 +137,8 @@ namespace SpaceEngineersVR.Gui
             (Interface, "HUD",            "hudVisor"),
             (Interface, "HUD",            "hudTextSize"),
             (Interface, "HUD",            "hudTextBacking"),
+            (Interface, "HUD",            "hudColour"),
+            (Interface, "HUD",            "hudOpacity"),
             (Interface, "Menus",          "menuDistance"),
             (Interface, "Menus",          "menuWidth"),
             (Interface, "Menus",          "mainMenuWidth"),
@@ -134,6 +155,7 @@ namespace SpaceEngineersVR.Gui
             (Interface, "Ship model",     "shipModelPower"),
             (Interface, "Ship model",     "shipModelDoors"),
             (Interface, "Ship model",     "shipModelWeapons"),
+            (Interface, "Bug Swarm",      "swarmBlocks"),
         };
 
         /// <summary>The tab for a setting with no line in <see cref="Places"/>, by its section.</summary>

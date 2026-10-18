@@ -105,7 +105,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>For the Perf line: the glass triangles tested since the last call.</summary>
         internal static long TakeTested() => Interlocked.Exchange(ref tested, 0);
 
-        /// <summary>The first glass a ball going from <paramref name="from"/> to <paramref name="to"/> meets.</summary>
+        /// <summary>The first glass a ball going from <c>from</c> to <c>to</c> meets (<see cref="Sweep"/>).</summary>
         internal struct Contact
         {
             public float Fraction;

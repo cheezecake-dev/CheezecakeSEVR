@@ -1,0 +1,64 @@
+# Screens: a tool or gun pulled out of the inventory into the hand. With the laser on one in your own inventory, the grip
+# squeezed and the hand drawn back toward you (15 cm) puts it in the hand through the game's own switch to that item.
+# World: Earth Planet (survival, on foot). A pistol is given so the inventory surely holds a gun; the hand starts empty.
+# The plugin says where the item is on the panel once the inventory page is shown, as in screens-inventory-toolbar.vrtest.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a gun in the inventory ----------------------------------------------------------------------
+
+give PhysicalGunObject/SemiAutoPistolItem
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.3
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+# Before: nothing in the hand.
+read character
+expect weapon == null
+key I
+wait 2
+read screens
+expect result contains MyGuiScreenTerminal
+
+remember tool log '/Inventory toolbar: on the panel, .* the first tool or gun you carry, (\S+), at stage/' within 10
+remember toolAt log '/Inventory toolbar: on the panel, .* the first tool or gun you carry, \S+, at stage \((\S+), (\S+), (\S+)\) m/' within 10
+
+# ---- A grip let go before the pull takes nothing -------------------------------------------------------------------------
+
+hand right 0.1 1.55 -0.2 toward {toolAt}
+wait 1
+expect log Laser: pointing at the panel within 5
+press right grip
+wait 0.5
+expect log /Inventory pull: Right grip on the .* in the inventory/ within 5
+release right grip
+wait 0.5
+expect log Inventory pull: let go of the within 5
+read character
+expect weapon == null
+
+# ---- The grip, then the hand drawn back 25 cm: it comes into the hand -------------------------------------------------------
+
+press right grip
+wait 0.5
+hand right 0.1 1.55 -0.1 toward {toolAt}
+wait 0.3
+hand right 0.1 1.55 0.05 toward {toolAt}
+wait 1
+expect log came out of the inventory into the Right hand within 5
+# The grip was the pull's, never the right mouse button.
+expect no log Laser: right button down
+release right grip
+wait 0.5
+read character
+expect weapon.item contains {tool} within 5
+expect no log Exception
+
+key Escape
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay

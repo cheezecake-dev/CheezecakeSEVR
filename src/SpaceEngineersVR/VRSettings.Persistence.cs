@@ -156,30 +156,32 @@ namespace SpaceEngineersVR
                 string arg = args[i];
                 if (arg.Equals("-novr", StringComparison.OrdinalIgnoreCase))
                     enabled.Force(false);
+                else if (arg.Equals("-vrnodesktop", StringComparison.OrdinalIgnoreCase))
+                    desktopOffForRun = true;
                 else if (arg.Equals("-vrmirror", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
                     string[] size = args[i + 1].Split('x', 'X');
-                    if (size.Length == 2 && int.TryParse(size[0], out int w) && int.TryParse(size[1], out int h) && w > 0 && h > 0)
+                    if (size.Length == 2 && int.TryParse(size[0], out int w) && int.TryParse(size[1], out int h))
                     {
-                        mirrorWidth.Force(w);
-                        mirrorHeight.Force(h);
+                        mirrorWidth.ForceWithin(w);
+                        mirrorHeight.ForceWithin(h);
                     }
                 }
                 else if (arg.Equals("-ipd", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
                          && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float ipdValue))
-                    ipd.Force(ipdValue);
+                    ipd.ForceWithin(ipdValue);
                 else if (arg.Equals("-hudDistance", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float distance) && distance > 0f)
-                    hudDistance.Force(distance);
+                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float distance))
+                    hudDistance.ForceWithin(distance);
                 else if (arg.Equals("-hudWidth", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float width) && width > 0f && width < 170f)
-                    hudWidth.Force(width);
+                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float width))
+                    hudWidth.ForceWithin(width);
                 else if (arg.Equals("-menuDistance", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float menuDistanceValue) && menuDistanceValue > 0f)
-                    menuDistance.Force(menuDistanceValue);
+                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float menuDistanceValue))
+                    menuDistance.ForceWithin(menuDistanceValue);
                 else if (arg.Equals("-menuWidth", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length
-                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float menuWidthValue) && menuWidthValue > 0f && menuWidthValue < 170f)
-                    menuWidth.Force(menuWidthValue);
+                         && float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float menuWidthValue))
+                    menuWidth.ForceWithin(menuWidthValue);
             }
         }
     }

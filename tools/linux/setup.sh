@@ -380,7 +380,7 @@ step_locate() {
 
 step_openal() {
     heading "OpenAL (game sound)"
-    if have ldconfig && ldconfig -p 2>/dev/null | grep -q 'libopenal\.so\.1'; then
+    if have ldconfig && ldconfig -p 2>/dev/null | grep 'libopenal\.so\.1' >/dev/null; then
         ok "libopenal.so.1 is installed"
         return
     fi
@@ -398,7 +398,7 @@ step_openal() {
 
 step_loader() {
     heading "OpenXR loader"
-    if have ldconfig && ldconfig -p 2>/dev/null | grep -q 'libopenxr_loader\.so\.1'; then
+    if have ldconfig && ldconfig -p 2>/dev/null | grep 'libopenxr_loader\.so\.1' >/dev/null; then
         ok "libopenxr_loader.so.1 is installed"
         return
     fi

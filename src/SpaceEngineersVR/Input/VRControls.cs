@@ -100,11 +100,11 @@ namespace SpaceEngineersVR.Input
         /// <summary>Gravity at or below this (m/s², squared) is zero g: the game's own line, below which it does not stand the body up (MyCharacter.UpdateStandup).</summary>
         internal const float ZeroGSquared = 0.1f;
 
-        /// <summary>The furthest the head looks round from the body, radians: past it the thrust, the character's head and the helmet stop turning, and the eyes turn on inside the helmet. The game has no yaw limit of its own outside ladders; a neck turns about this far.</summary>
-        internal static float MaxLookYaw { get; set; } = DefaultMaxLookYaw;
-
         /// <summary>The default of <see cref="MaxLookYaw"/>, 70 deg; RenderDebug MaxLookYaw=n sets it, degrees, while the game runs.</summary>
         internal static readonly float DefaultMaxLookYaw = MathHelper.ToRadians(70f);
+
+        /// <summary>The furthest the head looks round from the body, radians: past it the thrust, the character's head and the helmet stop turning, and the eyes turn on inside the helmet. The game has no yaw limit of its own outside ladders; a neck turns about this far.</summary>
+        internal static float MaxLookYaw { get; set; } = DefaultMaxLookYaw;
 
         /// <summary>The furthest the head looks up or down from the body, radians: the game's own limit on the character's head (MyCharacter.MAX_HEAD_LOCAL_X_ANGLE, 89 deg).</summary>
         internal static readonly float MaxLookPitch = MathHelper.ToRadians(89f);
@@ -170,6 +170,9 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>The control set the hands drive this frame.</summary>
         public static VRContext Context => context;
+
+        /// <summary>A camera block is the view this frame (looking through it from on foot or a seat): Y held there leaves it.</summary>
+        public static bool CameraView => cameraView;
 
         /// <summary>
         /// Artificial motion for the comfort vignette (<see cref="Rendering.Vignette"/>), readable from any thread: how hard
@@ -321,8 +324,6 @@ namespace SpaceEngineersVR.Input
             if (!zoomAsked)
                 Zoom(false, false, zoomBy);
             UpdateUseHold(seconds);
-            // Push to talk holds in every context, the toolbar wheel's too (the wheel clears the hands' other controls above).
-            Set(Intent.Voice, Hands.VoiceTalk.Frame());
 
             menuNow = menu;
             MenuButton(seconds, menuNow);

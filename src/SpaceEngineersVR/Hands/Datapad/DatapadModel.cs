@@ -235,11 +235,12 @@ namespace SpaceEngineersVR.Hands
         {
             if (textureMade && !pictureLost)
                 return;
-            MyRenderProxy.CreateGeneratedTexture(TextureName, GuiLayout.Size.X, GuiLayout.Size.Y, MyGeneratedTextureType.RGBA, 1, null,
+            Vector2I size = RendererTextures.MipmappedSize(GuiLayout.Size);
+            MyRenderProxy.CreateGeneratedTexture(TextureName, size.X, size.Y, MyGeneratedTextureType.RGBA, 1, null,
                 generateMipmaps: true, immediatelyReady: true);
             Log.Info(pictureLost
                 ? "Datapad model: the renderer had lost the screen's texture (a device reset); given again"
-                : $"Datapad model: the screen's texture made ({TextureName}, {GuiLayout.Size.X} x {GuiLayout.Size.Y}, sRGB with mipmaps, as an LCD's)");
+                : $"Datapad model: the screen's texture made ({TextureName}, {size.X} x {size.Y}, sRGB with mipmaps, as an LCD's)");
             textureMade = true;
             pictureLost = false;
             pictureReady = false;
@@ -344,7 +345,7 @@ namespace SpaceEngineersVR.Hands
                 }
                 if (!RendererTextures.MakeDrawable(texture))
                     throw new InvalidOperationException($"\"{TextureName}\" has no render target");
-                EyeRenderer.CopyOpaque(texture, panel, new MyViewport(GuiLayout.Size.X, GuiLayout.Size.Y));
+                EyeRenderer.CopyOpaque(texture, panel, new MyViewport(RendererTextures.MipmappedSize(GuiLayout.Size))); // the GUI's shape, a size the renderer can mipmap
                 EyeRenderer.GenerateMips(texture);
                 if (!pictureReady)
                 {

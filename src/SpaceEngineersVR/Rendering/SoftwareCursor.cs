@@ -7,7 +7,7 @@ namespace SpaceEngineersVR.Rendering
     /// The cursor dot on the panel. The game draws its own cursor sprite into the GUI only when it is not using the
     /// operating system's cursor (MyDX9Gui.Draw: <c>if (!MyVideoSettingsManager.IsHardwareCursorUsed() || MyFakes.FORCE_SOFTWARE_MOUSE_DRAW)
     /// DrawMouseCursor(...)</c>), and on Windows 10 and 11 it always is. The OS cursor is not in the panel, and the panel is where the laser
-    /// (<see cref="Laser"/>) and <see cref="PanelCursor"/> put the cursor, so no dot showed in the VR menus. The game's own switch
+    /// (<see cref="Input.Laser"/>) and <see cref="PanelCursor"/> put the cursor, so no dot showed in the VR menus. The game's own switch
     /// for drawing the sprite as well is turned on once the picture is VR's: it draws it at the position it reads (<see cref="PanelCursor"/>).
     /// </summary>
     /// <remarks>

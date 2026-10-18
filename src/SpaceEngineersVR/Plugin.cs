@@ -72,6 +72,9 @@ namespace SpaceEngineersVR
             {
                 StereoPatches.PatchForHeadset();
                 StereoPatches.FollowHeadset();
+                Input.DoubleClickTolerance.Update();
+                Gui.InventoryToolbar.Update();
+                Rendering.DesktopWindow.Update();
                 PatchRegistry.Update();
                 Api.SevrApi.Update();
             }

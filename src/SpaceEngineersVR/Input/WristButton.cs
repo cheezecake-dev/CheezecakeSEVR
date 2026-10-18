@@ -274,7 +274,7 @@ namespace SpaceEngineersVR.Input
 
             if (VRInput.IsNewPressed(WristHand, VRButtons.Y))
             {
-                Toggle toggle = Decide(true, screen != null, VRControls.Context, MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay);
+                Toggle toggle = Decide(true, screen != null, VRControls.Context, VRControls.CameraView, MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay);
                 if (toggle == Toggle.Close)
                 {
                     Log.Info("Wrist panel: closed (Y)");
@@ -292,16 +292,17 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>
         /// What a Y press does. It closes the panel if it is up, whatever the player is doing; it opens it only on foot or on
-        /// the jetpack (a seat's Y is the toolbar and leaving the seat) and when no menu is open already.
+        /// the jetpack (a seat's Y is the toolbar and leaving the seat), not while a camera block is the view (Y held there
+        /// leaves the camera, <see cref="VRControls"/>' use hold) and when no menu is open already.
         /// </summary>
-        internal static Toggle Decide(bool newPressed, bool panelOpen, VRContext context, bool gameplayHasFocus)
+        internal static Toggle Decide(bool newPressed, bool panelOpen, VRContext context, bool cameraView, bool gameplayHasFocus)
         {
             if (!newPressed)
                 return Toggle.None;
             if (panelOpen)
                 return Toggle.Close;
             bool free = context == VRContext.OnFoot || context == VRContext.Jetpack;
-            return free && gameplayHasFocus ? Toggle.Open : Toggle.None;
+            return free && !cameraView && gameplayHasFocus ? Toggle.Open : Toggle.None;
         }
 
         private static bool Gone(QuickActionsScreen s) => s.State == MyGuiScreenState.CLOSING || s.State == MyGuiScreenState.CLOSED;

@@ -1,0 +1,189 @@
+# Screens: the wrist panel. Y (the left controller's upper button) opens the quick actions on a panel over the left wrist
+# and Y again closes it; the right hand's laser and trigger press its tiles: Dampeners switches the dampeners, Inventory,
+# Terminal and the G menu open their screens, which stand in the world ahead of the eyes, and B goes back out of them.
+# The panel follows the left hand: with the hand where this file holds it, the panel's middle is 0.3 m from the right
+# hand placed and turned as below, square on, and 0.3 m wide (1920 GUI pixels); each tile's place on it is the plugin's
+# grid of 3 by 4 tiles (QuickActionsScreen.Layout).
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: the astronaut on foot in gravity (Earth Planet starts so). Nothing is built. ---------------
+
+# Dampeners on, so the Dampeners tile has something to switch off.
+dampeners on
+log SpaceEngineersVR.log
+expect session focused within 60
+
+# ---- Y opens and closes the panel -------------------------------------------------------------------------------------
+
+# Headset level, the left hand held out low before the body, the right hand resting below, aimed down.
+head 0 1.6 0
+hand left -0.2 1.1 -0.35
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+# Before: only the game is up.
+read screen
+expect type == MyGuiScreenGamePlay
+# Index's left B is the Y button.
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+expect log Wrist panel: opened (Y), 12 tiles within 5
+expect log Menu opened on the wrist within 5
+# Y again closes it.
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+expect log Wrist panel: closed (Y) within 5
+
+# ---- Where the panel is drawn: on the left wrist, near, low and to the left, and it stays with the hand ----------------
+
+# Looking down at the left hand, as a player does to use the panel. With the hand where this file holds it, the panel's
+# middle is about 0.5 m ahead of the eyes, 18 degrees left of the middle of the view and 10 below it, and it is 0.3 m
+# wide, about 35 degrees (Rendering/WorldMenu.cs, WristPose).
+head 0 1.6 0 0 -45
+wait 1
+expect headset steady
+headset wrist-closed.png
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+headset wrist-open.png
+expect headset new depth 0.25 0.8
+expect headset new at -18 -10 15
+expect headset new size 20 50
+# Looking further down, the panel stays on the wrist: the view moves past it, as it does past the world.
+head 0 1.6 0 0 -60
+wait 1
+headset wrist-look-down.png
+expect headset new follows world
+# Y closes it, and the head is level again for the rest of the test.
+press left b
+wait 0.2
+release left b
+wait 1
+head 0 1.6 0
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- The laser presses a tile: Dampeners ---------------------------------------------------------------------------------
+
+read character
+expect dampeners == true
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the Dampeners tile, and its trigger.
+hand right -0.128 1.438 -0.013 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]3[0-9][0-9], 6[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+# The game's own Dampeners control was pressed and the panel closed.
+expect log '/Wrist panel: .Dampeners. read by the game/' within 5
+read character
+expect dampeners == false
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- The tiles that open screens: Inventory, Terminal, G menu, each in the world ahead -------------------------------
+
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the Inventory tile, and its trigger.
+hand right -0.158 1.473 -0.054 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]3[0-9][0-9], 2[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+read screens
+expect result contains MyGuiScreenTerminal
+expect log Menu opened; panel placed within 5
+# B goes back: the screen closes and the game has the focus again.
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the Terminal tile, and its trigger.
+hand right -0.082 1.473 -0.111 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]9[0-9][0-9], 2[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+read screens
+expect result contains MyGuiScreenTerminal
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+
+# G menu: some screen other than the game and the panel has the focus.
+hand right 0.25 1.0 -0.3 0 -60
+wait 0.5
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+# The right hand's laser on the G menu tile, and its trigger.
+hand right -0.006 1.473 -0.167 -36.5 -56.1
+wait 1
+expect log '/Laser: pointing at the panel, GUI [(]1[45][0-9][0-9], 2[0-9][0-9][)]/' within 5
+press right trigger
+wait 0.2
+release right trigger
+wait 1.5
+read screen
+expect type != MyGuiScreenGamePlay
+expect type != QuickActionsScreen
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay
+# The datapad is left out of this release: nothing of it ran.
+expect no log Datapad
+expect no log Exception

@@ -34,8 +34,9 @@ namespace SpaceEngineersVR.Input
     /// state right after it updates it, so that pressed, new pressed, released and double clicks all agree.
     /// </summary>
     /// <remarks>
-    /// The real mouse is never moved (the game's SetMousePosition is dropped while the laser has the cursor), and it wins
-    /// whenever it moves, until the hand's hit point has moved more than <see cref="TakeBackPixels"/> from where it was.
+    /// The real mouse is not moved while the laser has the cursor (the game's SetMousePosition is dropped then). The hands
+    /// have the cursor when a screen opens; the mouse has it from when it moves, as in flat play whatever the hands are
+    /// doing, going on from where the laser left it, until the trigger or grip is pressed with the ray on the panel.
     /// A click begins only on the panel, and a button held from a click goes on holding if the ray slips off the edge,
     /// the cursor pinned to the edge, so a drag does not drop. In plain gameplay the cursor is hidden and none of this runs:
     /// the buttons would be a tool being fired.
@@ -44,9 +45,6 @@ namespace SpaceEngineersVR.Input
     {
         /// <summary>Debug: the plain mouse, as before the laser (<see cref="RenderDebug"/> Laser=0).</summary>
         public static bool Off { get; set; }
-
-        /// <summary>How far, in GUI pixels, the hand's hit point has to move for the laser to take the cursor back from the real mouse.</summary>
-        private const float TakeBackPixels = 8f;
 
         /// <summary>A real mouse position that differs by more than this, in window pixels, is the mouse moving.</summary>
         private const float MouseMovedPixels = 0.5f;
@@ -105,7 +103,7 @@ namespace SpaceEngineersVR.Input
 
         // Game thread only.
         private static bool haveReal, mouseWins, leftHeld, rightHeld;
-        private static Vector2 lastReal, anchor;
+        private static Vector2 lastReal;
         private static float scrollCarry;
         private static long lastFrame, lastNote;
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(Laser));
@@ -191,6 +189,9 @@ namespace SpaceEngineersVR.Input
         /// <summary>A test aid (Drive's gui commands) has the cursor: where on the GUI, in GUI pixels, and whether the left button is down.</summary>
         static partial void DrivenCursor(ref bool drives, ref Vector2 onGui, ref bool left);
 
+        /// <summary>A test aid (Drive's mouse commands) is the real mouse: where it is in the window, and whether its left button is down.</summary>
+        static partial void DrivenMouse(ref bool drives, ref Vector2 window, ref bool left);
+
         /// <summary>Game thread, once per frame, as the game has just updated its mouse state.</summary>
         private static void Frame(MyVRageInput input, bool gameFocused)
         {
@@ -265,24 +266,49 @@ namespace SpaceEngineersVR.Input
                     pixelsPerDegree = hit.Distance * (float)Math.Tan(MathHelper.ToRadians(1f)) * Gui.X / (2f * halfWidth);
             }
 
-            // The real mouse, as the platform has it: the game's own read of it goes through the panel (PanelCursor).
+            // The real mouse, as the platform has it: the game's own read of it goes through the panel (PanelCursor). The
+            // game putting it somewhere (SetMousePosition) is not the player moving it.
+            bool mouseDriven = false, mouseDrivenLeft = false;
+            Vector2 drivenMouse = default;
+            if (cursorShown)
+                DrivenMouse(ref mouseDriven, ref drivenMouse, ref mouseDrivenLeft);
+            if (mouseDriven)
+            {
+                RealPosition(input) = drivenMouse;
+                if (mouseDrivenLeft)
+                    Actual(input).LeftButton = true;
+            }
             Vector2 real = RealPosition(input);
-            bool moved = haveReal && Vector2.Distance(real, lastReal) > MouseMovedPixels;
+            bool placedByGame = PanelCursor.TakePlaced(out Vector2 placedAt) && Vector2.Distance(real, placedAt) <= MouseMovedPixels;
+            bool moved = haveReal && !placedByGame && Vector2.Distance(real, lastReal) > MouseMovedPixels;
             haveReal = cursorShown;
             lastReal = real;
 
+            // The mouse has the cursor from when it moves until the trigger or grip is pressed on the panel; each screen
+            // that opens starts with the hands.
             bool mouseWon = mouseWins;
-            if (!ready)
+            // A grip closing on a tool or gun in your own inventory is a pull into the hand (InventoryPull), not the right
+            // button; it lasts while the grip is held.
+            if (!ready || !cursorShown)
+                InventoryPull.Cancel();
+            else
+            {
+                if (!mouseWins && hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Grip) && !Hands.Datapad.OwnsGrip(hand)
+                    && HudPanel.TryGetPlacement(out Matrix pullPanel, out _, out _))
+                    InventoryPull.TryBegin(hand, GridAt(hit.Pixel), state.Grip.Translation, pullPanel);
+                InventoryPull.Step(hand, VRInput.IsPressed(hand, VRButtons.Grip), state.Grip.Translation);
+            }
+            bool gripIsButton = !Hands.Datapad.OwnsGrip(hand) && !InventoryPull.OwnsGrip(hand);
+            bool handPressed = ready && hit.Inside && (VRInput.IsNewPressed(hand, VRButtons.Trigger)
+                                                       || (VRInput.IsNewPressed(hand, VRButtons.Grip) && gripIsButton));
+            if (!cursorShown)
                 mouseWins = false;
             else if (moved)
-            {
                 mouseWins = true;
-                anchor = hit.Pixel;
-            }
-            else if (mouseWins && Vector2.Distance(hit.Pixel, anchor) > TakeBackPixels)
+            else if (handPressed)
                 mouseWins = false;
-            if (mouseWins != mouseWon)
-                Note(mouseWins ? "Laser: the mouse moved, so the mouse has the cursor" : "Laser: the hand moved, so the laser has the cursor");
+            if (mouseWins != mouseWon && cursorShown)
+                Note(mouseWins ? "Laser: the mouse moved, so the mouse has the cursor" : "Laser: a press on the panel, so the laser has the cursor");
 
             // Holding the cursor: on the panel, or still carrying a button down from a click that began there.
             bool carrying = leftHeld || rightHeld;
@@ -295,7 +321,7 @@ namespace SpaceEngineersVR.Input
             {
                 if (hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Trigger))
                     leftHeld = true;
-                if (hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Grip) && !Hands.Datapad.OwnsGrip(hand))
+                if (hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Grip) && gripIsButton)
                     rightHeld = true;
                 leftHeld &= trigger;
                 rightHeld &= grip;
@@ -371,9 +397,11 @@ namespace SpaceEngineersVR.Input
                 actual.ScrollWheelValue += wheel;
 
             bool wasHolding;
+            Vector2 laserWasAt;
             lock (gate)
             {
                 wasHolding = holds;
+                laserWasAt = cursor;
                 holds = nowHolds;
                 cursor = at;
                 lineOn = nowHolds;
@@ -383,6 +411,18 @@ namespace SpaceEngineersVR.Input
             }
             if (nowHolds != wasHolding)
                 Note(nowHolds ? $"Laser: pointing at the panel, GUI ({hit.Pixel.X:0}, {hit.Pixel.Y:0}), {hit.Distance:0.00} m" : "Laser: off the panel");
+
+            // The mouse took the cursor from the laser: it goes on from where the laser had it, so the cursor does not jump.
+            if (mouseWins && !mouseWon && wasHolding)
+            {
+                input.SetMousePosition((int)laserWasAt.X, (int)laserWasAt.Y);
+                if (PanelCursor.TakePlaced(out Vector2 window))
+                {
+                    RealPosition(input) = window;
+                    lastReal = window;
+                    Log.Info($"Laser: the mouse goes on from the laser's GUI ({laserWasAt.X:0}, {laserWasAt.Y:0}), window ({window.X:0}, {window.Y:0})");
+                }
+            }
         }
 
         /// <summary>

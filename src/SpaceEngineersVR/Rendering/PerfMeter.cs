@@ -71,7 +71,12 @@ namespace SpaceEngineersVR.Rendering
         private static readonly Hist mainTickLive = new Hist(), mainSimLive = new Hist();
         private static readonly Hist mainTick = new Hist(), mainSim = new Hist();
         private static long mainTickMax, mainSimMax;
-        private static long tickStart, simStart;
+        private static long tickStart, simStart, tickSim;
+
+        // A main thread tick at least this long is logged as it ends (at most MaxLongTickLogs a game run).
+        private const double LongTickMs = 300.0;
+        private const int MaxLongTickLogs = 500;
+        private static int longTickLogs;
 
         public static void Patch(Harmony harmony)
         {
@@ -99,6 +104,7 @@ namespace SpaceEngineersVR.Rendering
         {
             StallWatchdog.MainProgress();
             tickStart = Stopwatch.GetTimestamp();
+            tickSim = 0;
         }
 
         private static void TickPostfix()
@@ -113,6 +119,16 @@ namespace SpaceEngineersVR.Rendering
                 if (dt > mainTickMax)
                     mainTickMax = dt;
             }
+            // A long tick, when it ended: the hands are read once a tick, so a button pressed and let go within it is not
+            // seen. The 10 s line gives only the window's longest; this says when, and whether the game's update had it.
+            double ms = dt * TicksToMs;
+            if (ms >= LongTickMs && longTickLogs < MaxLongTickLogs)
+            {
+                longTickLogs++;
+                double sim = tickSim * TicksToMs;
+                Log.Info($"Perf main thread: a tick of {ms:0} ms just ended, {sim:0} ms of it in the game's update (MySandboxGame.Update) " +
+                         $"and {ms - sim:0} ms outside it; a button pressed and let go within it is not seen");
+            }
         }
 
         private static void UpdatePrefix() => simStart = Stopwatch.GetTimestamp();
@@ -122,6 +138,7 @@ namespace SpaceEngineersVR.Rendering
             if (Off)
                 return;
             long dt = Stopwatch.GetTimestamp() - simStart;
+            tickSim += dt;
             lock (mainLock)
             {
                 mainSimLive.Add(dt * TicksToMs);

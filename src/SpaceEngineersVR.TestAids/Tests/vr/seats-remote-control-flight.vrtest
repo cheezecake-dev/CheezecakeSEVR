@@ -1,0 +1,58 @@
+# Flying a ship from its remote control with the thumbsticks: A raises the ship, the left stick pushes it forward, and
+# holding Y lets go of the remote control. A remote control has no cockpit rig, so the thumbsticks fly it on their own.
+# Needs the Drill Ship Atmosphere mk.1 that Earth Planet ships near its starter base (powered, small grid, gears free).
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- Setup: name the ship's remote control, then take control of it the way the game's remote access does ------
+admin creativeTools
+# Earth Planet's ships belong to the world's own identity: the game lets the player control them once they own them
+own Drill Ship Atmosphere mk.1
+# remote control and cameras reach a ship only through its antenna, which this one has off
+switch Drill Ship Antenna on
+# the ship's cockpit is its main cockpit, and the game flies and parks a ship only from that one while it has one
+property Cockpit on Drill Ship Atmosphere mk.1 MainCockpit false
+rename Remote Control on Drill Ship Atmosphere mk.1 as Drill remote control
+log SpaceEngineersVR.log
+expect session focused within 60
+control Drill remote control
+wait 2
+read block Drill remote control
+expect controlledByMe == true
+expect log VR controls: ship controller (RemoteControl) within 5
+head 0 1.6 0
+wait 1
+
+# ---- A raises the ship ----------------------------------------------------------------------------------------
+read grid Drill Ship Atmosphere mk.1
+mark
+press right a
+wait 3
+release right a
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.5
+
+# ---- The left stick forward pushes it along (dampeners on, so it comes to rest after) ----------------------------
+mark
+stick left 0 1
+wait 3
+stick left 0 0
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.5
+
+# ---- B lowers it ------------------------------------------------------------------------------------------------
+mark
+press right b
+wait 3
+release right b
+read grid Drill Ship Atmosphere mk.1
+expect position moved > 0.3
+
+# ---- Hold Y: the remote control is let go and the character is on foot again ------------------------------------
+press left b
+wait 0.8
+release left b
+wait 2
+read block Drill remote control
+expect controlledByMe == false
+expect log VR controls: on foot within 5

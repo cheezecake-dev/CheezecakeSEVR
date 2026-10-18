@@ -26,13 +26,16 @@ namespace SpaceEngineersVR.Rendering
     {
         private delegate void DrawCall(object renderer, object target, MyViewport bound, MyViewport full, Vector2 size, object blend);
 
+        private delegate void AddCall(object renderer, object texture, Color color, Vector2 origin, Vector2 tangent, Rectangle source, RectangleF destination);
+
         private static Func<object> rent;
         private static Action<object> giveBack, scissorPop;
         private static Action<object, MyRenderMessageBase> process;
         private static Action<object, Rectangle> scissorPush;
         private static DrawCall draw;
+        private static AddCall addTexture;
         private static Func<int, string, float, Vector2> measure;
-        private static object multiply, scaleAlpha, add;
+        private static object multiply, scaleAlpha, add, opaque;
 
         /// <summary>Bound (<see cref="Bind"/>): the calls below can be made.</summary>
         public static bool Ready => draw != null;
@@ -54,6 +57,12 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The add blend: the sprite's colour added to the target's (source One, destination One), its alpha kept. Light, such as glare. Null when it could not be made.</summary>
         public static object Add => add;
 
+        /// <summary>The opaque blend: the sprite replaces what is in the target (source One, destination Zero). Null when it could not be made.</summary>
+        public static object Opaque => opaque;
+
+        /// <summary>Images of our own can be added to a renderer's batch (<see cref="AddTexture"/>).</summary>
+        public static bool CanAddTextures => addTexture != null;
+
         /// <summary>Takes a renderer from the game's pool; pair with <see cref="Return"/>.</summary>
         public static object Rent() => rent();
 
@@ -63,6 +72,15 @@ namespace SpaceEngineersVR.Rendering
         public static void Process(object renderer, MyRenderMessageBase message) => process(renderer, message);
 
         public static void ScissorPush(object renderer, Rectangle rectangle) => scissorPush(renderer, rectangle);
+
+        /// <summary>
+        /// Adds a sprite of <paramref name="texture"/> (one of the renderer's own images: a borrowed render target, premultiplied) to
+        /// the renderer's batch: its <paramref name="source"/> pixels stretched over <paramref name="destination"/>, times
+        /// <paramref name="color"/>, turned about <paramref name="origin"/> so that its X lies along <paramref name="tangent"/>
+        /// (<see cref="Vector2.UnitX"/>: not turned). Not bounded to the GUI's part of the target.
+        /// </summary>
+        public static void AddTexture(object renderer, object texture, Color color, Vector2 origin, Vector2 tangent, Rectangle source, RectangleF destination) =>
+            addTexture(renderer, texture, color, origin, tangent, source, destination);
 
         public static void ScissorPop(object renderer) => scissorPop(renderer);
 
@@ -210,6 +228,7 @@ namespace SpaceEngineersVR.Rendering
             il.Emit(OpCodes.Ret);
             var measureCall = (Func<int, string, float, Vector2>)method.CreateDelegate(typeof(Func<int, string, float, Vector2>));
 
+            addTexture = BindAddTexture(render11, sprites);
             rent = rentCall;
             giveBack = returnCall;
             process = processCall;
@@ -221,6 +240,47 @@ namespace SpaceEngineersVR.Rendering
             multiply = MakeBlend(managers, blendState, "SEVR multiply", BlendOption.Zero, BlendOption.SourceColor, BlendOption.Zero, BlendOption.One);
             add = MakeBlend(managers, blendState, "SEVR add", BlendOption.One, BlendOption.One, BlendOption.Zero, BlendOption.One);
             scaleAlpha = MakeBlend(managers, blendState, "SEVR scale alpha", BlendOption.Zero, BlendOption.One, BlendOption.Zero, BlendOption.SourceAlpha);
+            opaque = MakeBlend(managers, blendState, "SEVR opaque", BlendOption.One, BlendOption.Zero, BlendOption.One, BlendOption.Zero);
+        }
+
+        /// <summary>
+        /// renderer.AddSingleSprite(texture, color, origin, tangent, source, destination, ignoreBounds: true, premultipliedAlpha: true,
+        /// no mask), as the renderer adds a GUI texture's sprite. Optional: null, logged, when the game has no such method, and only
+        /// what draws images of our own goes without.
+        /// </summary>
+        private static AddCall BindAddTexture(Assembly render11, Type sprites)
+        {
+            try
+            {
+                Type srv = render11.GetType("VRage.Render11.Resources.ISrvBindable", throwOnError: true);
+                MethodInfo add = ReflectionUtil.Need(AccessTools.Method(sprites, "AddSingleSprite",
+                    new[] { srv, typeof(Color), typeof(Vector2), typeof(Vector2), typeof(Rectangle?), typeof(RectangleF), typeof(bool), typeof(bool), srv }),
+                    "MySpritesRenderer.AddSingleSprite");
+                ILGenerator il = ReflectionUtil.Begin("GameSprites.AddTexture", null,
+                    new[] { typeof(object), typeof(object), typeof(Color), typeof(Vector2), typeof(Vector2), typeof(Rectangle), typeof(RectangleF) },
+                    sprites, out DynamicMethod method);
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Castclass, sprites);
+                il.Emit(OpCodes.Ldarg_1);
+                il.Emit(OpCodes.Castclass, srv);
+                il.Emit(OpCodes.Ldarg_2);
+                il.Emit(OpCodes.Ldarg_3);
+                il.Emit(OpCodes.Ldarg_S, (byte)4);
+                il.Emit(OpCodes.Ldarg_S, (byte)5);
+                il.Emit(OpCodes.Newobj, typeof(Rectangle?).GetConstructor(new[] { typeof(Rectangle) }));
+                il.Emit(OpCodes.Ldarg_S, (byte)6);
+                il.Emit(OpCodes.Ldc_I4_1);
+                il.Emit(OpCodes.Ldc_I4_1);
+                il.Emit(OpCodes.Ldnull);
+                il.Emit(OpCodes.Callvirt, add);
+                il.Emit(OpCodes.Ret);
+                return (AddCall)method.CreateDelegate(typeof(AddCall));
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "Game sprites: images of our own cannot be drawn as sprites; the desktop window shows the HUD flat");
+                return null;
+            }
         }
 
         /// <summary>

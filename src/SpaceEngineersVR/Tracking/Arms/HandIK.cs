@@ -250,6 +250,8 @@ namespace SpaceEngineersVR.Tracking
                         Held(__instance, bones, Hand.Right, rightChain, trackingToModel);
                         SolveArm(__instance, bones, Hand.Left, leftChain, leftFingers, trackingToModel);
                     }
+                    // A timed reload's magazine goes to the other hand as just drawn.
+                    Hands.Reload.ArmsSolved(__instance);
                 }
                 ReportView(ViewRefusal.None);
             }
@@ -257,19 +259,6 @@ namespace SpaceEngineersVR.Tracking
             {
                 guard.Failed(e, "Hand IK failed");
             }
-        }
-
-        /// <summary>
-        /// The hand's arm was put on its controller in the last simulation frames, from this frame's head (first person, on
-        /// foot or seated), so what is on the arm (the astronaut's gauntlet, <see cref="Input.WristLook"/>) is where the
-        /// controller is. False with the solver off, after it failed, in third person, and while the view is not the
-        /// character's (the arms are then left to the animation).
-        /// </summary>
-        internal static bool ArmFollows(Hand hand)
-        {
-            ArmSolver.Chain chain = hand == Hand.Left ? leftChain : rightChain;
-            return Mode != 0 && guard.On && chain != null && shown == ViewRefusal.None && frame - chain.SolvedFrame <= 2
-                   && HandWorld.LastBodySource == HandWorld.BodySource.Head;
         }
 
         /// <summary>Where the palm bone sits relative to the controller's grip pose, with the turn and shift fitted for the hand's controller (<see cref="GripFit"/>; row vectors).</summary>
@@ -425,7 +414,7 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>
         /// Where an arm's shoulder (the upper arm's root) is in the world, as last solved or animated (for the screens'
-        /// reach table, <see cref="Hands.ScreenTest"/>). False before the arms are known.
+        /// reach table, <c>ScreenTest</c> in the test aids). False before the arms are known.
         /// </summary>
         internal static bool TryShoulder(Hand hand, MyCharacter character, out Vector3D world)
         {

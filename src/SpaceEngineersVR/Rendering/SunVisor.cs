@@ -1,4 +1,4 @@
-// SunVisor: the helmet's gold sun visor, lowered over the glass and raised again by hand.
+// SunVisor: the helmet's sun visor, lowered over the glass and raised again by hand.
 using System;
 using System.Diagnostics;
 using VRageMath;
@@ -6,9 +6,9 @@ using VRageMath;
 namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
-    /// The helmet's sun visor: a gold-filmed shade on the outside of the helmet, as a spacesuit's has, slid down over the glass
+    /// The helmet's sun visor: a filmed shade on the outside of the helmet, as a spacesuit's has, slid down over the glass
     /// and up again by hand (<see cref="Hands.HeadGestures"/>: a grip on the helmet's front, drawn down or pushed up). Down, it is a
-    /// second filter over the view (<see cref="VisorGlass"/>), gold, as dark as <see cref="VRSettings.SunVisorTint"/>, its
+    /// second filter over the view (<see cref="VisorGlass"/>), in <see cref="VRSettings.SunVisorColour"/> (gold unless set), as dark as <see cref="VRSettings.SunVisorTint"/>, its
     /// lower edge sliding down the view as it lowers and up as it rises over <see cref="Seconds"/>. It is the helmet's, so it
     /// shows while the helmet is worn whether the glass is open or closed (<see cref="HelmetHud.Worn"/>), with the helmet view on.
     /// <para>
@@ -23,8 +23,14 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>How long the visor takes to slide all the way down or up, seconds.</summary>
         public const double Seconds = 0.35;
 
-        /// <summary>The sun visor's colour: gold, from the glass's colours (<see cref="VisorGlass.ColourNames"/>).</summary>
-        public const int Colour = 1;
+        /// <summary>The sun visor's colour unless set otherwise: gold, from the glass's colours (<see cref="VisorGlass.ColourNames"/>).</summary>
+        public const int DefaultColour = 1;
+
+        /// <summary>The most light the sun visor may take on average: darker than the glass may be, as it is lowered only into glare.</summary>
+        public const float MostDarkness = 0.85f;
+
+        /// <summary>The sun visor's colour, an index into <see cref="VisorGlass.ColourNames"/> (<see cref="VRSettings.SunVisorColour"/>).</summary>
+        public static int Colour => VRSettings.SunVisorColour;
 
         private static volatile bool down;
         private static long movedAt;

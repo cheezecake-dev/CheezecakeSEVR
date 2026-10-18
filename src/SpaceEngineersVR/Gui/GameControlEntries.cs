@@ -36,7 +36,7 @@ namespace SpaceEngineersVR.Gui
     internal static class GameControlEntries
     {
         private const string Hud = GuiTextures.Hud;
-        private const string BackIcon = Hud + "RotateCounterClockWise.png";
+        private const string BackIcon = GuiTextures.Back;
 
         /// <summary>The HUD's remote with its signal, the game's picture for remote control.</summary>
         private const string RemoteIcon = Hud + "RemoteControlON.png";

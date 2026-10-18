@@ -1,0 +1,60 @@
+# Frost and mist on the visor: in the game's extreme cold, frost grows in from the visor's rim and the view changes; back in
+# the warm, the cold glass mists over, and the frost melts.
+# Needs: Earth Planet, out in the open, away from the start's station (inside its pressurised rooms the game's temperature
+# stays Cozy, whatever the weather); Options > VR > Display > Helmet view, Frost on the visor and Visor mists up indoors on
+# (the defaults). The test closes the helmet (frost grows only on the closed glass) and calls the game's ExtremeCold weather
+# with its admin chat command (/weather ExtremeCold: the game's temperature there times -1, ExtremeFreeze), then clears it.
+plugin SpaceEngineersVR
+world game:Earth Planet
+log SpaceEngineersVR.log
+expect session focused within 60
+goto open 20
+helmet on
+read character
+expect helmet == true within 5
+
+head 0 1.6 0
+wait 2
+# out in the open the grass sways in the wind: a second apart the view differs by about 5 however still the head is
+expect headset steady 8
+headset cold-before.png
+
+key Enter
+wait 0.5
+type /weather ExtremeCold
+key Enter
+expect log Visor weather: frost grows in from the within 60
+expect log layers drawn on the glass within 10
+# the frost reaches most of the way to its rim in about 20 s
+wait 30
+headset cold-frost.png
+expect headset changed 12
+
+# the cold gone: the glass is still cold in the warmer air, so it mists; a fingertip wipes a stroke through it, and it
+# clears as the glass warms; the frost melts
+key Enter
+wait 0.5
+type /weather clear
+key Enter
+expect log Visor weather: the visor mists over within 60
+# the right index fingertip across the misted glass, left to right at eye height (placed as in body-visor-rain-wipe):
+# the stroke clears the mist along it
+hand right -0.06 1.667 -0.186 0 -90 0
+wait 0.7
+hand right -0.045 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.03 1.667 -0.186 0 -90 0
+wait 0.2
+hand right -0.015 1.667 -0.186 0 -90 0
+wait 0.2
+hand right 0 1.667 -0.186 0 -90 0
+wait 0.5
+expect log Visor weather: the right fingertip wipes the visor within 5
+hand right 0.25 1.3 -0.4 0 -5 0
+expect log mist clears as the glass warms within 60
+expect log Visor weather: the frost has melted from the visor within 90
+expect no log Visor weather failed
+expect no log Exception
+
+cleanup
+reset

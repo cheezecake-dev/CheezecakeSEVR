@@ -385,6 +385,7 @@ namespace SpaceEngineersVR.Gui
                 setting.Decimals, 0.8f, ValueWidth, "White", Tip(setting), MyGuiControlSliderStyleEnum.Default,
                 MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER, false, true)
             {
+                Name = ControlName(setting),
                 CustomLabelText = true,
                 MinimumStepOverride = setting.Step / (setting.Max - setting.Min),
             };
@@ -398,7 +399,10 @@ namespace SpaceEngineersVR.Gui
         private void AddCheckbox(FlagSetting setting, Vector2 at)
         {
             var box = new MyGuiControlCheckbox(at, null, Tip(setting), setting.Pending, MyGuiControlCheckboxStyleEnum.Default,
-                MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER);
+                MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER)
+            {
+                Name = ControlName(setting),
+            };
             var binding = new Binding { Setting = setting, Check = box };
             bindings.Add(binding);
             box.IsCheckedChanged = changed =>
@@ -412,7 +416,10 @@ namespace SpaceEngineersVR.Gui
         private void AddCombobox(ChoiceSetting setting, Vector2 at)
         {
             var combo = new MyGuiControlCombobox(at, new Vector2(SliderWidth, 48f / MyGuiConstants.GUI_OPTIMAL_SIZE.Y), toolTip: Tip(setting),
-                originAlign: MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER);
+                originAlign: MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER)
+            {
+                Name = ControlName(setting),
+            };
             for (int i = 0; i < setting.Choices.Length; i++)
                 combo.AddItem(i, setting.Choices[i], sort: false);
             var binding = new Binding { Setting = setting, Combo = combo };
@@ -425,6 +432,9 @@ namespace SpaceEngineersVR.Gui
             };
             into.Add(combo);
         }
+
+        /// <summary>A setting's control is named for its key in the settings file ("setting playPosition"), so tools that drive the game's screens by control name can find it.</summary>
+        private static string ControlName(Setting setting) => "setting " + setting.Key;
 
         private static string Tip(Setting setting)
         {

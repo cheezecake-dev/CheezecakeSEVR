@@ -92,7 +92,8 @@ namespace SpaceEngineersVR.Tracking
             {
                 Seated(__instance, frame, false);
                 GameHead.GameHeadShown(__instance.HeadLocalYAngle);
-                Cockpits.SeatFit.Head(__instance, ref __result);
+                if (!Rendering.WallFade.EyeHeld)
+                    __result.Translation += Cockpits.SeatFit.Shift(__instance);
                 return;
             }
             // Sitting down: a recentre onto the seat's eye, facing where the player looks (GameHead.SitDown).
@@ -106,13 +107,19 @@ namespace SpaceEngineersVR.Tracking
             // seat's head position.
             MatrixD basis = CameraDummy(__instance) * __instance.PositionComp.WorldMatrixRef;
             MatrixD result = (MatrixD)GameHead.Rotation(includeY, includeX) * basis;
+            // ColbyJack1134's seat fit (his SeatFitPatch's postfix, carried here so one patch owns the head) moves the seat's
+            // eye itself, before the hold below, so the head is held round the pilot's head from the fitted eye and the fit
+            // cannot carry the eye past the hold. Never while the eye is held for a failed wall fade: then it stays at the
+            // game's own seat eye. Nothing unless his cockpit setting is on and his rig owns the seat.
             result.Translation = __result.Translation;
+            if (!Rendering.WallFade.EyeHeld)
+                result.Translation += Cockpits.SeatFit.Shift(__instance);
             if (includeX && includeY)
             {
                 // Seated, the head is held round the seated character's head: lean, stand or walk off in the room and the eye
                 // would be back through the character's own head and body, out through the cockpit's glass or the floor.
                 Vector3 offset = GameHead.Head.Translation;
-                Vector3 fromHead = FromHead(__instance, basis, __result.Translation);
+                Vector3 fromHead = FromHead(__instance, basis, result.Translation);
                 LastOffset = offset;
                 LastFromHead = fromHead;
                 bool unclamped = false;
@@ -124,10 +131,11 @@ namespace SpaceEngineersVR.Tracking
                 LastHeld = offset;
                 LastFrame = frame;
                 result.Translation += Vector3D.TransformNormal((Vector3D)offset, basis);
+                // The body pressed back into the seat (or forward into the straps) by the ship's G: a few centimetres, eased
+                // (Common.SeatG.Push, in the seat block's own basis), never where the eye is held for a failed wall fade.
+                if (!Rendering.WallFade.EyeHeld)
+                    result.Translation += Vector3D.TransformNormal((Vector3D)Common.SeatG.Push, __instance.PositionComp.WorldMatrixRef);
             }
-            // ColbyJack1134's seat fit (his SeatFitPatch's postfix, carried here so one patch owns the head): the seat's
-            // eye moved by the fit, whatever the head and its hold. Nothing unless his cockpit setting is on and his rig owns the seat.
-            Cockpits.SeatFit.Head(__instance, ref result);
             __result = result;
             GameHead.UsedForView();
         }
@@ -147,7 +155,7 @@ namespace SpaceEngineersVR.Tracking
         private static Vector3 Hold(MyCockpit inSeat, Vector3 fromHead, Vector3 offset, ulong frame)
         {
             float reach = VRSettings.SeatReach;
-            Vector3 held = BodyVolume.LockSeat(fromHead + offset, reach) - fromHead;
+            Vector3 held = BodyVolume.LockSeat(fromHead + offset, reach, fromHead) - fromHead;
 
             // Logged a second after the sit-down: on the sit-down's own frame the pilot is not in the seat yet.
             if (noteSeatFrame != ulong.MaxValue && frame >= noteSeatFrame)
@@ -156,9 +164,9 @@ namespace SpaceEngineersVR.Tracking
                 string from = fromHead == Vector3.Zero
                     ? $"the pilot's head is not within {PilotFar * 100f:F0} cm of the seat's eye; the head is held round the seat's eye"
                     : $"the seat's eye is ({fromHead.X:F3}, {fromHead.Y:F3}, {fromHead.Z:F3}) m from the pilot's head (x right, y up, z back); the head is held round the pilot's head";
+                BodyVolume.SeatLimits(reach, fromHead, out float side, out float forward, out float back, out float upDown);
                 Log.Info($"Seat clamp: in {inSeat.BlockDefinition?.Id.SubtypeName ?? inSeat.GetType().Name} {from}: " +
-                         $"{reach * 100f:F0} cm forward, {reach * BodyVolume.LockSideShare * 100f:F0} to the side, " +
-                         $"{BodyVolume.LockBack * 100f:F0} back, {reach * 100f:F0} up and down");
+                         $"{forward * 100f:F0} cm forward, {side * 100f:F0} to the side, {back * 100f:F0} back, {upDown * 100f:F0} up and down");
             }
             NoteHold(offset, held, frame);
             return held;

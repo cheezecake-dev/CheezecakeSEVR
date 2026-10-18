@@ -20,10 +20,12 @@ namespace SpaceEngineersVR.Rendering
     /// <item>How loud, by <see cref="VRSettings.HelmetBreathing"/> (<see cref="LevelNames"/>): Normal is the game's own volume, Quiet
     /// less (its breathing cues' volumes, MySoundData.Volume, scaled on this machine), and Off stops the breathing (its state to
     /// NoBreath) but never the choking, which is the game's own warning that the suit is out of air.</item>
+    /// <item>Under G in a seat (<see cref="Common.SeatG.BreathingHard"/>, its own setting): hard at once (its state VeryHeated and
+    /// its count toward the heavy breath, m_staminaDepletion, raised to where that plays), and the game's own recovery after.</item>
     /// <item>Short of air (<see cref="Common.SuitAir"/>, from the game's own low mark, as its HUD warns): the breathing strains as the
     /// suit runs low, as it does after a sprint (its state raised to Heated, then to VeryHeated from <see cref="StrainedFrom"/>).</item>
-    /// <item>Its sounds: the game asks for its breathing sounds but no longer defines them, so they are made from its own
-    /// recordings (<see cref="BreathCues"/>), recorded as heard inside the helmet, as its choking is, in any world's sound setting.</item>
+    /// <item>Its sounds: the game defines its breathing sounds only for worlds with realistic sounds, so a world with arcade sounds
+    /// breathes in silence; they are given here under the names any world finds (<see cref="BreathCues"/>), as the game made them.</item>
     /// </list>
     /// Only this machine hears it, so it tells no one anything; it changes nothing in the game. RenderDebug HelmetBreath=0 leaves the
     /// game's breathing as the game has it.
@@ -53,13 +55,19 @@ namespace SpaceEngineersVR.Rendering
         private static readonly AccessTools.FieldRef<MyCharacterBreath, MySoundPair> BreathCalm = PairField("m_breathCalm"),
             BreathHeavy = PairField("m_breathHeavy"), Choking = PairField("m_oxygenChokeNormal");
 
+        // How spent the character is, the game's count toward its heavy breathing (MyCharacterBreath.Update: heavy from 15, at most 20).
+        private static readonly AccessTools.FieldRef<MyCharacterBreath, float> Spent = AccessTools.FieldRefAccess<MyCharacterBreath, float>("m_staminaDepletion");
+
+        private const float HeavyFrom = 15f;
+
         private static AccessTools.FieldRef<MyCharacterBreath, MySoundPair> PairField(string name) => AccessTools.FieldRefAccess<MyCharacterBreath, MySoundPair>(name);
 
         // Game thread: each sound's own volume; the breathing given its share, and that share.
         private static readonly Dictionary<MyCueId, float> ownVolumes = new Dictionary<MyCueId, float>();
         private static MyCharacterBreath givenFor;
         private static float givenShare = 1f;
-        private static bool logged;
+        private static MyCharacterBreath loggedFor; // the breathing whose sounds were logged: once a character (a world, a respawn)
+        private static bool hardLogged; // the breathing's being made hard under G was logged, until it eases
 
         public static void Patch(Harmony harmony)
         {
@@ -89,6 +97,23 @@ namespace SpaceEngineersVR.Rendering
                 if (VRSettings.HelmetBreathing <= 0)
                 {
                     breath.CurrentState = MyCharacterBreath.State.NoBreath;
+                    return;
+                }
+                bool underG = Common.SeatG.BreathingHard;
+                if (!underG)
+                    hardLogged = false;
+                else
+                {
+                    // Under G in a seat: hard at once, as the game breathes after a sprint (its heavy breath plays from this
+                    // much spent), and after it the game's own recovery.
+                    breath.CurrentState = MyCharacterBreath.State.VeryHeated;
+                    ref float spent = ref Spent(breath);
+                    if (!hardLogged)
+                    {
+                        hardLogged = true;
+                        Log.Info($"Helmet breathing: hard under G, from {state} with {spent:0.0} spent (heavy from {HeavyFrom:0}): {Named(BreathHeavy(breath))}");
+                    }
+                    spent = Math.Max(spent, HeavyFrom);
                     return;
                 }
                 float shortOfAir = Common.SuitAir.Shortness(character, out bool empty);
@@ -132,9 +157,9 @@ namespace SpaceEngineersVR.Rendering
                     if (data != null)
                         voice.SetVolume(data.Volume);
                 }
-                if (!logged)
+                if (!ReferenceEquals(breath, loggedFor))
                 {
-                    logged = true;
+                    loggedFor = breath;
                     string mode = MySession.Static?.Settings == null ? "unknown" : MySession.Static.Settings.RealisticSound ? "realistic" : "arcade";
                     Log.Info($"Helmet breathing: the game's own, in a world with {mode} sounds: at rest {Named(BreathCalm(breath))}, " +
                              $"heavy {Named(BreathHeavy(breath))}, choking {Named(Choking(breath))}; {LevelNames[Math.Max(0, Math.Min(level, LevelNames.Length - 1))]} ({share * 100f:0} % of its volume)");

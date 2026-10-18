@@ -103,10 +103,18 @@ namespace SpaceEngineersVR.Gui
         private bool? viewShownOn;
         private bool viewShownLit;
 
+        /// <summary>
+        /// Where the wheel stands while it is up: at the left hand as it opened (the hand whose grip, or Y in a seat, opened
+        /// it), facing the head, fixed until it closes, as the actions wheel is (<see cref="WheelAtHand"/>).
+        /// </summary>
+        internal static readonly WheelAtHand Panel = new WheelAtHand();
+
         public SlotWheelScreen(MyToolbar toolbar)
             : base(BuildData(toolbar), MyControlsSpace.SYSTEM_RADIAL_MENU, null)
         {
             this.toolbar = toolbar;
+            Vector3 at = Panel.Open(Hand.Left, out float fromHead);
+            Log.Info($"Toolbar wheel: fixed at the left hand ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}), {fromHead:0.00} m from the head");
             CanHideOthers = false;
             ShowEmptyHand();
             bool view = ViewSwitchUsable;
@@ -336,6 +344,13 @@ namespace SpaceEngineersVR.Gui
 
         public override bool Update(bool hasFocus)
         {
+            // The actions wheel has taken its place at the hand: this one goes at once rather than fade out on the same
+            // panel under the actions wheel's ring as it grows in.
+            if (State == MyGuiScreenState.CLOSING && ActionsWheel.Showing())
+            {
+                CloseScreenNow();
+                return false;
+            }
             // The toolbar's page is the wheel's page: show whichever the toolbar is on, and keep the icons live.
             if (toolbar != null)
             {
@@ -346,6 +361,12 @@ namespace SpaceEngineersVR.Gui
             }
             RefreshViewSwitch();
             return base.Update(hasFocus);
+        }
+
+        protected override void OnClosed()
+        {
+            base.OnClosed();
+            Panel.Close();
         }
 
         /// <summary>The chosen slot's name, its number and whether it can be used, outside the ring on the side it is on.</summary>
