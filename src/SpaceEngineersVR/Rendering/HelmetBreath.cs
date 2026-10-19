@@ -18,8 +18,9 @@ namespace SpaceEngineersVR.Rendering
     /// flat). It is adapted, not played again beside it:
     /// <list type="bullet">
     /// <item>How loud, by <see cref="VRSettings.HelmetBreathing"/> (<see cref="LevelNames"/>): Normal is the game's own volume, Quiet
-    /// less (its breathing cues' volumes, MySoundData.Volume, scaled on this machine), and Off stops the breathing (its state to
-    /// NoBreath) but never the choking, which is the game's own warning that the suit is out of air.</item>
+    /// less and Off silent (its breathing cues' volumes, MySoundData.Volume, scaled on this machine). Off leaves the breathing's
+    /// state as the game sets it, which the game's own help reads (NoBreath is its low-oxygen damage), and never touches the
+    /// choking, which is the game's own warning that the suit is out of air.</item>
     /// <item>Under G in a seat (<see cref="Common.SeatG.BreathingHard"/>, its own setting): hard at once (its state VeryHeated and
     /// its count toward the heavy breath, m_staminaDepletion, raised to where that plays), and the game's own recovery after.</item>
     /// <item>Short of air (<see cref="Common.SuitAir"/>, from the game's own low mark, as its HUD warns): the breathing strains as the
@@ -35,8 +36,8 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The levels, in the options screen's order; <see cref="VRSettings.HelmetBreathing"/> is an index into it.</summary>
         public static readonly string[] LevelNames = { "Off", "Quiet", "Normal" };
 
-        /// <summary>Each level's share of the game's own volume for its breathing (Off silences it by its state, so its share is unused).</summary>
-        private static readonly float[] LevelVolumes = { 1f, 0.45f, 1f };
+        /// <summary>Each level's share of the game's own volume for its breathing: Off silent, Quiet less, Normal the game's own.</summary>
+        private static readonly float[] LevelVolumes = { 0f, 0.45f, 1f };
 
         /// <summary>How short of air the suit is (<see cref="Common.SuitAir.Shortness"/>) from which the breathing is at its hardest.</summary>
         private const float StrainedFrom = 0.5f;
@@ -80,7 +81,7 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// Postfix of MyCharacterSoundComponent.UpdateBreath, after the game set the local character's breathing for this frame (on
-        /// the game's parallel update): Off silences it, and short of air it strains. Choking and silence are left as they are.
+        /// the game's parallel update): short of air, or under G, it strains (Off is silenced by volume, in Update). Choking and silence are left as they are.
         /// </summary>
         private static void AfterUpdateBreath(MyCharacterSoundComponent __instance)
         {
@@ -94,11 +95,6 @@ namespace SpaceEngineersVR.Rendering
                 MyCharacterBreath.State state = breath?.CurrentState ?? MyCharacterBreath.State.NoBreath;
                 if (state != MyCharacterBreath.State.Calm && state != MyCharacterBreath.State.Heated && state != MyCharacterBreath.State.VeryHeated)
                     return;
-                if (VRSettings.HelmetBreathing <= 0)
-                {
-                    breath.CurrentState = MyCharacterBreath.State.NoBreath;
-                    return;
-                }
                 bool underG = Common.SeatG.BreathingHard;
                 if (!underG)
                     hardLogged = false;

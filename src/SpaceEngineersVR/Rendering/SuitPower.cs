@@ -175,7 +175,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>MyRenderComponentCharacter.UpdateLightProperties: the local character's lamp sputters the same way the HUD flickers, before the game's own fade turns it off at zero.</summary>
         private static void FlickerLamp(MyRenderComponentCharacter __instance, ref float currentLightPower)
         {
-            if (!tracked || currentLightPower <= 0f)
+            if (!tracked || currentLightPower <= 0f || !StereoPatches.VRPicture)
                 return;
             MyCharacter character = __instance.Container?.Entity as MyCharacter;
             if (character == null || character != MySession.Static?.LocalCharacter)

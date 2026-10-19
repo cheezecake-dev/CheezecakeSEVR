@@ -56,7 +56,11 @@ namespace SpaceEngineersVR.Rendering
             patched = found == 1;
         }
 
-        /// <summary>The game's multiplier times the setting, while the picture is VR's.</summary>
-        private static float Scale(float native) => StereoPatches.VRPicture ? native * VRSettings.ParticleDensity : native;
+        /// <summary>The game's own lowest multiplier (its Low particle setting): VR never sees through smoke and dust a flat player cannot.</summary>
+        private const float GameFloor = 0.25f;
+
+        /// <summary>The game's multiplier times the setting, while the picture is VR's, and never below what the game itself allows.</summary>
+        private static float Scale(float native) =>
+            StereoPatches.VRPicture ? Math.Max(native * VRSettings.ParticleDensity, Math.Min(native, GameFloor)) : native;
     }
 }

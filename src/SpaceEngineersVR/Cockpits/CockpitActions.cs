@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using HarmonyLib;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Gui;
@@ -31,6 +32,9 @@ namespace SpaceEngineersVR.Cockpits
         private static MyToolbar toolbar,previous;
         private static bool editing,previousAutoUpdate;
         private static string loadedXml;
+        /// <summary>The grid the toolbar's Init subscribed its OnFatBlockClosed to, which Reset takes it off again.</summary>
+        private static MyCubeGrid toolbarGrid;
+        private static readonly System.Reflection.MethodInfo fatBlockClosed=AccessTools.Method(typeof(MyToolbar),"OnFatBlockClosed");
         // His: the host shares the switches. Here they are always this player's own.
         internal static bool SharedReady => owner!=null;
         internal static bool Editing => editing;
@@ -89,6 +93,7 @@ namespace SpaceEngineersVR.Cockpits
                 try { builder=ParseToolbar(stored); }
                 catch(Exception ex) { Log.Warn("ColbyCockpit: the switch assignments of this cockpit could not be read and are left empty: "+ex.Message); }
             toolbar.Init(builder,seat);
+            toolbarGrid=seat.CubeGrid;
             loadedXml=builder==null ? "" : WriteToolbar(builder);
             toolbar.ItemChanged+=Changed;
             Log.Info($"ColbyCockpit: {seat.BlockDefinition.Id.SubtypeName} has {count} switches, {builder?.Slots?.Count ?? 0} assigned");
@@ -262,7 +267,13 @@ namespace SpaceEngineersVR.Cockpits
             {
                 if(owner?.HasInventory==true) owner.GetInventory().ContentsChanged-=toolbar.CharacterInventory_OnContentsChanged;
                 toolbar.ItemChanged-=Changed; toolbar.Clear();
+                // MyToolbar.Init subscribes to the seat's grid and nothing in the game takes it off: without this each seat
+                // change would leave a toolbar on the grid until the grid closes.
+                if(toolbarGrid!=null && fatBlockClosed!=null)
+                    try { toolbarGrid.OnFatBlockClosed-=(Action<MyCubeBlock>)Delegate.CreateDelegate(typeof(Action<MyCubeBlock>),toolbar,fatBlockClosed); }
+                    catch(Exception ex) { Log.Warn("ColbyCockpit: the switch toolbar could not be taken off its grid: "+ex.Message); }
             }
+            toolbarGrid=null;
             Array.Clear(analog,0,analog.Length); Array.Clear(nextAnalog,0,nextAnalog.Length);
             toolbar=null; owner=null; loadedXml=null;
         }

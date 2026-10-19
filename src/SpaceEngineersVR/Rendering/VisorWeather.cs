@@ -115,8 +115,14 @@ namespace SpaceEngineersVR.Rendering
         // ---- Shared between the threads ----
 
         private static readonly object gate = new object();
-        private static byte[] composing = new byte[VisorCoat.PictureWidth * VisorCoat.PictureHeight * 4], ready = new byte[VisorCoat.PictureWidth * VisorCoat.PictureHeight * 4];
+        // Three pictures in turn: the game thread composes one, the newest waits ready, and the render thread uploads its own
+        // outside the lock (UploadCoat), so the game thread never waits on the upload.
+        private static byte[] composing = new byte[VisorCoat.PictureWidth * VisorCoat.PictureHeight * 4], ready = new byte[VisorCoat.PictureWidth * VisorCoat.PictureHeight * 4],
+            uploading = new byte[VisorCoat.PictureWidth * VisorCoat.PictureHeight * 4];
         private static bool fresh;
+
+        /// <summary>The texture is new (given again, or the renderer's own changed): the newest picture goes into it again, new or not.</summary>
+        private static bool reupload;
         private static MatrixD helmetDrawn;
         private static bool helmetKnown;
         private static volatile bool coatShows, materialAdded, texturesSent, texturesLost;
@@ -312,8 +318,11 @@ namespace SpaceEngineersVR.Rendering
                 down = new Vector2(local.X, -local.Y);
             }
 
+            // A clean glass with nothing coming onto it (the helmet open, or clear weather): nothing to step or draw again.
+            bool idle = !coatShows && frostReach <= 0f && mist <= 0f && fall == Fall.None;
             long workFrom = Stopwatch.GetTimestamp();
-            coat.Step(seconds, frostReach, mist, rain, snowfall, storm, down, level <= MyTemperatureLevel.Freeze);
+            if (!idle)
+                coat.Step(seconds, frostReach, mist, rain, snowfall, storm, down, level <= MyTemperatureLevel.Freeze);
             if (VRSettings.VisorWipe && closed && knowHelmet && HelmetHud.GlassCover >= 0.99f)
             {
                 Wipe(Hand.Left, toHelmet);
@@ -328,6 +337,13 @@ namespace SpaceEngineersVR.Rendering
                     : $"the glass covers {HelmetHud.GlassCover:0.00} of the opening, not all of it";
                 NoteMiss(Hand.Left, why);
                 NoteMiss(Hand.Right, why);
+            }
+
+            if (idle)
+            {
+                Light(character, place, covered, seconds);
+                Report(level, temperature, mist, fall, strength);
+                return;
             }
 
             Vector3 fog = MySector.FogProperties.FogColor;
@@ -589,7 +605,7 @@ namespace SpaceEngineersVR.Rendering
             breathMouth = mouth;
             LogMouth(mouth);
             lock (gate)
-                fresh = true;
+                reupload = true;
             Log.Info(texturesSent
                 ? "Visor weather: the renderer had lost the visor's textures (a device reset); given again"
                 : $"Visor weather: the visor's textures given to the renderer (\"{CoatTexture}\" {VisorCoat.PictureWidth}x{VisorCoat.PictureHeight}, \"{BreathTexture}\" {VisorCoat.Width}x{VisorCoat.Height})");
@@ -671,7 +687,7 @@ namespace SpaceEngineersVR.Rendering
                 {
                     coatTexture = made;
                     lock (gate)
-                        fresh = true;
+                        reupload = true;
                 }
                 return true;
             }
@@ -712,15 +728,24 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The outside's newest texels into its texture, when the game thread has new ones.</summary>
         private static unsafe void UploadCoat()
         {
+            if (coatTexture == null)
+                return;
             lock (gate)
             {
-                if (!fresh || coatTexture == null)
+                if (fresh)
+                {
+                    byte[] swap = uploading;
+                    uploading = ready;
+                    ready = swap;
+                    fresh = false;
+                }
+                else if (!reupload)
                     return;
-                SharpDX.Direct3D11.Resource resource = EyeRenderer.ResourceOf(coatTexture);
-                fixed (byte* data = ready)
-                    EyeRenderer.D3DDevice.ImmediateContext.UpdateSubresource(new SharpDX.DataBox((IntPtr)data, VisorCoat.PictureWidth * 4, 0), resource, 0);
-                fresh = false;
+                reupload = false;
             }
+            SharpDX.Direct3D11.Resource resource = EyeRenderer.ResourceOf(coatTexture);
+            fixed (byte* data = uploading)
+                EyeRenderer.D3DDevice.ImmediateContext.UpdateSubresource(new SharpDX.DataBox((IntPtr)data, VisorCoat.PictureWidth * 4, 0), resource, 0);
         }
 
         /// <summary>

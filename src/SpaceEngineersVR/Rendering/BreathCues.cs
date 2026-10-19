@@ -101,10 +101,17 @@ namespace SpaceEngineersVR.Rendering
                 if (string.IsNullOrEmpty(character.BreathCalmSoundName) && string.IsNullOrEmpty(character.BreathHeavySoundName)
                     && !string.Equals(choke, GameChoke, StringComparison.OrdinalIgnoreCase) && choke.Contains(ChokeName))
                 {
-                    character.BreathCalmSoundName = choke.Replace(ChokeName, CalmTake);
-                    character.BreathHeavySoundName = choke.Replace(ChokeName, HeavyTake);
-                    Once($"Helmet breathing: {character.Id.SubtypeName} chokes in its own voice ({choke}), so it breathes in it too: " +
-                         $"{character.BreathCalmSoundName} and {character.BreathHeavySoundName}");
+                    // The character definitions are shared by every character in the world: they name the own-voice sounds only
+                    // once both exist, so a voice whose sounds cannot be made keeps the game's breathing.
+                    string calm = choke.Replace(ChokeName, CalmTake), heavy = choke.Replace(ChokeName, HeavyTake);
+                    if (Add(made, sounds, calm, choke, CalmTake, character) && Add(made, sounds, heavy, choke, HeavyTake, character))
+                    {
+                        character.BreathCalmSoundName = calm;
+                        character.BreathHeavySoundName = heavy;
+                        Once($"Helmet breathing: {character.Id.SubtypeName} chokes in its own voice ({choke}), so it breathes in it too: {calm} and {heavy}");
+                        continue;
+                    }
+                    made.RemoveAll(data => data.SubtypeId.String == calm || data.SubtypeId.String == heavy);
                 }
                 Add(made, sounds, string.IsNullOrEmpty(character.BreathCalmSoundName) ? GameCalm : character.BreathCalmSoundName, choke, CalmTake, character);
                 Add(made, sounds, string.IsNullOrEmpty(character.BreathHeavySoundName) ? GameHeavy : character.BreathHeavySoundName, choke, HeavyTake, character);
@@ -114,13 +121,14 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// The breathing sound <paramref name="name"/>, made from the choking sound <paramref name="choke"/> with its recordings'
-        /// <see cref="ChokeTake"/> changed to <paramref name="take"/>; nothing when it is had already, or cannot be made.
+        /// <see cref="ChokeTake"/> changed to <paramref name="take"/>; nothing when it is had already, or cannot be made. True when
+        /// the sound is there: had already or made.
         /// </summary>
-        private static void Add(List<MySoundData> made, Dictionary<string, MySoundData> sounds, string name, string choke, string take, MyCharacterDefinition character)
+        private static bool Add(List<MySoundData> made, Dictionary<string, MySoundData> sounds, string name, string choke, string take, MyCharacterDefinition character)
         {
             if (sounds.ContainsKey(name) || sounds.ContainsKey("Arc" + name)
                 || made.Exists(data => string.Equals(data.SubtypeId.String, name, StringComparison.OrdinalIgnoreCase)))
-                return;
+                return true;
             // The game's own, defined only for worlds with realistic sounds: the same sound under the plain name, for any world.
             if (sounds.TryGetValue("Real" + name, out MySoundData realistic) && realistic.Waves != null && realistic.Waves.Count > 0)
             {
@@ -128,13 +136,13 @@ namespace SpaceEngineersVR.Rendering
                 plain.SubtypeId = MyStringHash.GetOrCompute(name);
                 made.Add(plain);
                 Once($"Helmet breathing: {name} for {character.Id.SubtypeName} made from the game's realistic sound {realistic.SubtypeId}, so a world with arcade sounds has it too");
-                return;
+                return true;
             }
             MySoundData source = Find(sounds, choke);
             if (source?.Waves == null || source.Waves.Count == 0)
             {
                 Once($"Helmet breathing: no sound {name} for {character.Id.SubtypeName}, and no choking sound {choke} to make it from; it breathes in silence");
-                return;
+                return false;
             }
             var waves = new List<MyAudioWave>(source.Waves.Count);
             var files = new List<string>();
@@ -145,7 +153,7 @@ namespace SpaceEngineersVR.Rendering
                 {
                     Once($"Helmet breathing: no sound {name} for {character.Id.SubtypeName}, and the choking sound {source.SubtypeId} has a recording " +
                          $"that is not the choking take ({wave.Start} {wave.Loop} {wave.End}); it breathes in silence");
-                    return;
+                    return false;
                 }
                 waves.Add(copy);
             }
@@ -154,7 +162,7 @@ namespace SpaceEngineersVR.Rendering
                 if (!InContent(file))
                 {
                     Once($"Helmet breathing: no sound {name} for {character.Id.SubtypeName}, and its recording {file} is not in the game's content; it breathes in silence");
-                    return;
+                    return false;
                 }
             }
             MySoundData data = ShallowCopy.Of(source);
@@ -165,6 +173,7 @@ namespace SpaceEngineersVR.Rendering
             data.Alternative2D = null;
             made.Add(data);
             Once($"Helmet breathing: {name} made from the game's choking sound {source.SubtypeId}, its recording {string.Join(", ", files)}");
+            return true;
         }
 
         /// <summary>A sound by name, as MySoundPair looks for it: plain, then its realistic and arcade names.</summary>

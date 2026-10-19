@@ -81,7 +81,7 @@ namespace SpaceEngineersVR.Hands
                                   : GunProfile.Of(character)?.Sight != null ? "; aimed down its sights by looking along them" : "; its sights are not measured, so it is not aimed down them"));
                 }
 
-                bool sighted = holding && VRSettings.ColbyAimDownSights && !HandTools.Off && VRInput.Active && Sighted(character, aiming);
+                bool sighted = holding && character.Definition?.CanIronsight == true && VRSettings.ColbyAimDownSights && !HandTools.Off && VRInput.Active && Sighted(character, aiming);
                 if (sighted != aiming)
                 {
                     aiming = sighted;

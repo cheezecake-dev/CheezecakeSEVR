@@ -31,7 +31,8 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Game thread, once a frame.</summary>
         public static void Update()
         {
-            bool hide = !VRSettings.DesktopView && HeadsetWatcher.HasHeadset;
+            // Only while the headset shows the game: a flat game (a session that never started, a core patch that failed) keeps its window.
+            bool hide = !VRSettings.DesktopView && HeadsetWatcher.HasHeadset && StereoPatches.VRPicture;
             if (window == IntPtr.Zero)
             {
                 if (!hide)

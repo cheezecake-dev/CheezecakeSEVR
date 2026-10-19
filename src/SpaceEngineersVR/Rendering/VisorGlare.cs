@@ -12,7 +12,7 @@ namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
     /// Looking toward the sun through the closed visor, its light scatters in the glass: a soft bloom round the sun and a veil of
-    /// haze over the whole view, strongest looking straight at it and gone well away from it. Lowering the sun visor
+    /// haze over the whole view, strongest looking straight at it, and gone by the time the sun leaves the view. Lowering the sun visor
     /// (<see cref="SunVisor"/>) cuts it, as a sun visor is for; opening the glass takes it away with the glass
     /// (<see cref="HelmetHud.GlassCover"/>). It is what gives the sun visor its use.
     /// <para>
@@ -48,6 +48,12 @@ namespace SpaceEngineersVR.Rendering
         /// edge): full within the first, gone past the second.
         /// </summary>
         private const float FullWithin = 0.15f, GoneAt = 1.8f;
+
+        /// <summary>
+        /// Where in the eye's view (its larger screen coordinate, 1 at the edge) the glare starts to fade, to none at the edge:
+        /// with the sun out of view nothing shows, so the glare never tells of something crossing a sun line off screen.
+        /// </summary>
+        private const float EdgeFadeFrom = 0.8f;
 
         /// <summary>The strongest bloom and haze, as shares of full white added at the brightest point and over the view.</summary>
         private const float Bloom = 0.55f, Haze = 0.1f;
@@ -146,7 +152,8 @@ namespace SpaceEngineersVR.Rendering
                     return;
                 var at = new Vector2(clip.X / clip.W, clip.Y / clip.W);
                 float strength = VRSettings.VisorGlare * HelmetHud.GlassCover * (1f - SunVisorCuts * SunVisor.Cover)
-                                 * (1f - Smooth((at.Length() - FullWithin) / (GoneAt - FullWithin)));
+                                 * (1f - Smooth((at.Length() - FullWithin) / (GoneAt - FullWithin)))
+                                 * (1f - Smooth((Math.Max(Math.Abs(at.X), Math.Abs(at.Y)) - EdgeFadeFrom) / (1f - EdgeFadeFrom)));
                 if (strength <= 0.003f)
                     return;
 

@@ -82,9 +82,22 @@ namespace SpaceEngineersVR.Cockpits
         internal static bool Set(MyToolbarItem item,bool on)
         {
             if(!Resolve(item,out string id)) return false;
+            string actionId=((MyToolbarItemActions)item).ActionId;
+            bool group=item is MyToolbarItemTerminalGroup;
             for(int i=0;i<blocks.Count;i++)
-                SetValue(blocks[i],properties[i],on,id);
+                if(Applies(blocks[i],actionId,group))
+                    SetValue(blocks[i],properties[i],on,id);
             return true;
+        }
+        /// <summary>
+        /// Where the game's toolbar would apply the action: only where the block's action is enabled, and in a group only to
+        /// functional blocks (MyToolbarItemTerminalGroup.Activate).
+        /// </summary>
+        private static bool Applies(Block block,string actionId,bool group)
+        {
+            if(group && !block.IsFunctional) return false;
+            var action=block.GetActionWithName(actionId);
+            return action==null || action.IsEnabled(block);
         }
         internal static float ReadValue(Block block,ITerminalProperty<bool> property,string action=null)
         {

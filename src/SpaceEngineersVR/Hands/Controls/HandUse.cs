@@ -29,15 +29,18 @@ namespace SpaceEngineersVR.Hands
     /// ends: the game's reach is measured from the head (<see cref="MyConstants.DEFAULT_INTERACTIVE_DISTANCE"/>, 5 m, from
     /// 0.3 m behind it: 4.7 m ahead of it), and the line's read of that constant gives the length along the hand's ray that
     /// keeps its end within the same distance of the head (<see cref="LineLength"/>).</para>
-    /// <para>The sphere sweep stays the game's, from the eye (the camera's position) and as long as the game's (5 m less the
-    /// sphere's 0.5 m radius); only its direction is the hand's: from the eye towards the point the hand aims at
-    /// (<see cref="SweepAim"/>). So it is a sweep a flat player at the same eye makes by looking at that point: it reaches
-    /// nothing he could not, and misses nothing between the eye and an outstretched hand. What it finds is taken only if a
-    /// corner of its box can be seen from where the sweep starts, as the game's is: from the eye.</para>
+    /// <para>The sphere sweep is the game's, from the eye (the camera's position), with the eye held to the head: in VR the
+    /// camera is the tracked eye, which can lean away from the head bone and through a wall, so the sweep starts at the eye
+    /// brought back to the near side of anything solid between the head bone and it (<see cref="SweepStart"/>), and runs no
+    /// farther than keeps its sphere within the game's use distance of the head bone (<see cref="SweepDistance"/>). Its
+    /// direction is the hand's: from that start towards the point the hand aims at (<see cref="SweepAim"/>). So it is a sweep
+    /// a flat player at the same eye makes by looking at that point: it reaches nothing he could not, and misses nothing
+    /// between the eye and an outstretched hand. What it finds is taken only if a corner of its box can be seen from where
+    /// the sweep starts, as the game's is.</para>
     /// <para>What the line finds is held to the eye too (<see cref="LineSight"/>): the game's line starts at the head, so it
     /// finds nothing the eye cannot see, but the hand's can start around a corner. It is kept only if the eye sees the spot
     /// the line hit or a corner of what it found; otherwise detection goes on to the sweep, as the game's does when its line
-    /// finds nothing.</para>
+    /// finds nothing. A check that fails drops the find.</para>
     /// </summary>
     /// <remarks>
     /// The game runs the detection every tenth frame (MyCharacterDetectorComponent.UpdateAfterSimulation10), so what the
@@ -63,12 +66,14 @@ namespace SpaceEngineersVR.Hands
                               ?? throw new MissingMemberException(nameof(MyCharacterDetectorComponent), "UseObject setter");
             harmony.Patch(DoDetection(typeof(MyCharacterRaycastDetectorComponent)), transpiler: new HarmonyMethod(typeof(HandUse), nameof(TranspileLine)),
                 postfix: new HarmonyMethod(typeof(HandUse), nameof(LineSight)));
+            castRadius = AccessTools.Field(closest, "m_castRadius") ?? throw new MissingMemberException(closest.Name, "m_castRadius");
             harmony.Patch(DoDetection(closest), transpiler: new HarmonyMethod(typeof(HandUse), nameof(TranspileSweep)));
             Hooked = true;
-            Log.Info($"Hand tools: use from the hand hooked (2 detectors; head reads rewritten: {headReads}, camera matrix reads: {cameraReads}, use distance reads: {distanceReads}; sweep from the eye towards the hand's aim; line pass held to the eye)");
+            Log.Info($"Hand tools: use from the hand hooked (2 detectors; head reads rewritten: {headReads}, camera matrix reads: {cameraReads}, use distance reads: {distanceReads}; sweep from the eye held to the head, towards the hand's aim, within the use distance of the head; line pass held to the eye)");
         }
 
         private static MethodInfo allCorners, allCornersFloating, useObjectSetter;
+        private static FieldInfo castRadius;
 
         /// <summary>How much nearer than the line's hit the eye's own line may stop and still be taken to see it, metres.</summary>
         private const double SightTolerance = 0.05;
@@ -89,7 +94,7 @@ namespace SpaceEngineersVR.Hands
                 MyCharacter character = __instance.Character;
                 if (found == null || MySector.MainCamera == null || !TryHand(character, out _, out _, out _))
                     return;
-                Vector3D eye = MySector.MainCamera.WorldMatrix.Translation;
+                Vector3D eye = SweepStart(character, MySector.MainCamera.WorldMatrix.Translation);
                 if (SeesSpot(character, eye, __instance.HitPosition) || SeesCorner(__instance, found, eye))
                     return;
                 useObjectSetter.Invoke(__instance, new object[] { null });
@@ -98,6 +103,16 @@ namespace SpaceEngineersVR.Hands
             {
                 if (errors++ < 3)
                     Log.Error(e, "Hand tools could not hold the use line's find to what the eye sees");
+                // Unchecked is not seen: drop the find, as when the eye cannot see it.
+                try
+                {
+                    useObjectSetter?.Invoke(__instance, new object[] { null });
+                }
+                catch (Exception clear)
+                {
+                    if (errors++ < 3)
+                        Log.Error(clear, "Hand tools could not drop the use line's unchecked find");
+                }
             }
         }
 
@@ -153,11 +168,13 @@ namespace SpaceEngineersVR.Hands
                 AccessTools.Method(typeof(HandUse), nameof(LineLength)));
 
         /// <summary>
-        /// The sweep's DoDetection: the head and camera reads give the eye facing what the hand aims at (<see cref="SweepAim"/>);
-        /// the sweep's start (the camera's position) and its length (the game's use distance less the sphere's radius) stay the game's.
+        /// The sweep's DoDetection: the camera reads give the eye held to the head (<see cref="SweepStart"/>), the head and
+        /// camera reads face what the hand aims at (<see cref="SweepAim"/>), and the use distance read gives
+        /// <see cref="SweepDistance"/>, from which the game takes the sphere's radius as before.
         /// </summary>
         private static IEnumerable<CodeInstruction> TranspileSweep(IEnumerable<CodeInstruction> instructions) =>
-            TranspilePose(instructions, nameof(SweepHeadMatrix), nameof(SweepCameraMatrix), nameof(SweepCameraMatrixRef));
+            RedirectDistance(TranspilePose(instructions, nameof(SweepHeadMatrix), nameof(SweepCameraMatrix), nameof(SweepCameraMatrixRef)),
+                AccessTools.Method(typeof(HandUse), nameof(SweepDistance)), withThis: true);
 
         private static IEnumerable<CodeInstruction> TranspilePose(IEnumerable<CodeInstruction> instructions, string head, string camera, string cameraRef)
         {
@@ -172,10 +189,10 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// Rewrites the read of <see cref="MyConstants.DEFAULT_INTERACTIVE_DISTANCE"/> into a call of <paramref name="length"/>.
-        /// Throws when the method has no such read.
+        /// Rewrites the read of <see cref="MyConstants.DEFAULT_INTERACTIVE_DISTANCE"/> into a call of <paramref name="length"/>,
+        /// given the detector (<c>this</c>) when <paramref name="withThis"/>. Throws when the method has no such read.
         /// </summary>
-        private static IEnumerable<CodeInstruction> RedirectDistance(IEnumerable<CodeInstruction> instructions, MethodInfo length)
+        private static IEnumerable<CodeInstruction> RedirectDistance(IEnumerable<CodeInstruction> instructions, MethodInfo length, bool withThis = false)
         {
             FieldInfo distance = AccessTools.Field(typeof(MyConstants), nameof(MyConstants.DEFAULT_INTERACTIVE_DISTANCE));
             var result = new List<CodeInstruction>();
@@ -188,8 +205,11 @@ namespace SpaceEngineersVR.Hands
                     continue;
                 }
                 var call = new CodeInstruction(OpCodes.Call, length);
-                call.labels.AddRange(instruction.labels);
-                call.blocks.AddRange(instruction.blocks);
+                CodeInstruction first = withThis ? new CodeInstruction(OpCodes.Ldarg_0) : call;
+                first.labels.AddRange(instruction.labels);
+                first.blocks.AddRange(instruction.blocks);
+                if (withThis)
+                    result.Add(first);
                 result.Add(call);
                 replaced++;
             }
@@ -218,8 +238,49 @@ namespace SpaceEngineersVR.Hands
         /// <summary>How far from the head the game's use line ends, metres: 4.7.</summary>
         internal static double LineReach => MyConstants.DEFAULT_INTERACTIVE_DISTANCE - HandTools.GameUseRayBehind;
 
-        /// <summary>The character's head as the game measures its use reach from (its head matrix's position, not the tracked eye's).</summary>
-        internal static Vector3D Head(MyCharacter character) => character.GetHeadMatrix(false).Translation;
+        /// <summary>The character's head bone, which use reach is measured from (<see cref="Reach.TryHead"/>; not the tracked eye, which can lean away from it).</summary>
+        internal static Vector3D Head(MyCharacter character) =>
+            Reach.TryHead(character, out Vector3D head) ? head : character.GetHeadMatrix(false).Translation;
+
+        /// <summary>
+        /// Where the sweep starts, for the eye at <paramref name="eye"/>: while VR draws the picture of the player's own
+        /// character on foot, the eye brought back to the near side of anything solid on the line from the head bone to it
+        /// (<see cref="Reach.Unblocked"/>; at the head bone when that line cannot be checked). Otherwise the eye.
+        /// </summary>
+        internal static Vector3D SweepStart(MyCharacter character, Vector3D eye) =>
+            HeldToHead(character) ? Reach.Unblocked(character, eye) : eye;
+
+        /// <summary>Whether the sweep is held to the head: the camera is the tracked eye, of the player's own character on foot.</summary>
+        private static bool HeldToHead(MyCharacter character) => Rendering.StereoPatches.VRPicture && HandTools.IsLocalOnFoot(character);
+
+        /// <summary>
+        /// Replaces <see cref="MyConstants.DEFAULT_INTERACTIVE_DISTANCE"/> in MyCharacterClosestDetectorComponent.DoDetection,
+        /// whose sphere runs that distance less its radius from the start: when the sweep is held to the head, the distance
+        /// that ends the sphere (centre and radius) within the game's use distance of the head bone, from <see cref="SweepStart"/>
+        /// along the sweep's direction. The game's otherwise.
+        /// </summary>
+        public static float SweepDistance(MyCharacterDetectorComponent detector)
+        {
+            float native = MyConstants.DEFAULT_INTERACTIVE_DISTANCE;
+            try
+            {
+                MyCharacter character = detector?.Character;
+                MyCamera camera = MySector.MainCamera;
+                if (camera == null || !HeldToHead(character))
+                    return native;
+                float radius = (float)castRadius.GetValue(detector);
+                MatrixD sweep = SweepCameraMatrix(camera);
+                double along = Along(sweep.Translation, sweep.Forward, Head(character), Math.Max(native - radius, 0f));
+                return (float)Math.Min(along + radius, native);
+            }
+            catch (Exception e)
+            {
+                if (errors++ < 3)
+                    Log.Error(e, "Hand tools could not hold the use sweep within reach of the head");
+                // Unchecked is not in reach: a sweep of no length.
+                return 0f;
+            }
+        }
 
         /// <summary>
         /// How far along the unit <paramref name="forward"/> from <paramref name="origin"/> a point stays within
@@ -272,35 +333,33 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// Replaces <c>Character.GetHeadMatrix(includeY: false)</c> in the sweep's detection: the head's own, facing
-        /// <see cref="SweepAim"/> from the eye. The sweep takes only its forward, and only when the game aims it by the head (useHead).
+        /// <see cref="SweepAim"/> from the sweep's start. The sweep takes only its forward, and only when the game aims it by the head (useHead).
         /// </summary>
         public static MatrixD SweepHeadMatrix(MyCharacter character, bool includeY, bool includeX, bool forceHeadAnim, bool forceHeadBone, bool preferLocalOverSync)
         {
             MatrixD head = character.GetHeadMatrix(includeY, includeX, forceHeadAnim, forceHeadBone, preferLocalOverSync);
-            if (MySector.MainCamera != null && SweepAim(character, MySector.MainCamera.WorldMatrix.Translation, out Vector3D forward, out Vector3D up))
+            if (MySector.MainCamera != null && SweepAim(character, SweepStart(character, MySector.MainCamera.WorldMatrix.Translation), out Vector3D forward, out Vector3D up))
                 return MatrixD.CreateWorld(head.Translation, forward, up);
             return head;
         }
 
-        /// <summary>Replaces <c>MySector.MainCamera.WorldMatrix</c> in the sweep's detection: at the eye, facing <see cref="SweepAim"/>.</summary>
+        /// <summary>Replaces <c>MySector.MainCamera.WorldMatrix</c> in the sweep's detection: at <see cref="SweepStart"/>, facing <see cref="SweepAim"/>.</summary>
         public static MatrixD SweepCameraMatrix(MyCamera camera)
         {
             MatrixD eye = camera.WorldMatrix;
-            if (SweepAim(MySession.Static?.LocalCharacter, eye.Translation, out Vector3D forward, out Vector3D up))
-                return MatrixD.CreateWorld(eye.Translation, forward, up);
+            MyCharacter character = MySession.Static?.LocalCharacter;
+            Vector3D start = SweepStart(character, eye.Translation);
+            if (SweepAim(character, start, out Vector3D forward, out Vector3D up))
+                return MatrixD.CreateWorld(start, forward, up);
+            eye.Translation = start;
             return eye;
         }
 
         /// <summary>The same for a read of the camera matrix's address.</summary>
         public static ref MatrixD SweepCameraMatrixRef(MyCamera camera)
         {
-            Vector3D eye = camera.WorldMatrix.Translation;
-            if (SweepAim(MySession.Static?.LocalCharacter, eye, out Vector3D forward, out Vector3D up))
-            {
-                sweepCamera = MatrixD.CreateWorld(eye, forward, up);
-                return ref sweepCamera;
-            }
-            return ref camera.WorldMatrix;
+            sweepCamera = SweepCameraMatrix(camera);
+            return ref sweepCamera;
         }
 
         /// <summary>
