@@ -230,6 +230,9 @@ namespace SpaceEngineersVR.Rendering
             }
         }
 
+        /// <summary>The suit's battery is empty and the HUD is dark for it (the game's own "no power" mark, Suit power failing on). Any thread.</summary>
+        public static bool Out => tracked && ratio <= 0f;
+
         /// <summary>A short electrical dip, not continuous noise: more often the higher <paramref name="severity"/> (0 none, 1 worst), each cycle's dip placed a little differently so it does not read as a metronome.</summary>
         private static bool Flicker(long now, float severity)
         {

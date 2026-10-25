@@ -490,7 +490,7 @@ a script gets.
 |---|---|---|
 | `Version` | The API's version, 2. | (the API is missing) |
 | `IsActive` | True while the game is shown in a headset: the plugin has turned the picture over to VR and the headset's session is running. False at startup before a headset is found, while the plugin plays flat, and while the session is stopped (the headset asleep, or the runtime closing it). It can change at any time: read it each frame. | `false` |
-| `HudVisible` | True while the headset shows the HUD, which in VR is on the inside of the helmet's visor. False whenever `IsActive` is false, and while the helmet is open with the player's helmet view on: there is no visor to show it on. Hide your HUD when this is false, as the game hides its own. It does not follow the suit's power: when the suit's battery runs out and the visor's HUD goes dark, `HudVisible` stays true. The game's own toggle to hide the HUD is the game's: check `MyAPIGateway.Session.Config.HudState` as on a flat screen. | `false` |
+| `HudVisible` | True while the headset shows the HUD, which in VR is on the inside of the helmet's visor. False whenever it does not, for any reason: `IsActive` false; the game hiding its HUD (the player dead or in the medical room's screen, HUD mode hidden with Tab or the actions wheel, `MinimalHud` set by a mod or script, a cutscene); the helmet open with the player's helmet view on (the visor is swung up); the suit's battery out with Suit power failing on (the visor's HUD goes dark). Its flickers while the battery runs low do not count. Hide your HUD while this is false, as the HUD it sits with is hidden; `HudChanged` is raised each time it changes. | `false` |
 | `HudDepth` | Metres from the eyes at which the HUD is seen: the player's "HUD distance" setting, 1.5 by default, 0.5 to 5. Draw a HUD this far out, not at the camera. | do not use |
 | `HudTangents` | The HUD area's size as tangents from the eyes' line of sight: `X` to the right edge, `Y` to the top edge. At `HudDepth` the area is `2 * X * HudDepth` metres wide and `2 * Y * HudDepth` high. The width is the player's "HUD width" (55 degrees by default, 20 to 120); the height keeps the game's 16:9: about 0.521 and 0.293 by default. | do not use |
 | `HudToWorld(Vector2D)` | The world position of a point of the HUD area, on the view ray through it, `HudDepth` ahead of the eyes. The argument is in the HUD's screen space as Text HUD API and Rich HUD Framework use: `X` -1 (left) to 1 (right), `Y` -1 (bottom) to 1 (top); points outside -1..1 lie beyond the edges on the same plane. `Vector3D.Zero` when there is no camera. Not for scripts. | do not use |
@@ -1146,7 +1146,7 @@ public class MyHud : MySessionComponentBase
     public override void Draw()
     {
         if (sevr.IsActive && !sevr.HudVisible)
-            return; // the helmet is open: no HUD in a headset
+            return; // no HUD in the headset now (helmet open, HUD hidden, suit power out)
         MatrixD camera = MyAPIGateway.Session.Camera.WorldMatrix;
 
         // A 10% wide marker at the HUD's top left, drawn after the game's post-processing as HUD billboards are.
@@ -1196,7 +1196,7 @@ of these:
 - wholly within 45 cm of the camera, and ahead of it.
 
 It moves each one from the screen the mod laid it out on onto the band the game's HUD has on the visor: `HudTangents` wide,
-16:9, at `HudDepth`. So it is seen where the game's HUD is, turns with the head, and hides when `HudVisible` is false. Unlike
+16:9, at `HudDepth`. So it is seen where the game's HUD is, turns with the head, and hides when the visor's HUD does: the helmet open with the helmet view on, or the suit's battery out. When the game hides its own HUD (Tab, a cutscene) it is left to the mod, as on a flat screen. Unlike
 a HUD placed with `HudToWorld`, it is drawn over near geometry such as cockpit consoles. It is hidden from the desktop's
 external view. The plugin changes how the eyes draw the billboards, never the mod's code.
 

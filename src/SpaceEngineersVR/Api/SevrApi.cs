@@ -171,7 +171,8 @@ namespace SpaceEngineersVR.Api
         /// <list type="bullet">
         /// <item>"Version": Func&lt;int&gt;, <see cref="Version"/>.</item>
         /// <item>"IsActive": Func&lt;bool&gt;, the game is shown in a headset now.</item>
-        /// <item>"HudVisible": Func&lt;bool&gt;, the headset shows the HUD now (false while the helmet is open with the helmet view on).</item>
+        /// <item>"HudVisible": Func&lt;bool&gt;, the headset shows the HUD now: false whenever it does not, whatever the reason (the game
+        /// hiding its HUD, the helmet open with the helmet view on, the suit's battery out).</item>
         /// <item>"HudDepth": Func&lt;double&gt;, metres from the eyes at which the HUD is seen: draw a HUD this far out, not at the camera.</item>
         /// <item>"HudTangents": Func&lt;Vector2D&gt;, the tangents of half the HUD area's width and height, from the eyes.</item>
         /// <item>"HudToWorld": Func&lt;Vector2D, Vector3D&gt;, a point of the HUD area (x right and y up, -1 to 1, as Text HUD API's
@@ -467,8 +468,8 @@ namespace SpaceEngineersVR.Api
         /// <summary>The game is shown in a headset now.</summary>
         internal static bool IsActive() => StereoPatches.VRPicture && XrSession.Running;
 
-        /// <summary>The headset shows the HUD now.</summary>
-        internal static bool HudVisible() => IsActive() && !HelmetHud.Hidden;
+        /// <summary>The headset shows the HUD now (<see cref="HudShown"/>: every reason it may not).</summary>
+        internal static bool HudVisible() => IsActive() && HudShown.Now;
 
         /// <summary>Half the HUD's width and height as tangents from the eyes: <see cref="VRSettings.HudWidthDegrees"/> wide, the GUI's 16:9 high.</summary>
         internal static Vector2D Tangents()

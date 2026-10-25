@@ -31,7 +31,7 @@ namespace SpaceEngineersVR.Rendering
     /// and the eyes' shift. That quad is then drawn <see cref="SeenFrom"/> from the eye along the eye's rays to it: the eye
     /// sees the same picture, seen at the HUD's distance as the game's HUD is, but nearer than the scene, so walls and
     /// consoles nearer than the HUD do not hide it (the pass reads the scene's depth). Put back after the eyes; hidden in the
-    /// external view's pass; hidden while the helmet's HUD is (<see cref="HelmetHud.Hidden"/>).
+    /// external view's pass; hidden while the visor's HUD is (<see cref="HudShown.OnVisor"/>: the helmet open, the suit's battery out).
     /// </para>
     /// <para>
     /// Left as they are: billboards anchored in the world (WeaponCore's target boxes), the game's and this plugin's own
@@ -144,7 +144,7 @@ namespace SpaceEngineersVR.Rendering
                     t.HudRadius = point ? radius * scale * distance / depth : 0.0;
                     taken.Add(t);
                 }
-                hidden = HelmetHud.Hidden;
+                hidden = !HudShown.OnVisor;
                 if (taken.Count > 0)
                 {
                     framesWith++;
@@ -322,7 +322,7 @@ namespace SpaceEngineersVR.Rendering
                     "Mod HUD {0:0.0} s: {1} of {2} frames had mods' HUD billboards, {3} moved onto the VR HUD ({4:0} a frame, up to {5}){6}; " +
                     "{7} other billboard(s) within {8:0} cm of the camera left where they were (not drawn after processing)",
                     seconds, framesWith, frames, total, framesWith > 0 ? (double)total / framesWith : 0.0, most,
-                    hiddenFrames > 0 ? $", hidden with the helmet's HUD in {hiddenFrames}" : "", left, Within * 100.0));
+                    hiddenFrames > 0 ? $", hidden with the visor's HUD in {hiddenFrames}" : "", left, Within * 100.0));
             windowStart = now;
             frames = framesWith = most = left = hiddenFrames = 0;
             total = 0;
