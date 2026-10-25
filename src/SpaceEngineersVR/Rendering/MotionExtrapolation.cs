@@ -36,7 +36,7 @@ namespace SpaceEngineersVR.Rendering
     /// The camera alone cannot be moved: the vehicle or body carrying it is drawn from the same 60 Hz game frame, so
     /// moving only the camera would move that judder onto the cockpit, the body and the hands. So the camera and the
     /// carrier's render roots (every grid mechanically joined to a controlled seat's grid, by their cells' cull objects;
-    /// the pilot or the character on foot by its cull object; the held tool and its parts; the datapad's model, <see cref="Hands.DatapadModel"/>) move together by the carrier's velocity at
+    /// the pilot or the character on foot by its cull object; the held tool and its parts) move together by the carrier's velocity at
     /// the eye times how much older this frame's game frame is than the running mean (the mean is left out, so on
     /// average everything is where the simulation put it). The roots are put back after the eyes are drawn.
     /// </para>
@@ -50,7 +50,7 @@ namespace SpaceEngineersVR.Rendering
     /// not extrapolated: a turning vehicle still turns in 60 Hz steps. RenderDebug MotionExtrapolation=0 turns it off.
     /// </para>
     /// </remarks>
-    internal static class MotionExtrapolation
+    internal static partial class MotionExtrapolation
     {
         /// <summary>RenderDebug MotionExtrapolation=0 turns it off.</summary>
         public static bool On = true;
@@ -86,6 +86,16 @@ namespace SpaceEngineersVR.Rendering
             public Vector3D Velocity;
             public uint[] Roots = new uint[16];
             public int Count;
+            public uint[] Effects = new uint[8];
+            public int EffectCount;
+
+            /// <summary>A running particle effect of the held tool, by its render id (<see cref="AddEffects"/>).</summary>
+            public void AddEffect(VRage.Game.MyParticleEffect effect)
+            {
+                if (effect == null || effect.IsStopped || EffectCount == Effects.Length)
+                    return;
+                Effects[EffectCount++] = effect.Id;
+            }
 
             public void Add(uint id)
             {
@@ -105,6 +115,8 @@ namespace SpaceEngineersVR.Rendering
                     Roots = new uint[s.Roots.Length];
                 Array.Copy(s.Roots, Roots, s.Count);
                 Count = s.Count;
+                Array.Copy(s.Effects, Effects, s.EffectCount);
+                EffectCount = s.EffectCount;
             }
         }
 
@@ -125,6 +137,7 @@ namespace SpaceEngineersVR.Rendering
         {
             s.Valid = false;
             s.Count = 0;
+            s.EffectCount = 0;
             if (!On || captureFailed)
                 return;
             try
@@ -203,9 +216,10 @@ namespace SpaceEngineersVR.Rendering
             if (((MyEntity)character).Render is MyRenderComponentCharacter render)
                 s.Add(cullRenderId(render));
             if (character.CurrentWeapon is MyEntity tool)
+            {
                 AddTool(s, tool);
-            // The datapad's model, a root of its own placed by the hands as the held tool is (uint.MaxValue while it is not drawn).
-            s.Add(Hands.DatapadModel.RenderId);
+                AddEffects(s, tool);
+            }
         }
 
         private static MyEntity loggedTool;
@@ -409,6 +423,7 @@ namespace SpaceEngineersVR.Rendering
                 actor.SetMatrix(ref to);
                 moved.Add(new Moved { Actor = actor, From = from, To = to });
             }
+            RideEffects(s, shift);
             shifted++;
             shiftSum += length;
             shiftMax = Math.Max(shiftMax, length);
@@ -426,6 +441,7 @@ namespace SpaceEngineersVR.Rendering
                     m.Actor.SetMatrix(ref m.From);
             }
             moved.Clear();
+            EndEffects();
         }
 
         /// <summary>
@@ -448,7 +464,7 @@ namespace SpaceEngineersVR.Rendering
                     "speed {9:0.0} m/s; {10}",
                     seconds, frames, carried, repeats, repeats / seconds, skips, ageMin == double.MaxValue ? 0 : ageMin, ageMax, meanAge, speedSum / carried,
                     !On ? "extrapolation off" : shifted == 0 ? "no shift"
-                        : string.Format(CultureInfo.InvariantCulture, "shifted {0} frames by {1:0.0} cm mean, {2:0.0} max, up to {3} roots", shifted, shiftSum / shifted * 100.0, shiftMax * 100.0, roots)));
+                        : string.Format(CultureInfo.InvariantCulture, "shifted {0} frames by {1:0.0} cm mean, {2:0.0} max, up to {3} roots", shifted, shiftSum / shifted * 100.0, shiftMax * 100.0, roots) + EffectStats()));
             windowStart = now;
             frames = carried = repeats = skips = shifted = roots = 0;
             shiftSum = shiftMax = speedSum = ageMax = 0;

@@ -8,6 +8,7 @@ using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Gui;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Tracking;
 using VRage.Utils;
 using VRageMath;
@@ -91,7 +92,7 @@ namespace SpaceEngineersVR.Input
         /// levelled, the climb its up with the roll taken out. The limited look never passes straight up or down, and a head bent
         /// back past vertical is read as looking straight up facing the body's way, so the strafe and the climb need no flipping
         /// to stay on the head's right and up. False, and the stick is turned by the yaw alone as in gravity, where the zero-g
-        /// pitch and roll would be refused (gravity, a character that flies upright only: <see cref="CanPitchAndRoll"/>), with the
+        /// pitch and roll would be refused (a character that flies upright only: <see cref="CanPitchAndRoll"/>) or in gravity, with the
         /// head not tracked or the view not first person, and with RenderDebug ZeroGHeadThrust=0.
         /// </summary>
         /// <param name="climb">The climb, from the right stick and A, -1 to 1.</param>
@@ -123,10 +124,11 @@ namespace SpaceEngineersVR.Input
         /// would spin round with it.
         /// </summary>
         internal static bool FliesWhereHeadLooks(MyCharacter character) =>
-            !HeadThrustOff && (character.IsInFirstPersonView || character.ForceFirstPersonCamera) && CanPitchAndRoll(out _);
+            !HeadThrustOff && (character.IsInFirstPersonView || character.ForceFirstPersonCamera) && CanPitchAndRoll(out _)
+            && character.Gravity.LengthSquared() <= ZeroGSquared;
 
         /// <summary>
-        /// Floating free: in zero g (the gravity <see cref="CanPitchAndRoll"/> allows, <see cref="ZeroGSquared"/>), with the jetpack
+        /// Floating free: in zero g (<see cref="ZeroGSquared"/>), with the jetpack
         /// off, standing on nothing and not on a ladder. There is no friction to turn the body by then, so the body does not turn
         /// to follow the head (<see cref="Tracking.BodyFollow"/>) and turns by the sticks only. What the character stands on is the
         /// game's own physics answer, <c>CharacterProxy.Supported</c>: the feet are on the ground, a hull or an asteroid, which is
@@ -238,18 +240,14 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// A trigger pulled on a radial menu (the actions wheel) is that menu's: it does not also fire a tool, use something or
-        /// thrust when the wheel closes under a finger still on it. It counts for the game again once it has been let go.
+        /// A trigger pulled for something that is not a binding (a cockpit switch, the touch toolbar, a tool held in both hands) is
+        /// that thing's: no action bound to it is on until it has been let go (<see cref="ControllerBindings.Consume"/>), so it
+        /// does not also fire a tool, use something or thrust. <paramref name="what"/> names the pull for the log.
         /// </summary>
-        internal static void SwallowTrigger(Hand hand) => SwallowTrigger(hand, $"the {hand.ToString().ToLowerInvariant()} trigger pulled on a radial menu");
-
-        /// <summary>As <see cref="SwallowTrigger(Hand)"/>, for another reason: <paramref name="what"/> names the pull for the log.</summary>
         internal static void SwallowTrigger(Hand hand, string what)
         {
-            if (!VRInput.IsPressed(hand, VRButtons.Trigger) || triggerSwallowed[(int)hand])
-                return;
-            triggerSwallowed[(int)hand] = true;
-            Log.Info($"Trigger: {what} is held back from the game until it is let go");
+            if (ControllerBindings.Consume(hand, ControllerControl.Trigger))
+                Log.Info($"Trigger: {what} is held back from the game until it is let go");
         }
 
         /// <summary>The game's radial menus ignore the sticks for this long after closing, or until they are let go (MyGuiControlRadialMenuBase.MOVEMENT_SUPPRESSION).</summary>

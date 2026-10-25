@@ -232,13 +232,18 @@ namespace SpaceEngineersVR.Rendering
             Log.Info("Per-eye renderer patched");
         }
 
-        /// <summary>Eye image size: the runtime's recommendation, or without a headset half the mirror window each.</summary>
+        /// <summary>Eye image size: the runtime's recommendation, with room above it for <see cref="DynamicResolution.Ceiling"/> when dynamic resolution was on as the session was made, or without a headset half the mirror window each.</summary>
         internal static Vector2I EyeResolution => XrSession.Exists
             ? new Vector2I(XrSession.EyeWidth, XrSession.EyeHeight)
             : new Vector2I(Math.Max(windowSize.X / 2, 1), Math.Max(windowSize.Y, 1));
 
-        /// <summary>The size the eyes are drawn at (m_resolution): the eye image size at <see cref="DynamicResolution.Scale"/>.</summary>
-        internal static Vector2I RenderResolution => DynamicResolution.Size(EyeResolution);
+        /// <summary>The eyes' 100%: the runtime's recommended size, or without a headset the eye image size.</summary>
+        internal static Vector2I RecommendedResolution => XrSession.Exists
+            ? new Vector2I(XrSession.RecommendedWidth, XrSession.RecommendedHeight)
+            : EyeResolution;
+
+        /// <summary>The size the eyes are drawn at (m_resolution): the recommended size at <see cref="DynamicResolution.Scale"/>, within the eye image.</summary>
+        internal static Vector2I RenderResolution => DynamicResolution.Size(RecommendedResolution, EyeResolution);
 
         private static void RecordWindowSize(int width, int height)
         {
@@ -438,6 +443,8 @@ namespace SpaceEngineersVR.Rendering
         private static bool DrawBothEyes()
         {
             Trace(ref drawCalls, "DrawScene");
+            // Read also while the game draws its own picture (no headset), so the switches and the stall watchdog work in flat play.
+            RenderDebug.Update(drawCalls);
             if (!BeginFrame())
                 return true;
             if (XrSession.InFrame)
@@ -464,7 +471,6 @@ namespace SpaceEngineersVR.Rendering
             // the eyes are placed relative to that (eye pose now * inverse(head in camera)) - head motion since the
             // game's update is still applied, every frame.
             FakeHead.Update(drawCalls);
-            RenderDebug.Update(drawCalls);
             Matrix desktopHead = FakeHead.Active ? FakeHead.Head : Matrix.Identity;
             if (headset && !FakeHead.Overrides)
                 HeadTracker.Set(ToMatrix(XrSession.Head), XrSession.OriginAboveFloor);
@@ -537,7 +543,13 @@ namespace SpaceEngineersVR.Rendering
                 // The helmet's inside in the scene sits on the head the eyes are drawn from: the eye less its place in the head.
                 MatrixD headDrawn = (MatrixD)(Matrix.Invert(eyeInHead[0]) * eyeFromHead[0]) * head.InvViewD;
                 HelmetInterior.Prepare(headDrawn);
+                // The external view's dash screen stands in the world, placed from the same head (so it rides with the eyes' shift).
+                if (headset)
+                    ExternalView.PrepareScreen(ToMatrix(XrSession.Head), headDrawn);
+                else
+                    ExternalView.ClearScreen();
                 VisorWeather.Prepare(headDrawn);
+                ModHudBillboards.Prepare(head, headDrawn);
                 SharedShadows.Fit(environmentMatrices, head, eyeFromHead, eyeFov);
                 SceneOnce.BeginFrame();
                 ParticlesOnce.BeginFrame();
@@ -551,9 +563,11 @@ namespace SpaceEngineersVR.Rendering
                     if (n > 0)
                         OnceBillboards.Rewind(billboards);
                     HelmetInterior.AddToEye();
+                    ExternalView.AddToEye();
                     VisorWeather.AddToEye();
                     int i = RenderDebug.RightFirst ? 1 - n : n;
                     bool left = i == 0;
+                    ModHudBillboards.ToEye(eyeFromHead[i], head);
                     eyeTargets[i] = borrowRtv.Invoke(pool, new object[] { left ? "VR left eye" : "VR right eye", eye.X, eye.Y, windowFormat, 1, 0 });
 
                     EnvMatrices.MakeEye(environmentMatrices, eyeFromHead[i], eyeFov[i]);
@@ -613,6 +627,7 @@ namespace SpaceEngineersVR.Rendering
                 }
 
                 MotionExtrapolation.End();
+                ModHudBillboards.Hide();
 
                 // The chase camera's picture, after both eyes (it puts the head camera back itself).
                 if (drawn == 2)
@@ -658,6 +673,7 @@ namespace SpaceEngineersVR.Rendering
             {
                 CentredFlares.EndFrame();
                 MotionExtrapolation.End();
+                ModHudBillboards.End();
                 SharedShadows.EndEye();
                 ExposureOnce.EndEye();
                 EnvMatrices.Restore(environmentMatrices, head);
@@ -991,5 +1007,9 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Copies a texture bit for bit into a swapchain image of the same size.</summary>
         internal static void CopyToImage(object texture, SharpDX.Direct3D11.Texture2D image) =>
             copyResource.Invoke(renderContext.GetValue(null), new[] { texture, image });
+
+        /// <summary>A texture smaller than a headset image into its top left corner, the part the projection layer shows (<see cref="XrSession.SetEyeRect"/>).</summary>
+        internal static void CopyToImageCorner(object texture, SharpDX.Direct3D11.Texture2D image) =>
+            copySubresourceRegion.Invoke(renderContext.GetValue(null), new object[] { texture, 0, null, image, 0, 0, 0, 0 });
     }
 }

@@ -33,7 +33,7 @@ namespace SpaceEngineersVR.Gui
     /// Which screens: the player sets a screen to it in the game's own screen settings (Content: Script, "Touch Toolbar",
     /// <see cref="TouchToolbarScript"/>), saved with the world as any content choice is. With none set to it, the
     /// setting "Touch toolbar on the cockpit screen" (<see cref="VRSettings.TouchToolbar"/>) puts it on the central-most
-    /// screen; RenderDebug TouchToolbarScreen=n puts it on screen n (0-based) instead, and TouchToolbar=0 turns it all off.
+    /// screen while that screen still shows what the cockpit came with (an app the player picks there wins); RenderDebug TouchToolbarScreen=n puts it on screen n (0-based) instead, and TouchToolbar=0 turns it all off.
     /// The pilot's picture is local only, and nothing of the block changes: this machine's picture of the screen area is
     /// swapped for the toolbar drawn into a texture of our own (the game's offscreen sprite renderer, as an LCD script's
     /// sprites are drawn), the screen's material pointed at it with the game's own

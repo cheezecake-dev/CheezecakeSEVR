@@ -59,7 +59,9 @@ namespace SpaceEngineersVR
                     text.AppendLine("# " + section);
                 }
                 text.AppendLine("# " + setting.Describe());
-                text.AppendLine(setting.Key + "=" + setting.Serialize());
+                string value = setting.Serialize();
+                TestAidsFileValue(setting, ref value);
+                text.AppendLine(setting.Key + "=" + value);
             }
             return text.ToString();
         }
@@ -71,6 +73,7 @@ namespace SpaceEngineersVR
             {
                 foreach (Setting setting in all)
                     setting.Clear();
+                TestAidsLoaded();
                 LoadFile();
                 if (args != null)
                     LoadArguments(args);
@@ -129,25 +132,11 @@ namespace SpaceEngineersVR
             Log.Info("Settings read from " + path);
         }
 
-        /// <summary>
-        /// Sets one setting for this run only, as the file would have it (the drive's "setting key=value", for tests): the
-        /// file is not written.
-        /// </summary>
-        internal static bool TrySetForRun(string key, string value, out string detail)
-        {
-            if (string.IsNullOrWhiteSpace(key) || !byKey.TryGetValue(key.Trim(), out Setting setting))
-            {
-                detail = $"unknown setting '{key}'";
-                return false;
-            }
-            if (!setting.TryLoad(value ?? string.Empty, out string problem))
-            {
-                detail = $"{setting.Key}: {problem}";
-                return false;
-            }
-            detail = $"{setting.Key}={setting.Serialize()} for this run, not saved";
-            return true;
-        }
+        /// <summary>A test aid implements this: the value a save writes for <paramref name="setting"/>, in place of the one it holds now.</summary>
+        static partial void TestAidsFileValue(Setting setting, ref string value);
+
+        /// <summary>A test aid implements this: the settings were read again from the file and the command line.</summary>
+        static partial void TestAidsLoaded();
 
         private static void LoadArguments(string[] args)
         {

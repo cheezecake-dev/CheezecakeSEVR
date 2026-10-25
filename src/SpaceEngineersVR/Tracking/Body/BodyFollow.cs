@@ -62,8 +62,10 @@ namespace SpaceEngineersVR.Tracking
             if (!GameHead.Take())
                 return;
 
-            float relative = GameHead.Yaw;
-            float target = moveIndicator != Vector3.Zero ? 0f : MathHelper.Clamp(relative, -NeckLimit, NeckLimit);
+            // With a gun in the hand in a multiplayer game the body faces the gun, as every other game fires its shots along the body's facing (SyncedAim).
+            bool gun = Hands.SyncedAim.TryGunAim(__instance, out _, out float gunYaw);
+            float relative = gun ? gunYaw : GameHead.Yaw;
+            float target = moveIndicator != Vector3.Zero || gun ? 0f : MathHelper.Clamp(relative, -NeckLimit, NeckLimit);
             float turn = MathHelper.Clamp(relative - target, -MaxTurnPerFrame, MaxTurnPerFrame);
             if (__instance.JetpackRunning)
             {

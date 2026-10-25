@@ -71,10 +71,16 @@ namespace SpaceEngineersVR.Tracking
             // Got up from a seat: the head is placed from the on-foot centre again (the seat's was the sit-down's).
             GameHead.OnFoot();
 
-            // Synced to other players and used by the head animation, so others see the head tilt. On a client the game's recoil
-            // on the aim goes on top: the server fires this player's shots along the synced pitch.
-            __instance.HeadLocalXAngle = MathHelper.ToDegrees(GameHead.Pitch);
-            Hands.Kickback.OnSyncedHead(__instance);
+            // Synced to other players and used by the head animation, so others see the head tilt. Every other game fires this
+            // player's shots along the synced pitch: in a multiplayer game with a gun in the hand it is the gun's, recoil
+            // included (SyncedAim); otherwise the head's, with the game's recoil on the aim on top.
+            if (Hands.SyncedAim.TryGunAim(__instance, out float gunPitch, out _))
+                __instance.HeadLocalXAngle = gunPitch;
+            else
+            {
+                __instance.HeadLocalXAngle = MathHelper.ToDegrees(GameHead.Pitch);
+                Hands.Kickback.OnSyncedHead(__instance);
+            }
 
             // The game's own head matrix is pitch * yaw (from the mouse) on the body's basis, at the head bone.
             MatrixD basis = MatrixD.CreateFromDir(__instance.WorldMatrix.Forward, __instance.WorldMatrix.Up);

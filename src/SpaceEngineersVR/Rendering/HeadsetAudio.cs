@@ -262,10 +262,19 @@ namespace SpaceEngineersVR.Rendering
     /// device with another layout needs nothing else. The game makes the voice again only when XAudio2 reports a critical
     /// error (the device went away): StartEngine runs again and so does this, so the choice is made afresh each time, and a
     /// headset device that is gone by then gives the Windows default. If anything here fails the game's own call runs.
+    /// <para>A headset's device does not always go away with the headset: Link's virtual device stays while the headset is
+    /// disconnected, so the game played on into it and was silent until the headset was back. So when the picture switches
+    /// (<see cref="StereoPatches.PictureChanged"/>) and the device wanted is not the one the voice is on, the game is told
+    /// its device changed, as its own once-a-second device count check tells it (MyXAudio2.CheckIfDeviceChanged), and makes
+    /// the voice again: while the picture is the game's (<see cref="StereoPatches.PlayingFlat"/>, the headset gone or away)
+    /// on the Windows default, and on the headset's device when VR is back or the headset is first found.</para>
     /// </remarks>
-    internal static class HeadsetAudio
+    internal static partial class HeadsetAudio
     {
         private const string PlatformAudio = "VRage.Platform.Windows.Audio.MyPlatformAudio";
+
+        /// <summary>The headset endpoint the game's voice was last made on; null for the Windows default.</summary>
+        private static string onDevice;
 
         public static void Patch(Harmony harmony)
         {
@@ -277,6 +286,7 @@ namespace SpaceEngineersVR.Rendering
                 MethodInfo create = AccessTools.Method(platformAudio, "CreateMasteringVoice", new[] { typeof(int) })
                                     ?? throw new MissingMethodException(PlatformAudio, "CreateMasteringVoice");
                 harmony.Patch(create, prefix: new HarmonyMethod(typeof(HeadsetAudio), nameof(CreateOnHeadset)));
+                StereoPatches.PictureChanged += FollowPicture;
             }
             catch (Exception e)
             {
@@ -296,6 +306,7 @@ namespace SpaceEngineersVR.Rendering
                     try
                     {
                         __result = new MasteringVoice(___m_audioEngine, 0, 0, id);
+                        onDevice = id;
                         Log.Info($"Sound: playing through {name} (the headset's audio device from the runtime)");
                         return false;
                     }
@@ -310,7 +321,38 @@ namespace SpaceEngineersVR.Rendering
             {
                 Log.Error(e, "Sound: the Windows default output (choosing the headset's audio device failed)");
             }
+            onDevice = null;
             return true;
+        }
+
+        /// <summary>
+        /// Game thread, when the picture switches: the game makes its voice again when it is on another device than the one
+        /// wanted now. The game does it in its next sound update (MyXAudio2.Update), from its own device-changed branch.
+        /// </summary>
+        private static void FollowPicture(bool vr)
+        {
+            string wanted = HeadsetDevice(out string name, out string reason);
+            if (wanted == onDevice)
+                return;
+            // Not made yet: the game chooses when it makes it.
+            object audio = VRage.Audio.MyAudio.Static;
+            if (audio == null)
+                return;
+            FieldInfo canPlay = AccessTools.Field(audio.GetType(), "m_canPlay");
+            FieldInfo lastCount = AccessTools.Field(audio.GetType(), "m_lastDeviceCount");
+            FieldInfo lost = AccessTools.Field(audio.GetType(), "m_deviceLost");
+            if (canPlay == null || lastCount == null || lost == null)
+            {
+                Log.Info($"Sound: stays where it is; the game's audio ({audio.GetType().Name}) has no device check to start");
+                return;
+            }
+            if (!(bool)canPlay.GetValue(audio))
+                return;
+            Log.Info(wanted != null ? $"Sound: back to {name} (headset back); the game makes its audio again"
+                                    : $"Sound: to the Windows default output ({reason}); the game makes its audio again");
+            // The count first: the game's own check, if it falls in the same update, compares it and says changed too.
+            lastCount.SetValue(audio, -1);
+            lost.SetValue(audio, true);
         }
 
         /// <summary>The headset's audio endpoint id and its Windows name, or null with the reason to use the Windows default.</summary>
@@ -329,15 +371,24 @@ namespace SpaceEngineersVR.Rendering
             }
             if (!XrRuntime.HasSystem)
             {
-                // The voice is made when the game's sound starts; a headset that connects later does not move it.
-                reason = "no headset was connected when the game's sound started";
+                reason = "no headset is connected";
+                return null;
+            }
+            if (StereoPatches.PlayingFlat)
+            {
+                reason = "playing in the window while the headset is gone";
                 return null;
             }
             string id = XrRuntime.AudioOutputDeviceId(out reason);
             if (id == null)
+                DeviceWithoutRuntime(ref id, ref reason);
+            if (id == null)
                 return null;
             return Endpoint.Describe(id, out name, out reason) ? id : null;
         }
+
+        /// <summary>A test build's audio endpoint for a runtime that names none (src/SpaceEngineersVR.TestAids/); never set in a player's build.</summary>
+        static partial void DeviceWithoutRuntime(ref string id, ref string reason);
 
         /// <summary>Windows' own view of an audio endpoint (MMDevice API): that it exists and plays, and its name.</summary>
         private static class Endpoint

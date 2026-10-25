@@ -16,9 +16,11 @@ namespace SpaceEngineersVR.Hands
     /// Head material, 33 x 32 x 29 cm, visor and hood together): 34 x 38 x 32 cm, its centre 3 cm below the head bone, in the
     /// bind pose's axes. It is carried by the head bone as <see cref="HelmetHead"/> poses it (on the eye, turned with the head
     /// up to the neck's limits, the spine and the body under it), so it is where the helmet is posed, not where the real head
-    /// is. Fitted to cover the visor, the sides and the top, it stands 1 to 3 cm off the visor and the sides; the lower front
-    /// edge of the chin stands out of it by 1.4 cm at most, and under the chin and behind the neck it stands off further.
-    /// RenderDebug HelmetHandsMm=n moves its surface n mm out (negative: in), HelmetHands=0 lets the hands through again.
+    /// is. As fitted to the model's own shell it lies 3.8 to 4.6 cm inside the glass the helmet view draws about the eyes
+    /// (measured 2026-10-24 at the middle, 25 degrees to each side, 20 up and down, 45 right and 40 down: the model's visor is
+    /// 7 cm ahead of the eyes, the drawn glass 13.6 cm), so <see cref="DefaultMarginMm"/> puts its surface out by that gap and a
+    /// fingertip rests on the glass the player sees, not 4 cm through it. RenderDebug HelmetHandsMm=n moves its surface n mm out
+    /// (negative: in), HelmetHands=0 lets the hands through again.
     ///
     /// The index fingertip (1 cm) and the palm (3 cm) are balls, as <see cref="SurfaceStop"/> has them, each pushed out of the
     /// shape the nearest way: the palm, then the fingertip with the palm's push on it, then the palm again. The sum is the one
@@ -42,8 +44,11 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Debug: the hands pass through the helmet (<see cref="Rendering.RenderDebug"/> HelmetHands=0).</summary>
         public static bool Off { get; set; }
 
-        /// <summary>The default for <see cref="MarginMm"/>: the surface is the fitted shape's own.</summary>
-        public const int DefaultMarginMm = 0;
+        /// <summary>
+        /// The default for <see cref="MarginMm"/>: the fitted shape sits 3.8 to 4.6 cm inside the helmet view's glass, so the
+        /// surface is 42 mm out of it, on the glass.
+        /// </summary>
+        public const int DefaultMarginMm = 42;
 
         /// <summary>Debug: the surface this many millimetres out of the fitted shape (negative: in) (<see cref="Rendering.RenderDebug"/> HelmetHandsMm=n).</summary>
         public static int MarginMm { get; set; } = DefaultMarginMm;
@@ -88,6 +93,16 @@ namespace SpaceEngineersVR.Hands
             public long LastAt, EngagedAt, TipAt;
             public bool Engaged, Ramping;
             public Vector3D TipOn;
+            public long TraceAt;
+        }
+
+        /// <summary>RenderDebug TouchTrace=1: where the hand is against the helmet's shape, or why it is not tried, at most 4 lines a second a hand.</summary>
+        private static void Trace(Hand hand, PerHand h, long now, string what)
+        {
+            if (!ScreenTouch.Trace || now - h.TraceAt < Stopwatch.Frequency / 4)
+                return;
+            h.TraceAt = now;
+            Log.Info($"Helmet stop trace: {hand} hand {what}");
         }
 
         private readonly PerHand[] hands = { new PerHand(), new PerHand() };
@@ -120,6 +135,7 @@ namespace SpaceEngineersVR.Hands
             if (Off || !guard.On)
             {
                 h.Engaged = false;
+                Trace(hand, h, now, Off ? "not tried: HelmetHands=0" : "not tried: the helmet stop failed earlier");
                 return false;
             }
             try
@@ -129,6 +145,7 @@ namespace SpaceEngineersVR.Hands
                     || !HelmetHead.TryHeadFrame(character, out Matrix bind, out Matrix posed))
                 {
                     h.Engaged = false;
+                    Trace(hand, h, now, "not tried: no character or no head frame");
                     return false;
                 }
 
@@ -161,6 +178,8 @@ namespace SpaceEngineersVR.Hands
                     push += step;
                 }
                 double real = push.Length();
+                Trace(hand, h, now, $"tip at ({atTip.X * 100.0:F1}, {atTip.Y * 100.0:F1}, {atTip.Z * 100.0:F1}) cm, {Reach(atTip):F2} of the way out, " +
+                                    $"palm at ({atPalm.X * 100.0:F1}, {atPalm.Y * 100.0:F1}, {atPalm.Z * 100.0:F1}) cm, {Reach(atPalm):F2}; push {real * 100.0:F1} cm, tip touches {tipTouches}");
                 if (!(real > 1e-5))
                 {
                     h.Engaged = false;
@@ -275,5 +294,8 @@ namespace SpaceEngineersVR.Hands
         }
 
         private static double Square(double x) => x * x;
+
+        /// <summary>How far out a point is in the shape, as a share of the way to its surface (1 on it).</summary>
+        private static double Reach(Vector3D p) => Math.Sqrt(Square(p.X / Half.X) + Square(p.Y / Half.Y) + Square(p.Z / Half.Z));
     }
 }

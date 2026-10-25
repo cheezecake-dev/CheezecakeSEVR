@@ -133,6 +133,8 @@ namespace SpaceEngineersVR.Rendering
                 gaze = Degrees((Vector3)eyes.Forward, toward);
                 faced = Degrees(normal, -toward);
             }
+            lastGaze = gaze;
+            lastFaced = faced;
             bool want = near && (looked
                 ? !(gaze > WristLook.HideGazeDegrees || faced > WristLook.HideFaceDegrees)
                 : gaze <= WristLook.ShowGazeDegrees && faced <= WristLook.ShowFaceDegrees);

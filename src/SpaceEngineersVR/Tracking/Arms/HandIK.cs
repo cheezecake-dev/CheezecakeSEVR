@@ -223,6 +223,10 @@ namespace SpaceEngineersVR.Tracking
                 }
                 HandResidual.Begin(__instance, HandWorld.LastBodySource);
                 bool holding = __instance.CurrentWeapon != null && !__instance.IsSitting;
+                // What other players with the plugin are sent of this frame (Multiplayer.PeerChannel): the head, and each arm as drawn below.
+                Multiplayer.PoseCapture.Begin(holding, Hands.ItemSpots.ToolHand);
+                if (GameHead.Take())
+                    Multiplayer.PoseCapture.Head((Matrix)((MatrixD)GameHead.TrackingPose * trackingToModel));
                 // The held tool is placed again by the move the arms are solved by, so the hand on its grip and the controller
                 // share one frame. The weapon component places it earlier in the update (MyCharacterWeaponPositionComponent.Update)
                 // from a different head, which would leave it off the arm's frame. Then the other hand's spot on it is taken again.
@@ -486,16 +490,36 @@ namespace SpaceEngineersVR.Tracking
             if (easeLog && other)
                 EaseLog(hand, onTool, use.EaseFrom > 0f, result);
             HandResidual.Solved(hand, chain.Palm, target, bones[chain.Palm].AbsoluteTransform);
+            // The curls as drawn, for other players: a hand closed round a stick or a magazine is sent as closed round a handle.
+            float index = RelaxedCurl, others = RelaxedCurl, thumb = RelaxedThumb;
             if (Mode != 2 && onStick)
+            {
                 Cockpits.CockpitGrip.CloseFingers(hand, body, bones, fingers, chain.Palm, state.Trigger);
+                index = others = Hands.Reload.MagazineCurl;
+                thumb = Hands.Reload.MagazineThumb;
+            }
+            else if (Mode != 2 && other && Hands.Reload.HoldsMagazine(hand))
+            {
+                // A magazine for the reload by hand, held with the trigger or the grip: the hand closed round it either way.
+                index = others = Hands.Reload.MagazineCurl;
+                thumb = Hands.Reload.MagazineThumb;
+                ArmSolver.Curl(bones, fingers, index, others, thumb);
+            }
             else if (Mode != 2)
             {
-                ArmSolver.Curl(bones, fingers,
-                    IndexCurl(hand, state),
-                    RelaxedCurl + (1f - RelaxedCurl) * state.Squeeze,
-                    ThumbCurl(hand, state));
+                index = IndexCurl(hand, state);
+                others = RelaxedCurl + (1f - RelaxedCurl) * state.Squeeze;
+                thumb = ThumbCurl(hand, state);
+                ArmSolver.Curl(bones, fingers, index, others, thumb);
             }
+            Multiplayer.PoseCapture.Arm(hand, bones[chain.Palm].AbsoluteTransform, index, others, thumb, onTool > 0f);
             Hands.FingerPress.NoteDrawnFinger(hand, bones, chain.Palm, fingers[2]);
+            if (other && Hands.Reload.HoldsMagazine(hand))
+            {
+                // The magazine in the hand drawn in the drawn fist: the grip pose the solved palm stands for.
+                Matrix drawnGrip = Matrix.Invert(PalmFromGrip(hand)) * bones[chain.Palm].AbsoluteTransform;
+                Hands.Reload.HandDrawn(body, (MatrixD)drawnGrip * MatrixD.Invert(body.PositionComp.WorldMatrixNormalizedInv));
+            }
             if (ArmJump.On)
                 ArmJump.Solved(body, bones, hand, frame, chain, palm, raw, target, shoulder, trackingToModel, result, onTool, false);
             NoteReach(hand, $"{hand} hand", result, bones, chain, trackingToModel);

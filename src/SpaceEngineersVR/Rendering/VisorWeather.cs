@@ -1,5 +1,5 @@
 // VisorWeather: the world on the helmet's visor: frost at its rim in the cold, breath on its inside, rain, snow and dust from the planet's
-// weather, mist coming in from the cold, and a fingertip's wipe through all of it.
+// weather, and a fingertip's wipe through it.
 using System;
 using System.Diagnostics;
 using Sandbox.Definitions;
@@ -35,8 +35,6 @@ namespace SpaceEngineersVR.Rendering
     /// rain (and hail) spatters and runs, snow settles at the edges, dust and sand coat it in the weather's fog colour
     /// (MySector.FogProperties.FogColor). Not under cover: the game's own test for its weather particles (MyEntityReverbDetectorComponent:
     /// more than 20 grid or voxel hits round the character), or in a pressurised cockpit.</item>
-    /// <item>Mist (<see cref="VRSettings.VisorMisting"/>): the glass keeps the cold it has been in, warming over seconds; in air
-    /// warmer than Freeze while the glass is still colder (from Freeze or below), it mists over, clearing as the glass warms.</item>
     /// <item>Wipe (<see cref="VRSettings.VisorWipe"/>): the drawn index fingertip resting on the helmet's front
     /// (<see cref="HelmetStop.TipOnHelmet"/>), where it lies over the glass seen from the eyes, clears all of the outside along its
     /// path (<see cref="VisorCoat.Wipe"/>), with a soft buzz in that hand. While a cause lasts, it grows back slowly.</item>
@@ -59,7 +57,7 @@ namespace SpaceEngineersVR.Rendering
     /// soft). The outside is worked out on the game thread <see cref="StepsPerSecond"/> times a second (<see cref="VisorCoat"/>),
     /// its time logged once a character (<see cref="Timing"/>), and its texels copied into the renderer's texture on the render
     /// thread when they change; the breath's picture never changes, only how much of it shows. Nothing is allocated per frame. One log line for each change:
-    /// the game's temperature level, frost coming and going, the mist, the weather on the glass, each wipe, the breath. A character
+    /// the game's temperature level, frost coming and going, the weather on the glass, each wipe, the breath. A character
     /// new in the world is left <see cref="TemperatureTicks"/> before any of it, until the game has read its temperature.
     /// </para>
     /// <para>
@@ -97,9 +95,6 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>How long the frost takes to grow most of the way to its reach, in Freeze and ExtremeFreeze, and to melt back, seconds.</summary>
         private const float FrostGrowFreeze = 40f, FrostGrowExtreme = 22f, FrostMelt = 10f;
 
-        /// <summary>How long the glass takes to come to the temperature round it, cooling and warming, seconds.</summary>
-        private const float GlassCools = 20f, GlassWarms = 4f;
-
         /// <summary>How long a breath's mist takes to fade, seconds (most of it gone within a second).</summary>
         private const float BreathFades = 0.35f;
 
@@ -135,7 +130,7 @@ namespace SpaceEngineersVR.Rendering
         private static int arrivedAt;
         private static MyTemperatureLevel? levelLogged;
         private static long steppedAt, frameAt, sentAt;
-        private static float frostReach, glassTemperature = 0.5f, breathPhase, lightTarget = 0.6f;
+        private static float frostReach, breathPhase, lightTarget = 0.6f;
         private static string weatherName;
         private static Fall weatherFall;
         private static readonly bool[] touching = new bool[2];
@@ -155,7 +150,7 @@ namespace SpaceEngineersVR.Rendering
         private static double timedTotal, timedMost;
 
         // What was last logged, so each change is logged once.
-        private static bool frostLogged, mistLogged, breathLogged;
+        private static bool frostLogged, breathLogged;
 
         /// <summary>The glass has swung clear of the opening since the helmet last closed, and was cleaned as it did.</summary>
         private static bool glassUp;
@@ -186,7 +181,7 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>Any of it is to be worked out and shown: not off for debugging, the helmet view and at least one of the settings on, nothing failed. Any thread.</summary>
         private static bool Wanted => !Off && HelmetView.On && guard.On && materialAdded
-                                      && (VRSettings.VisorFrost || VRSettings.VisorBreath || VRSettings.VisorWeather || VRSettings.VisorMisting);
+                                      && (VRSettings.VisorFrost || VRSettings.VisorBreath || VRSettings.VisorWeather);
 
         /// <summary>At start-up, on the game thread with no world drawn: the layers' materials, as the helmet's inside registers its own (<see cref="PictureMaterial"/>).</summary>
         public static void Register()
@@ -226,7 +221,7 @@ namespace SpaceEngineersVR.Rendering
             float frameSeconds = frameAt == 0 ? 0f : (float)Math.Min(0.25, (now - frameAt) / (double)Stopwatch.Frequency);
             frameAt = now;
             // A character that has just come into the world (a world loading, a respawn): its temperature reads 0 until the game
-            // first reads it, so the visor waits for that, rather than frost, breath and mist all coming and going at once.
+            // first reads it, so the visor waits for that, rather than frost and breath coming and going at once.
             int tick = MySession.Static?.GameplayFrameCounter ?? 0;
             if (!ReferenceEquals(character, arrived))
             {
@@ -244,7 +239,6 @@ namespace SpaceEngineersVR.Rendering
                 // A new character (a respawn, a world loading): a clean visor, at the temperature it is in.
                 Forget();
                 seenFor = character;
-                glassTemperature = character.GetOutsideTemperature();
             }
             SendTextures();
 
@@ -288,12 +282,6 @@ namespace SpaceEngineersVR.Rendering
             if (frostReach < 0.002f && reach <= 0f)
                 frostReach = 0f;
 
-            // Mist: the glass's own temperature follows the air's; in warm air, glass that is still cold mists over.
-            float glassTau = temperature > glassTemperature ? GlassWarms : GlassCools;
-            glassTemperature += (temperature - glassTemperature) * (1f - (float)Math.Exp(-seconds / glassTau));
-            bool warmAir = level >= MyTemperatureLevel.Cozy && character.EnvironmentOxygenLevel > 0.1f;
-            float mist = VRSettings.VisorMisting && closed && warmAir ? Smooth(0.08f, 0.25f, temperature - glassTemperature) : 0f;
-
             // Weather: what falls here, out from under cover, with the glass closed.
             Fall fall = Fall.None;
             float strength = 0f;
@@ -319,10 +307,10 @@ namespace SpaceEngineersVR.Rendering
             }
 
             // A clean glass with nothing coming onto it (the helmet open, or clear weather): nothing to step or draw again.
-            bool idle = !coatShows && frostReach <= 0f && mist <= 0f && fall == Fall.None;
+            bool idle = !coatShows && frostReach <= 0f && fall == Fall.None;
             long workFrom = Stopwatch.GetTimestamp();
             if (!idle)
-                coat.Step(seconds, frostReach, mist, rain, snowfall, storm, down, level <= MyTemperatureLevel.Freeze);
+                coat.Step(seconds, frostReach, rain, snowfall, storm, down, level <= MyTemperatureLevel.Freeze);
             if (VRSettings.VisorWipe && closed && knowHelmet && HelmetHud.GlassCover >= 0.99f)
             {
                 Wipe(Hand.Left, toHelmet);
@@ -330,7 +318,8 @@ namespace SpaceEngineersVR.Rendering
             }
             else
             {
-                touching[0] = touching[1] = false;
+                EndStroke(Hand.Left);
+                EndStroke(Hand.Right);
                 string why = !VRSettings.VisorWipe ? "Wipe the visor is off"
                     : !closed ? "the helmet is open"
                     : !knowHelmet ? "the glass has not been drawn yet"
@@ -342,7 +331,7 @@ namespace SpaceEngineersVR.Rendering
             if (idle)
             {
                 Light(character, place, covered, seconds);
-                Report(level, temperature, mist, fall, strength);
+                Report(level, temperature, fall, strength);
                 return;
             }
 
@@ -360,7 +349,7 @@ namespace SpaceEngineersVR.Rendering
             coatShows = shows;
 
             Light(character, place, covered, seconds);
-            Report(level, temperature, mist, fall, strength);
+            Report(level, temperature, fall, strength);
         }
 
         /// <summary>A clean visor and nothing shown: no character, or none of it wanted.</summary>
@@ -376,7 +365,7 @@ namespace SpaceEngineersVR.Rendering
             touching[0] = touching[1] = false;
             weatherName = null;
             weatherFall = Fall.None;
-            frostLogged = mistLogged = breathLogged = false;
+            frostLogged = breathLogged = false;
             glassUp = false;
             fallLogged = Fall.None;
             levelLogged = null;
@@ -458,14 +447,14 @@ namespace SpaceEngineersVR.Rendering
             int h = (int)hand;
             if (!HelmetStop.TipOnHelmet(hand, out Vector3D point))
             {
-                touching[h] = false;
+                EndStroke(hand);
                 missNoted[h] = false;
                 return;
             }
             Vector3 local = (Vector3)Vector3D.Transform(point, toHelmet);
             if (local.LengthSquared() < 1e-6f)
             {
-                touching[h] = false;
+                EndStroke(hand);
                 return;
             }
             Vector3 way = Vector3.Normalize(local);
@@ -473,25 +462,38 @@ namespace SpaceEngineersVR.Rendering
             float radius = HelmetShell.OpeningRadius(round, up);
             if (radius > 1f)
             {
-                touching[h] = false;
+                EndStroke(hand);
                 NoteMiss(hand, $"it is outside the glass ({MathHelper.ToDegrees(round):0} deg round, {MathHelper.ToDegrees(up):0} up, {radius:0.00} of the way to the opening's edge)");
                 return;
             }
             missNoted[h] = false;
             Vector2 at = VisorCoat.Place(round, up);
+            // How far the touched surface (the helmet stop's) lies from the glass the coat is drawn on, along the eye's line to it.
+            float off = local.Length() - CoatRadius;
             if (!touching[h])
             {
                 touching[h] = true;
                 touchedAt[h] = at;
                 wiped[h] = 0f;
                 strokes[h]++;
-                Log.Info($"Visor weather: the {hand.ToString().ToLowerInvariant()} fingertip wipes the visor ({at.X:0.00}, {at.Y:0.00} across and down the glass)");
+                Log.Info($"Visor weather: the {hand.ToString().ToLowerInvariant()} fingertip wipes the visor ({at.X:0.00}, {at.Y:0.00} across and down the glass, the touch {Math.Abs(off) * 100f:0.0} cm {(off >= 0f ? "outside" : "inside")} the glass)");
             }
             float taken = coat.Wipe(touchedAt[h].X, touchedAt[h].Y, at.X, at.Y, strokes[h] * 2 + h);
             touchedAt[h] = at;
             wiped[h] += taken;
             if (taken > 0.5f)
                 Haptics.Pulse(hand, Math.Min(0.35f, 0.08f + taken * 0.004f), 0.03f);
+        }
+
+        /// <summary>The fingertip has left the glass: how much its stroke took off, once a stroke.</summary>
+        private static void EndStroke(Hand hand)
+        {
+            int h = (int)hand;
+            if (!touching[h])
+                return;
+            touching[h] = false;
+            Log.Info($"Visor weather: the {hand.ToString().ToLowerInvariant()} fingertip ends its stroke, having wiped {wiped[h]:0.0} off the glass " +
+                     "(1: a full coat over one cell of the glass's grid)");
         }
 
         /// <summary>
@@ -558,8 +560,8 @@ namespace SpaceEngineersVR.Rendering
             light += (lightTarget - light) * (1f - (float)Math.Exp(-seconds / 1f));
         }
 
-        /// <summary>One log line for each change: frost coming and going, the mist, the weather on the glass.</summary>
-        private static void Report(MyTemperatureLevel level, float temperature, float mist, Fall fall, float strength)
+        /// <summary>One log line for each change: frost coming and going, the weather on the glass.</summary>
+        private static void Report(MyTemperatureLevel level, float temperature, Fall fall, float strength)
         {
             if (level != levelLogged)
             {
@@ -574,14 +576,6 @@ namespace SpaceEngineersVR.Rendering
                 Log.Info(frost
                     ? $"Visor weather: frost grows in from the visor's edge (the game's temperature reads {level}, {temperature:0.00})"
                     : "Visor weather: the frost has melted from the visor");
-            }
-            bool misted = mist > 0.05f;
-            if (misted != mistLogged)
-            {
-                mistLogged = misted;
-                Log.Info(misted
-                    ? $"Visor weather: the visor mists over, cold from outside in warm air (the glass at {glassTemperature:0.00}, the air at {temperature:0.00})"
-                    : "Visor weather: the visor's mist clears as the glass warms");
             }
             if (fall != fallLogged)
             {

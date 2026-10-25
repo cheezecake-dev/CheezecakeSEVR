@@ -19,6 +19,8 @@ namespace SpaceEngineersVR.Cockpits
         private static readonly double[] nextAnalogSend=new double[CockpitLayout.MaximumCount];
         private static readonly float?[] sentAnalog=new float?[CockpitLayout.MaximumCount];
         private static readonly float?[] pendingAnalog=new float?[CockpitLayout.MaximumCount];
+        /// <summary>A hand was on the handle last frame (a throttle lever springs back as it is let go).</summary>
+        private static readonly bool[] heldAnalog=new bool[CockpitLayout.MaximumCount];
         private static readonly DateTime[] pulses=new DateTime[CockpitLayout.MaximumCount];
         private static readonly float[] covers=new float[CockpitLayout.MaximumCount];
         private static readonly bool[] open=new bool[CockpitLayout.MaximumCount];
@@ -63,7 +65,7 @@ namespace SpaceEngineersVR.Cockpits
         {
             recovery.Clear(); owner=null; Release(); ResetCovers(); CockpitTouch.Reset();
             Array.Clear(positions,0,positions.Length); Array.Clear(pulses,0,pulses.Length);
-            Array.Clear(nextAnalogSend,0,nextAnalogSend.Length); Array.Clear(sentAnalog,0,sentAnalog.Length); Array.Clear(pendingAnalog,0,pendingAnalog.Length);
+            Array.Clear(nextAnalogSend,0,nextAnalogSend.Length); Array.Clear(sentAnalog,0,sentAnalog.Length); Array.Clear(pendingAnalog,0,pendingAnalog.Length); Array.Clear(heldAnalog,0,heldAnalog.Length);
             lastUpdate=DateTime.MinValue; CockpitActions.Reset();
         }
         public static void Prepare()
@@ -74,9 +76,11 @@ namespace SpaceEngineersVR.Cockpits
                 var seat=SeatFit.Seat;
                 bool eligible=SeatFit.Eligible(seat) && CockpitLayout.Supported(seat.BlockDefinition.Id.SubtypeName);
                 if(!eligible) seat=null;
+                // A throttle lever in the hand as the seat is left is let go: back to zero thrust, while CockpitActions still has the seat.
+                if(!ReferenceEquals(owner,seat)) LetGoOfHeld();
                 CockpitActions.Update(seat);
                 if(!ReferenceEquals(owner,seat))
-                { Array.Clear(pendingAnalog,0,pendingAnalog.Length); Array.Clear(nextAnalogSend,0,nextAnalogSend.Length); Array.Clear(sentAnalog,0,sentAnalog.Length); owner=seat; subtype=seat?.BlockDefinition.Id.SubtypeName; Release(); ResetCovers(); Array.Clear(positions,0,positions.Length); Array.Clear(pulses,0,pulses.Length); }
+                { Array.Clear(pendingAnalog,0,pendingAnalog.Length); Array.Clear(nextAnalogSend,0,nextAnalogSend.Length); Array.Clear(sentAnalog,0,sentAnalog.Length); Array.Clear(heldAnalog,0,heldAnalog.Length); owner=seat; subtype=seat?.BlockDefinition.Id.SubtypeName; Release(); ResetCovers(); Array.Clear(positions,0,positions.Length); Array.Clear(pulses,0,pulses.Length); }
                 Release();
                 if(!eligible || CockpitControls.MenuOpen || CockpitControls.Adjusting)
                 { Array.Clear(pendingAnalog,0,pendingAnalog.Length); Array.Clear(sentAnalog,0,sentAnalog.Length); return; }
@@ -116,6 +120,13 @@ namespace SpaceEngineersVR.Cockpits
             }
             catch(Exception ex) { Fail(ex); }
         }
+        private static void LetGoOfHeld()
+        {
+            for(int i=0;i<heldAnalog.Length;i++)
+                if(heldAnalog[i] && CockpitActions.LetGoOnLeaving(i))
+                    Log.Info($"ColbyCockpit: throttle lever {i+1} was in the hand as the seat was left; it springs back to zero thrust");
+            Array.Clear(heldAnalog,0,heldAnalog.Length);
+        }
         /// <summary>Once per input frame (VRControls), after CockpitTouch.BeginFrame.</summary>
         public static void Update()
         {
@@ -140,6 +151,13 @@ namespace SpaceEngineersVR.Cockpits
                     if(target.Analog && CockpitActions.ReadAnalog(i,out _,out _))
                     {
                         if(input.Held>=0 && input.Position.HasValue && (!sentAnalog[i].HasValue || Math.Abs(input.Position.Value-sentAnalog[i].Value)>.0001f)) pendingAnalog[i]=input.Position.Value;
+                        // A throttle lever let go springs back to zero thrust, as a sprung throttle does (unless set to stay, Levers page).
+                        if(input.Held<0 && heldAnalog[i] && CockpitActions.SpringsBack(i))
+                        {
+                            pendingAnalog[i]=0f;
+                            Log.Info($"ColbyCockpit: throttle lever {i+1} let go; it springs back to zero thrust");
+                        }
+                        heldAnalog[i]=input.Held>=0;
                         if(pendingAnalog[i].HasValue && (input.Held<0 || CockpitTouch.Now>=nextAnalogSend[i]))
                         {
                             CockpitActions.SetAnalog(i,pendingAnalog[i].Value);
@@ -168,7 +186,8 @@ namespace SpaceEngineersVR.Cockpits
                     float target=input.Position ?? state;
                     if(input.Position.HasValue && CockpitRig.Find(subtype)?.LeverAt(i)!=null)
                         target=MathHelper.Lerp(state,target,.65f);
-                    positions[i]=numeric ? target:positions[i]+MathHelper.Clamp(target-positions[i],-step,step);
+                    // A handle in the hand is where the hand has it; let go, it travels to its block's value (a throttle lever back to zero) as a switch does.
+                    positions[i]=numeric && input.Position.HasValue ? target:positions[i]+MathHelper.Clamp(target-positions[i],-step,step);
                 }
             }
             catch(Exception ex) { Fail(ex); }

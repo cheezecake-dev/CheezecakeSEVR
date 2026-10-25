@@ -30,8 +30,8 @@ namespace SpaceEngineersVR.Hands
     {
         internal enum Place { None, Grip, Magazine }
 
-        /// <summary>The zone already hovered keeps a 20% larger reach.</summary>
-        internal const float Hysteresis = 1.2f;
+        /// <summary>The zone already hovered keeps a larger reach (<see cref="GrabTolerance.Held"/>), for the tick and for the grip that follows it.</summary>
+        internal const float Hysteresis = (float)GrabTolerance.Held;
 
         /// <summary>Coming into a zone: the lightest tick on the other hand, at most this often.</summary>
         public const float HoverAmplitude = 0.12f, HoverSeconds = 0.012f;
@@ -44,6 +44,9 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>The zone the other hand hovers in now, on <see cref="CurrentOf"/>; set each frame by <see cref="Update"/>.</summary>
         internal static Place Current => current;
+
+        /// <summary>From the other hand to the front grip at the last <see cref="At"/>, metres (infinite: no front grip), for the log.</summary>
+        internal static double LastToGrip { get; private set; } = double.PositiveInfinity;
 
         /// <summary>The item <see cref="Current"/> is a zone of.</summary>
         internal static MyEntity CurrentOf => currentOf;
@@ -61,11 +64,38 @@ namespace SpaceEngineersVR.Hands
             double toGrip = item != null && VRSettings.TwoHandedTools && !TwoHand.Off && TwoHand.GameHasLeftHand(item)
                 ? Vector3D.Distance(off, Vector3D.Transform((Vector3D)ItemSpots.OtherGrasp(item), weapon.WorldMatrix))
                 : double.PositiveInfinity;
+            LastToGrip = toGrip;
             if (magazine && (pistol || toMagazine < toGrip))
                 return Place.Magazine;
-            if (toGrip < TwoHand.GrabReach * (was == Place.Grip ? Hysteresis : 1f))
+            if (toGrip < TwoHand.GrabReach * (was == Place.Grip ? Hysteresis : 1f)
+                || (!double.IsInfinity(toGrip) && OnBody(weapon, item, off, was == Place.Grip)))
                 return Place.Grip;
             return magazine ? Place.Magazine : Place.None;
+        }
+
+        /// <summary>A hand on the held item's own model, this far round its box, metres (more once there, <see cref="Hysteresis"/>).</summary>
+        internal const double BodyReach = 0.03;
+
+        /// <summary>The model counts from this far ahead of where the tool hand holds it, metres: a hand by the tool hand is not on the front.</summary>
+        internal const double BodyAhead = 0.08;
+
+        /// <summary>
+        /// The other hand is on the front of the held item's own model (its box), ahead of the tool hand: a hand put on a drill's
+        /// body or a grinder's head is on the tool, wherever the game's LeftHand spot sits on it (the drill's is a side
+        /// handle 23 cm off its axis), and the hold then settles the hand onto that spot as the game has it.
+        /// </summary>
+        private static bool OnBody(MyEntity weapon, MyHandItemDefinition item, Vector3D off, bool already)
+        {
+            if (weapon?.PositionComp == null || item == null)
+                return false;
+            BoundingBox box = weapon.PositionComp.LocalAABB;
+            if (!(box.Size.LengthSquared() > 1e-6))
+                return false;
+            Vector3D local = Vector3D.Transform(off, weapon.PositionComp.WorldMatrixNormalizedInv);
+            double grow = BodyReach * (already ? Hysteresis : 1f);
+            box.Inflate((float)grow);
+            // Forward is -Z in the item's space.
+            return box.Contains((Vector3)local) == ContainmentType.Contains && local.Z < ItemSpots.ToolGrasp(item).Z - BodyAhead;
         }
 
         /// <summary>

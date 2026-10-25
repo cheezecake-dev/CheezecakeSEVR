@@ -39,6 +39,15 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The panel is never brought closer to the eyes than this (metres) by the lift, however near the hand is held.</summary>
         public const float WristNearest = 0.25f;
 
+        /// <summary>
+        /// The farthest the panel on the wrist stands from the eyes, metres: the hand at the arm's length the game's reach has
+        /// (<see cref="Hands.Reach.ArmLength"/>, from the head), the wrist <see cref="WristFromPalm"/> back from the grip, and the
+        /// panel's middle <see cref="WristLift"/> (grown with the width setting, as <see cref="WristPose"/> does) toward the eyes.
+        /// What a text on the panel has to be legible from.
+        /// </summary>
+        public static float WristReadingMetres(float panelWidth) =>
+            Math.Max(WristNearest, (float)Hands.Reach.ArmLength - WristFromPalm - WristLift * panelWidth / WristWidth);
+
         /// <summary>Debug: menus are head-locked like the HUD (<see cref="RenderDebug"/> WorldMenu=0).</summary>
         public static bool Off { get; set; }
 
@@ -54,13 +63,10 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         private static volatile WheelAtHand wheel;
 
-        private static bool placed, onWrist, onPad;
+        private static bool placed, onWrist;
 
         /// <summary>Render thread: the wheel the panel is at the hand for this frame; null when it is not at a hand.</summary>
         private static WheelAtHand onWheel;
-
-        /// <summary>Render thread: the panel is on the datapad this frame (<see cref="Locked(in Matrix, out Matrix, out float)"/> put it there).</summary>
-        internal static bool OnPad => onPad;
 
         /// <summary>
         /// Where the head was and which way it faced (along the horizon) when the menu opened. The panel stands
@@ -84,9 +90,11 @@ namespace SpaceEngineersVR.Rendering
                 MyGuiScreenBase focus = MyScreenManager.GetScreenWithFocus();
                 open = focus != null && !(focus is MyGuiScreenGamePlay);
                 wrist = open && focus is QuickActionsScreen;
+                PanelScreens.Track(focus);
                 wheel = !open ? null
                     : focus is ActionsWheelScreen ? ActionsWheel.Panel
                     : focus is SlotWheelScreen ? SlotWheelScreen.Panel
+                    : (PanelScreens.Of(focus) & Api.PanelScreenOptions.AtHand) != 0 ? PanelScreens.Panel
                     : null;
             }
             catch (Exception e)
@@ -113,26 +121,13 @@ namespace SpaceEngineersVR.Rendering
             width = 0f;
             if (Off || !open)
             {
-                if (placed || onWrist || onWheel != null || onPad)
+                if (placed || onWrist || onWheel != null)
                     Log.Info("Menu closed; the panel is a visor again");
-                placed = onWrist = onPad = false;
+                placed = onWrist = false;
                 onWheel = null;
                 panel = default;
                 return false;
             }
-
-            // The datapad, while it is out: whatever screen has the focus (its own, the keyboard, the terminal) is on it.
-            if (Hands.Datapad.TryGetPanel(head, out panel, out float padWidth))
-            {
-                if (!onPad)
-                    Log.Info("Menu opened on the datapad; the panel is posed to the pad");
-                onPad = true;
-                placed = onWrist = false;
-                onWheel = null;
-                width = padWidth;
-                return true;
-            }
-            onPad = false;
 
             // A wheel the hand opened (the tools wheel, the actions wheel): where the hand was when it opened, facing the head
             // as it was then, fixed until it closes.
@@ -142,7 +137,7 @@ namespace SpaceEngineersVR.Rendering
                 if (onWheel != atHand)
                 {
                     Vector3 at = panel.Translation;
-                    string name = atHand == ActionsWheel.Panel ? "the actions wheel" : "the tools wheel";
+                    string name = atHand == ActionsWheel.Panel ? "the actions wheel" : atHand == PanelScreens.Panel ? "a registered screen at the hand" : "the tools wheel";
                     Log.Info($"Menu opened as {name}; panel {WheelAtHand.Width} m wide, fixed at the hand ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}) in the tracking space");
                 }
                 onWheel = atHand;
@@ -183,7 +178,7 @@ namespace SpaceEngineersVR.Rendering
         {
             from = anchor;
             along = ahead;
-            return placed && !onWrist && onWheel == null && !onPad && !Off;
+            return placed && !onWrist && onWheel == null && !Off;
         }
 
         /// <summary>

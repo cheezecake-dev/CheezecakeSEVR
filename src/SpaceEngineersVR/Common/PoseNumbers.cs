@@ -5,8 +5,7 @@ namespace SpaceEngineersVR.Common
 {
     /// <summary>
     /// A pose (a position and a turn, no scale) as seven numbers, the position x, y, z in metres and the turn as a quaternion
-    /// x, y, z, w: how the hidden settings keep a place something was moved to by hand (the external view's screen, the
-    /// datapad's spot in a cockpit).
+    /// x, y, z, w: how the hidden settings keep a place something was moved to by hand (the external view's screen).
     /// </summary>
     internal static class PoseNumbers
     {

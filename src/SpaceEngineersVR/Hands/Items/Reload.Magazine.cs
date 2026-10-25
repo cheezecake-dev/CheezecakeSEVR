@@ -44,9 +44,13 @@ namespace SpaceEngineersVR.Hands
     /// models, so the one in the hand is the one that seats.</para>
     /// <para>The pouch: the astronaut's hip on the other hand's side (<see cref="TryHip"/>), within <see cref="HipReach"/>; or, so a
     /// player sitting down, whose lap is in the way of that hip, reaches it too, anywhere <see cref="PouchBelowEyes"/> or more
-    /// below the eyes and not at the weapon (its magazine or its front grip). The trigger, not the grip, takes it: the other
-    /// hand's trigger does nothing else while a hand weapon is held, so a pull that misses costs nothing, where a grip that
-    /// missed opened the tools wheel.</para>
+    /// below the eyes and not at the weapon (its magazine or its front grip). The trigger takes it anywhere there; the grip
+    /// only at the hip, as it is also the hand's grab of hulls, ladders, items and the helmet, whose places can be below the
+    /// eyes. Either held keeps it in the hand, whose fingers close round it (<see cref="HoldsMagazine"/>). The grip is claimed
+    /// only at the hip and while a magazine is held (<see cref="PouchGripName"/>), so a grip elsewhere still grabs or opens
+    /// the tools wheel; the trigger does nothing else while a hand weapon is held, so a pull that misses costs nothing.</para>
+    /// <para>The magazine in the hand is the well's own model (the subpart that seats), drawn in the drawn fist
+    /// (<see cref="HandDrawn"/>); near the well it is drawn lining up with it (<see cref="Guided"/>).</para>
     /// <para>The sound: each weapon has one reload cue (its ReloadSoundName; there is no separate magazine out or in), which the
     /// game plays as its reload starts (MyCharacter.PlayReloadAnimation). For a physical reload it is held back there and played
     /// as the magazine seats, on this machine; other players hear it at the start, as they see the game's animation.</para>
@@ -70,14 +74,38 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The other hand's trigger, pulled at the pouch: a magazine in the hand while it is held.</summary>
         private static readonly Pull pouchPull = new Pull();
 
-        /// <summary>The magazine's top this close to the line it slides in along seats it (metres, across the line).</summary>
-        internal const double SeatReach = 0.05;
+        /// <summary>
+        /// The magazine's top this close to the line it slides in along seats it (metres, across the line): generous, the
+        /// player cannot see under the weapon, and the guide (<see cref="GuideReach"/>) has lined the drawn magazine up already.
+        /// </summary>
+        internal const double SeatReach = 0.07;
 
-        /// <summary>The magazine at most this far off the well's axis seats (degrees).</summary>
-        internal const double SeatCone = 35.0;
+        /// <summary>The magazine at most this far off the well's axis seats (degrees): a fist held as it comes up under the weapon, not pointed straight up.</summary>
+        internal const double SeatCone = 55.0;
 
         /// <summary>How far below the seated place the line it slides in along starts: this share of the magazine's length.</summary>
         private const double SeatDepth = 1.0;
+
+        /// <summary>
+        /// The guide: a magazine in the hand whose top is within this of the well's line (metres), from <see cref="GuideDepth"/>
+        /// lengths below its seated place, and within <see cref="GuideCone"/> of its axis, is drawn turned and moved toward the
+        /// well, more the nearer it is, up to <see cref="GuideShare"/> of the way: it is seen lining up before it seats.
+        /// </summary>
+        internal const double GuideReach = 0.16, GuideCone = 80.0, GuideDepth = 2.0;
+
+        private const float GuideShare = 0.5f;
+
+        /// <summary>The magazine entering the guide: a light tick on the other hand.</summary>
+        public const float GuideAmplitude = 0.12f, GuideSeconds = 0.015f;
+
+        /// <summary>The other hand's fingers closed round a magazine it holds, as a share of closed round the controller's handle (fingers, thumb).</summary>
+        internal const float MagazineCurl = 0.8f, MagazineThumb = 0.85f;
+
+        /// <summary>The name the other hand's grip is claimed under at the hip, and while it holds a magazine (<see cref="GripClaim"/>).</summary>
+        public const string PouchGripName = "Reload pouch";
+
+        /// <summary>Asked after the reload at the magazine (6).</summary>
+        public const int PouchGripPriority = 7;
 
         /// <summary>Where the fist holds the magazine: this share of its length from its bottom.</summary>
         private const float HoldAt = 0.35f;
@@ -87,9 +115,6 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>A dropped magazine: out of the well at this speed (m/s), turning this fast (rad/s), gone after this long, fading over the last part (seconds).</summary>
         private const double DropSpeed = 0.8, DropSpin = 3.0, DropSeconds = 1.0, DropFade = 0.35;
-
-        /// <summary>A hand magazine as long as this many times the well's own is not drawn in the hand (the rocket launchers' item is a whole rocket); the well's model is.</summary>
-        private const float HandModelLongest = 1.5f;
 
         /// <summary>A magazine taken: a tick on the other hand. None to take: two lighter ones this far apart.</summary>
         public const float TakeAmplitude = 0.35f, TakeSeconds = 0.025f;
@@ -211,6 +236,7 @@ namespace SpaceEngineersVR.Hands
             {
                 Log.Error(e, "Reload: the game's reload of a magazine fired empty could not be held back; it drops by itself");
             }
+            GripClaim.Register(PouchGripName, PouchGripPriority, hand => hand == TwoHand.OffHand && (inHand || TakeMagazine(hand, "grip closed", hipOnly: true)));
             try
             {
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), "RealignMagazineWithHand"),
@@ -386,8 +412,9 @@ namespace SpaceEngineersVR.Hands
 
             MyAutomaticRifleGun rifle = gun as MyAutomaticRifleGun;
             // A pull that dropped the magazine (the reload gesture, at the well) is not one at the pouch.
-            pouchPull.Update(OffTrigger, () => !magazinePull.Held && TakeMagazine(off));
-            bool hip = pouchPull.Held;
+            // The trigger takes one at the pouch, or the grip (claimed there, GripClaim); either held keeps it.
+            pouchPull.Update(OffTrigger, () => !magazinePull.Held && (inHand || TakeMagazine(off, "trigger pulled")));
+            bool hip = pouchPull.Held || GripClaim.Holds(off, PouchGripName);
             if (hip && !hipHeld)
                 HipTaken(character, rifle);
             else if (!hip && hipHeld)
@@ -468,10 +495,16 @@ namespace SpaceEngineersVR.Hands
                     handVelocity = (held.Translation - lastHandPos) / dt;
                 lastHandPos = held.Translation;
                 lastHandAt = now;
-                Shapes.Hand(held);
+                MatrixD drawn = Guided(rifle, hasWell, held, out bool guiding);
+                if (guiding && !guided)
+                    Haptics.Pulse(TwoHand.OffHand, GuideAmplitude, GuideSeconds);
+                guided = guiding;
+                Shapes.Hand(drawn);
                 if (well == Well.Out && hasWell && rifle.IsReloading && Seats(rifle, held, out double across, out double angle))
-                    Seat(character, rifle, held, across, angle);
+                    Seat(character, rifle, drawn, across, angle);
             }
+            else
+                guided = false;
 
             if (well == Well.Seating && hasWell)
             {
@@ -498,10 +531,10 @@ namespace SpaceEngineersVR.Hands
         // ---- The hip ----
 
         /// <summary>
-        /// A trigger pull has just started: it takes a magazine when it is the other hand at its pouch (<see cref="AtPouch"/>) while
-        /// the held weapon's well waits for one.
+        /// A trigger pull or a grip has just started: it takes a magazine when it is the other hand at its pouch (<see cref="AtPouch"/>,
+        /// or with <paramref name="hipOnly"/> at its hip, <see cref="AtHip"/>) while the held weapon's well waits for one.
         /// </summary>
-        private static bool TakeMagazine(Hand hand)
+        private static bool TakeMagazine(Hand hand, string what, bool hipOnly = false)
         {
             if (!PhysicalOn || well != Well.Out)
                 return false;
@@ -509,9 +542,10 @@ namespace SpaceEngineersVR.Hands
             if (!HandTools.IsLocalOnFoot(character) || !(MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay)
                 || !(character.CurrentWeapon is MyAutomaticRifleGun rifle) || !ReferenceEquals(rifle, wellGun) || rifle.Closed || rifle.GunBase == null || !rifle.GunBase.HasAmmoMagazines)
                 return false;
-            if (AtPouch(character, rifle, hand, out string where))
+            string where;
+            if (hipOnly ? AtHip(character, hand, out where) : AtPouch(character, rifle, hand, out where))
                 return true;
-            Note($"Reload: {hand} trigger pulled {where}: not at the pouch");
+            Note($"Reload: {hand} {what} {where}: not at the pouch");
             return false;
         }
 
@@ -521,18 +555,25 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         private static bool AtPouch(MyCharacter character, MyAutomaticRifleGun rifle, Hand hand, out string where)
         {
+            if (AtHip(character, hand, out where))
+                return true;
+            if (!HandWorld.TryGetNow(character, hand, out MatrixD grip, out _, out _) || !TryBelowEyes(character, hand, out double below))
+                return false;
+            bool atWeapon = TryZone(rifle, character.HandItemDefinition, out Zone zone) && Distance(zone, grip.Translation) <= zone.Reach
+                            || LeftGap(character.HandItemDefinition, rifle, grip.Translation) <= TwoHand.GrabReach;
+            where = $"{where}, {below * 100:0} cm below the eyes{(atWeapon ? ", at the weapon" : string.Empty)}";
+            return below >= PouchBelowEyes && !atWeapon;
+        }
+
+        /// <summary>The other hand is within <see cref="HipReach"/> of its hip. <paramref name="where"/> says how far, for the log.</summary>
+        private static bool AtHip(MyCharacter character, Hand hand, out string where)
+        {
             where = "with the hand untracked";
             if (!HandWorld.TryGetNow(character, hand, out MatrixD grip, out _, out _) || !TryHip(character, hand, out Vector3D hip))
                 return false;
             double toHip = Vector3D.Distance(grip.Translation, hip);
-            if (toHip <= HipReach)
-                return true;
-            if (!TryBelowEyes(character, hand, out double below))
-                return false;
-            bool atWeapon = TryZone(rifle, character.HandItemDefinition, out Zone zone) && Distance(zone, grip.Translation) <= zone.Reach
-                            || LeftGap(character.HandItemDefinition, rifle, grip.Translation) <= TwoHand.GrabReach;
-            where = $"{toHip * 100:0} cm from the hip, {below * 100:0} cm below the eyes{(atWeapon ? ", at the weapon" : string.Empty)}";
-            return below >= PouchBelowEyes && !atWeapon;
+            where = $"{toHip * 100:0} cm from the hip";
+            return toHip <= HipReach;
         }
 
         /// <summary>How far below the eyes the hand is, metres, along the body's up: the tracked head and hand, placed on the body as the arms are.</summary>
@@ -570,6 +611,8 @@ namespace SpaceEngineersVR.Hands
             lastHandAt = 0;
             handVelocity = Vector3D.Zero;
             Shapes.TakeInHand(model);
+            drawnNoted = false;
+            guided = false;
             Haptics.Pulse(off, TakeAmplitude, TakeSeconds);
             string seat = SeatPlace(character, rifle);
             Log.Info($"Reload: {off} hand took a {rifle.GunBase.CurrentAmmoMagazineDefinition?.Id.SubtypeName ?? "magazine"} from the pouch ({why}; {AmmoState(rifle)})" +
@@ -638,29 +681,25 @@ namespace SpaceEngineersVR.Hands
         private static string WellModel(MyAutomaticRifleGun rifle) => TryWell(rifle, out _, out _, out string model) ? model : null;
 
         /// <summary>
-        /// The magazine drawn in the hand: the ammo magazine item's own model (the weapons' wells use the same models), unless
-        /// that is much bigger than the well's magazine (a rocket for the launchers), then the well's.
+        /// The magazine drawn in the hand: the well's own (the weapon's magazine subpart's model), so the one in the hand is the
+        /// one that seats, in the well's own frame (its up the way it goes in), and the slide into the well never changes model.
+        /// The ammo item's model is often the same (the MR-20's is, measured 2026-10-20) but need not be (the launchers' is a
+        /// whole rocket); <paramref name="why"/> says how the two compare, for the log.
         /// </summary>
         private static string HandModel(MyAutomaticRifleGun rifle, out string why)
         {
-            string wellModel = TryWell(rifle, out _, out BoundingBox wellBox, out string m) ? m : null;
+            why = "no well";
+            if (!TryWell(rifle, out _, out BoundingBox wellBox, out string wellModel))
+                return null;
             string item = rifle.GunBase?.CurrentAmmoMagazineDefinition?.Model;
-            why = "the well's model";
-            if (string.IsNullOrEmpty(item))
-                return wellModel;
-            BoundingBox? itemBox = Shapes.ModelBox(item);
-            if (itemBox == null)
-                return wellModel;
-            if (wellModel != null && Longest(itemBox.Value) > Longest(wellBox) * HandModelLongest)
-            {
-                why = $"the item's model is {Longest(itemBox.Value) * 100:0} cm long, the well's {Longest(wellBox) * 100:0} cm: the well's drawn";
-                return wellModel;
-            }
-            why = "the item's model";
-            return item;
+            BoundingBox? itemBox = string.IsNullOrEmpty(item) ? null : Shapes.ModelBox(item);
+            why = $"the well's model {Size(wellBox)}" + (item == null ? string.Empty
+                : string.Equals(item, wellModel, StringComparison.OrdinalIgnoreCase) ? ", the item's too"
+                : $"; the item's is {item}{(itemBox != null ? " " + Size(itemBox.Value) : string.Empty)}");
+            return wellModel;
         }
 
-        private static float Longest(in BoundingBox box) => Math.Max(box.Size.X, Math.Max(box.Size.Y, box.Size.Z));
+        private static string Size(in BoundingBox box) => $"{box.Size.X * 100:0.0} x {box.Size.Y * 100:0.0} x {box.Size.Z * 100:0.0} cm";
 
         /// <summary>
         /// The magazine in the fist: its top (the end that goes into the well, its own up) out of the top of the fist along the
@@ -673,6 +712,79 @@ namespace SpaceEngineersVR.Hands
             Vector3 holdPoint = box.Center + Vector3.Up * (box.Size.Y * (HoldAt - 0.5f));
             turn.Translation = grip.Translation - Vector3D.TransformNormal((Vector3D)holdPoint, turn);
             return turn;
+        }
+
+        /// <summary>The magazine in the hand is near enough the well for <see cref="Guided"/> to draw it lining up: for the tick as it starts.</summary>
+        private static bool guided;
+
+        /// <summary>The drawn fist's place against the controller's logged once per magazine taken.</summary>
+        private static bool drawnNoted;
+
+        /// <summary>
+        /// Where the magazine in the hand is drawn: at <paramref name="held"/> (in the fist), or near the well (its top within
+        /// <see cref="GuideReach"/> of the well's line and the magazine within <see cref="GuideCone"/> of its axis) moved and turned
+        /// part way to the well's line and axis, more the nearer and straighter it is, up to <see cref="GuideShare"/>.
+        /// </summary>
+        private static MatrixD Guided(MyAutomaticRifleGun rifle, bool hasWell, in MatrixD held, out bool guiding)
+        {
+            guiding = false;
+            if (well != Well.Out || !hasWell || !rifle.IsReloading || !TryWell(rifle, out MatrixD rest, out BoundingBox wellBox, out _))
+                return held;
+            Vector3D axis = Vector3D.Normalize(rest.Up);
+            double angle = MathHelper.ToDegrees(Math.Acos(MathHelper.Clamp(Vector3D.Dot(Vector3D.Normalize(held.Up), axis), -1.0, 1.0)));
+            if (angle > GuideCone)
+                return held;
+            BoundingBox box = Shapes.HandBox;
+            Vector3 topLocal = box.Center + Vector3.Up * box.Size.Y * 0.5f;
+            Vector3D top = Vector3D.Transform((Vector3D)topLocal, held);
+            Vector3D seated = Vector3D.Transform((Vector3D)(wellBox.Center + Vector3.Up * wellBox.Size.Y * 0.5f), rest);
+            double along = Vector3D.Dot(top - seated, axis);
+            if (along < -GuideDepth * wellBox.Size.Y)
+                return held;
+            double onLine = Math.Min(along, 0.0);
+            double across = Vector3D.Distance(top, seated + axis * onLine);
+            if (across > GuideReach)
+                return held;
+            double share = (1.0 - MathHelper.Clamp((across - SeatReach * 0.5) / (GuideReach - SeatReach * 0.5), 0.0, 1.0))
+                           * (1.0 - MathHelper.Clamp((angle - SeatCone) / (GuideCone - SeatCone), 0.0, 1.0));
+            if (share <= 0.0)
+                return held;
+            guiding = true;
+            MatrixD target = MatrixD.CreateWorld(Vector3D.Zero, Vector3D.Normalize(rest.Forward), axis);
+            target.Translation = seated + axis * onLine - Vector3D.TransformNormal((Vector3D)topLocal, target);
+            MatrixD toLocal = rifle.PositionComp.WorldMatrixNormalizedInv;
+            return (MatrixD)Slide((Matrix)(held * toLocal), (Matrix)(target * toLocal), (float)share * GuideShare) * rifle.WorldMatrix;
+        }
+
+        /// <summary>The other hand holds a magazine (taken from the pouch, or sliding into the well): its fingers close round it (<see cref="HandIK"/>).</summary>
+        internal static bool HoldsMagazine(Hand hand) => hand == TwoHand.OffHand && hooked && guard.On && (inHand || well == Well.Seating);
+
+        /// <summary>
+        /// Game thread, from <see cref="HandIK"/> once the other arm is solved: the magazine in the hand drawn in the drawn fist,
+        /// <paramref name="drawnGrip"/> the controller's grip pose the drawn palm stands for, in the world. The drawn hand is where
+        /// the controller is unless the arm is out of reach or the hand is stopped on something.
+        /// </summary>
+        internal static void HandDrawn(MyCharacter character, in MatrixD drawnGrip)
+        {
+            if (!inHand || !guard.On)
+                return;
+            try
+            {
+                MyAutomaticRifleGun rifle = wellGun ?? character.CurrentWeapon as MyAutomaticRifleGun;
+                bool hasWell = rifle != null && !rifle.Closed && TryWell(rifle, out _, out _, out _);
+                MatrixD held = HeldMagazine(drawnGrip);
+                if (!drawnNoted && lastHandAt != 0)
+                {
+                    drawnNoted = true;
+                    Log.Info($"Reload: the magazine is drawn in the drawn fist, {Vector3D.Distance(held.Translation, lastHandPos) * 100:0.0} cm from the controller's; the fingers closed round it");
+                }
+                Shapes.Hand(Guided(rifle, hasWell, held, out _));
+            }
+            catch (Exception e)
+            {
+                ResetMagazine("placing the magazine in the hand failed");
+                guard.Failed(e, "Reload: the magazine could not be placed in the hand");
+            }
         }
 
         /// <summary>The other hand's grip that holds the magazine (<see cref="HeldMagazine"/>) on the well's axis with its top at home: where it seats.</summary>
@@ -717,6 +829,7 @@ namespace SpaceEngineersVR.Hands
                 // The inventory emptied while the magazine was in the hand: it was never one to load.
                 inHand = false;
                 pouchPull.Release();
+                GripClaim.Release(TwoHand.OffHand, PouchGripName);
                 Shapes.DropFromHand(Vector3D.Zero);
                 Haptics.Pulse(off, NoneAmplitude, NoneSeconds);
                 noneTickAt = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(NoneGap * Second);
@@ -728,6 +841,7 @@ namespace SpaceEngineersVR.Hands
             inHand = false;
             hipHeld = false;
             pouchPull.Release();
+            GripClaim.Release(TwoHand.OffHand, PouchGripName);
             slideFrom = (Matrix)(held * rifle.PositionComp.WorldMatrixNormalizedInv);
             slideAt = now;
             noRealignUntil = now + (long)((rifle.GetReloadDuration() + 0.5) * Second);
@@ -795,6 +909,7 @@ namespace SpaceEngineersVR.Hands
             {
                 inHand = false;
                 pouchPull.Release();
+                GripClaim.Release(TwoHand.OffHand, PouchGripName);
                 Shapes.DropFromHand(Vector3D.Zero);
             }
             MyAutomaticRifleGun rifle = wellGun;

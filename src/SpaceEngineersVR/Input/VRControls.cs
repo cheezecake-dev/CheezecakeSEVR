@@ -7,6 +7,7 @@ using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Gui;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Tracking;
 using VRage.Utils;
 using VRageMath;
@@ -38,8 +39,6 @@ namespace SpaceEngineersVR.Input
         /// <summary>Debug: the hands do nothing to the game (<see cref="Rendering.RenderDebug"/> VRInput=0).</summary>
         public static bool Off { get; set; }
 
-        /// <summary>How long Y has to be held before it leaves the seat (or the camera), so a tap cannot eject you.</summary>
-        public const double UseHoldSeconds = 0.5;
 
         private const float StickPress = 0.6f, StickRelease = 0.3f;
         private const float FlickPress = 0.7f, FlickRelease = 0.3f;
@@ -47,13 +46,8 @@ namespace SpaceEngineersVR.Input
         /// <summary>Longest time one frame's smooth turn is worked out for, seconds, so a stall (a loading screen) is not one huge turn after it.</summary>
         private const double MaxSmoothTurnStep = 0.1;
 
-        // A trigger pulled on a radial menu that is not the toolbar wheel (the actions wheel, which is a menu with the focus
-        // and so does not own the hands): it is not a shot, a use or a thrust, however long it stays down after the wheel has
-        // closed; it counts again only after it has been let go (SwallowTrigger).
-        private static readonly bool[] triggerSwallowed = new bool[2];
-
-        // This frame's and the last frame's actions held, as bits. The edges are taken from these rather than from
-        // VRInput's buttons because jump is a button or a stick direction, and the stick has no edges of its own.
+        // This frame's and the last frame's actions held, as bits. The edges are taken from these rather than from the
+        // bindings because jump is a button or a stick direction, and the stick has no edges of its own.
         private static int now, before;
         private static Vector2 leftStick, rightStick;
         private static bool jumpButton;
@@ -97,6 +91,16 @@ namespace SpaceEngineersVR.Input
         private static float zeroGPitch, zeroGRoll, zeroGLevel;
         private static int zeroGPitchLogged, zeroGRollLogged;
 
+        // Zero-g pitch and roll kept on by a tap (UpdateZeroGLock): kept on now, the click last frame, when this press began, the
+        // right stick used during it, and a press that turns the keeping off (so its release does not turn it on again).
+        private static bool zeroGLocked, zeroGClickWas, zeroGStickUsed, zeroGPressEnds;
+        private static double zeroGDownAt;
+
+        /// <summary>A left stick click let go within this, seconds, is a tap that keeps zero-g pitch and roll on.</summary>
+        private const double ZeroGTapSeconds = 0.35;
+
+        private const float ZeroGLockAmplitude = 0.25f, ZeroGLockSeconds = 0.03f;
+
         /// <summary>Gravity at or below this (m/s², squared) is zero g: the game's own line, below which it does not stand the body up (MyCharacter.UpdateStandup).</summary>
         internal const float ZeroGSquared = 0.1f;
 
@@ -132,21 +136,11 @@ namespace SpaceEngineersVR.Input
         /// <summary>The spectator camera turns by the rotation input times this times its angular speed, radians (MoveAndRotate_UserControlled).</summary>
         private const float SpectatorTurnPerUnit = 0.0025f;
 
-        // Y held, from the frame it was pressed in a seat or a camera view; the one frame it gets USE is when the hold completes.
-        private static double holdStart = -1d;
-        private static bool holdDone;
-
-        // B or Menu pressed in a menu: each is a Back only for a press that began while that menu had focus, and only for
-        // as long as the same screen does, so a button held from gameplay, or a press that closed one screen, is not read
-        // again by the screen underneath. The kinds of question the game was answered yes to are logged once (backAnswered).
-        private static bool backB, backMenu;
+        // Back (MenuBack) in a menu: a Back only for a press that began while that menu had focus, and only for as long as the
+        // same screen does, so a press that closed one screen is not read again by the screen underneath (one from gameplay
+        // is not a menu's at all: ControllerBindings). The kinds of question the game was answered yes to are logged once.
+        private static bool backHeld;
         private static object backScreen;
-
-        // The left Menu button (MenuButton): held MenuHoldSeconds it recentres the view, once a press; let go sooner it is a
-        // tap, given on the release to where the press began: the game menu from gameplay, Back in the menu that had focus.
-        private static double menuDown = -1d;
-        private static bool menuRecentred, menuTapped;
-        private static object menuBeganIn, menuBackIn;
         private static int backAnswered;
         private static string backAnsweredIn, loggedMenu;
         private static object menuNow;
@@ -187,7 +181,7 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>
         /// A seat's controls are what the hands drive this frame: the context is a seat, and no menu or toolbar wheel has the hands
-        /// (a menu's Back is B, so the Vive wand's pad must not turn into B there). Written on the game thread, read on the render
+        /// (the Vive wand's pad up and down are thrust there, not the stick). Written on the game thread, read on the render
         /// thread by <see cref="OpenXR.XrInput"/> for the right wand's pad (<see cref="OpenXR.WandLayout"/>), so it is volatile.
         /// </summary>
         internal static bool SeatDriven => seatDriven;
@@ -200,12 +194,14 @@ namespace SpaceEngineersVR.Input
         /// before the zero-g pass has run this frame): the colour tool's flick (<see cref="Hands.PaintMode"/>) leaves the right stick
         /// to the roll while it does.
         /// </summary>
-        internal static bool ZeroGHeld => ZeroGClick() && CanPitchAndRoll(out _);
+        internal static bool ZeroGHeld => (ZeroGClick() || zeroGLocked) && CanPitchAndRoll(out _);
 
-        /// <summary>The left stick click is down on the jetpack, outside a camera block's view, with zero-g pitch and roll not Off, not held to build (<see cref="Hands.BuildMode.Modifier"/>) and not taken for a withdraw (<see cref="Hands.QuickInventory.TakesLeftClick"/>).</summary>
+        /// <summary>The left stick click is down on the jetpack, outside a camera block's view, with zero-g pitch and roll not Off (the bindings' Pitch and roll, which building and a container in reach shadow).</summary>
         private static bool ZeroGClick() =>
-            context == VRContext.Jetpack && !cameraView && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff
-            && VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && !Hands.BuildMode.Modifier && !Hands.QuickInventory.TakesLeftClick;
+            context == VRContext.Jetpack && !cameraView && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff && On(VRAction.ZeroGTurn);
+
+        /// <summary>The action is on this frame, by the player's bindings (<see cref="ControllerBindings"/>).</summary>
+        private static bool On(VRAction action) => ControllerBindings.IsActive(action);
 
         /// <summary>
         /// Game thread, once per frame, right after <see cref="VRInput.Update"/>: works out which control set the
@@ -253,19 +249,14 @@ namespace SpaceEngineersVR.Input
                 cameraFlickArmed = true;
                 stickZoomIn = stickZoomOut = false;
                 loggedZoom = 0;
-                zeroGHeld = zeroGLatch = zeroGRefused = false;
+                zeroGHeld = zeroGLatch = zeroGRefused = zeroGLocked = zeroGClickWas = false;
                 zeroGPitchLogged = zeroGRollLogged = 0;
                 speedStepDirection = 0;
-                holdStart = -1d;
-                holdDone = false;
-                backB = backMenu = false;
+                backHeld = false;
                 backScreen = menuNow = null;
                 backAnswered = 0;
-                menuDown = -1d;
-                menuRecentred = menuTapped = false;
-                menuBeganIn = menuBackIn = null;
+                menuRecentred = false;
                 panelWalk = false;
-                triggerSwallowed[0] = triggerSwallowed[1] = false;
                 ControlHints.Update(false);
                 ToolbarWheel.Reset();
                 return;
@@ -306,7 +297,10 @@ namespace SpaceEngineersVR.Input
             {
                 bool cameraStick = CameraViewStick(menu != null, out float stickX);
                 if (IsSeated(context))
+                {
+                    zeroGLocked = zeroGClickWas = false;
                     UpdateSeated();
+                }
                 else
                 {
                     UpdateZeroG();
@@ -323,29 +317,24 @@ namespace SpaceEngineersVR.Input
             }
             if (!zoomAsked)
                 Zoom(false, false, zoomBy);
-            UpdateUseHold(seconds);
+            UpdateUseHold();
 
             menuNow = menu;
-            MenuButton(seconds, menuNow);
+            MenuButton(menuNow);
             panelWalk = WalksBesidePanel(menuNow, context, ToolbarWheel.Owns);
             UpdateBack(menuNow);
             ControlHints.Update(menuNow != null && !ToolbarWheel.Owns && !(menuNow is Gui.ActionsWheelScreen),
                 walking: menuNow == null && !ToolbarWheel.Owns && (context == VRContext.OnFoot || context == VRContext.Jetpack),
                 inventory: menuNow is MyGuiScreenTerminal && MyGuiScreenTerminal.GetCurrentScreen() == VRage.Game.ModAPI.MyTerminalPageEnum.Inventory,
-                container: Hands.QuickInventory.Ready);
+                container: Hands.QuickInventory.Ready,
+                seated: menuNow == null && !ToolbarWheel.Owns && context == VRContext.Ship);
             ControlHints.Cutscene(menuNow == null && Rendering.ForcedView.CutsceneSkippable());
+            // A menu's labels by the same rule as the bindings' place, so the tools wheel's own screen shows the wheel's controls.
+            Rendering.HandHints.Update(context, ScreenPlace.LabelsShowMenu(ControllerBindings.Focused(menuNow), ToolbarWheel.Owns), ToolbarWheel.Owns);
             LogBack();
             InputLog.Frame(seconds, WhereNow);
         }
 
-        /// <summary>The trigger is held and is the game's: not one swallowed by a radial menu (<see cref="SwallowTrigger"/>) and still down.</summary>
-        private static bool TriggerHeld(Hand hand)
-        {
-            bool down = VRInput.IsPressed(hand, VRButtons.Trigger);
-            if (!down)
-                triggerSwallowed[(int)hand] = false;
-            return down && !triggerSwallowed[(int)hand];
-        }
 
         private static void Set(Intent intent, bool held)
         {

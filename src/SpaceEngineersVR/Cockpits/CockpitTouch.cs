@@ -8,7 +8,8 @@
 // - his guards for features we have not got (his remote and third-person views, LCD bridges, floating windows, helmet HUD,
 //   weapon handling, flight settings window) are dropped; a hand on one of our screens (ScreenTouch) is not free;
 // - his seat panel target is not added: the seat panel's keys are a page of our quick menu (SeatPage);
-// - the hover labels (Labels, LabelPose) are not carried, nor his arm's palm region on handle bars (TryFreeBarGrip);
+// - the hover labels (Labels, LabelPose) are not carried, nor his TryFreeBarGrip; his palm region on handle bars is the
+//   controller's palm (CockpitHand.Palm), within BarGrabRadius of the bar;
 // - TryAttachment and TryBarPalm feed our HandIK through PalmTarget below (his TrackedArms.WristWorld's cockpit part);
 // - his TapHoldLevers is VRSettings.ColbyTapHoldLevers.
 using System;
@@ -164,15 +165,22 @@ namespace SpaceEngineersVR.Cockpits
         {
             InteractionInput.Read(Controller(i)).Consume();
         }
-        /// <summary>GripClaim's taker: a grip squeezed with the fingertip on a switch is the switch's (ahead of the sticks).</summary>
-        internal static bool Take(Hand hand) => VRSettings.ColbyCockpit && Hovering(hand);
+        /// <summary>
+        /// GripClaim's taker: a grip squeezed with the fingertip on a switch is the switch's (ahead of the sticks), unless the palm is
+        /// closed on a stick: a hand round a stick whose fingertip reaches a switch beside it takes the stick. A handle bar, taken by
+        /// the palm itself, still comes first; beside a stick the palm closed on, only when nearer the bar than the stick (<see cref="BarReach"/>).
+        /// </summary>
+        internal static bool Take(Hand hand) => VRSettings.ColbyCockpit && Hovering(hand) &&
+            (IsBar(hands[Index(hand)].Hover) || !CockpitControls.OnStick(hand));
+        private static bool IsBar(Target target) => target?.Analog==true && !target.Handle.Pinch;
         public static void Reset()
         {
             foreach(var h in hands) { h.Input.Reset(); h.Grace.Reset(); h.Target=h.Hover=null; h.HoverKey=-1; }
             LeftPointing=RightPointing=false; owner=null;
         }
         internal static Vector3 Compensate(Vector3 hand,Vector3 fit,Vector3 startFit) => hand-(fit-startFit);
-        internal const float BarGrabRadius=.045f;
+        /// <summary>A handle bar is taken with the palm this near its middle line, metres (as a stick is, CockpitControls.StickReach): a hand closing round it, or just short of it, has it.</summary>
+        internal const float BarGrabRadius=.06f;
         internal static bool NearBar(CockpitProbe finger,CockpitProbe? palm,out float distance,out Vector3 contact,float halfWidth=.06f,float radius=.0155f,float margin=0)
         {
             var bounds=new BoundingBox(new Vector3(-halfWidth,-radius,-2*radius),new Vector3(halfWidth,radius,0));
@@ -180,14 +188,28 @@ namespace SpaceEngineersVR.Cockpits
             float squared=finger.DistanceSquared(bounds,out contact);
             distance=(float)Math.Sqrt(squared);
             bool hit=squared<=CockpitProbe.Radius*CockpitProbe.Radius;
-            if(palm.HasValue)
-            {
-                var axis=new BoundingBox(new Vector3(-halfWidth,0,-radius),new Vector3(halfWidth,0,-radius));
-                float separation=(float)Math.Sqrt(palm.Value.DistanceSquared(axis,out var nearest));
-                if(separation<=BarGrabRadius+margin && (!hit || separation<distance))
-                { hit=true; distance=separation; contact=new Vector3(nearest.X,0,0); }
-            }
+            if(palm.HasValue && PalmOnBar(palm.Value,out float separation,out var nearest,halfWidth,radius,margin) && (!hit || separation<distance))
+            { hit=true; distance=separation; contact=nearest; }
             return hit;
+        }
+        /// <summary>The palm within <see cref="BarGrabRadius"/> of a bar's middle line: how far, and the nearest point on the line.</summary>
+        private static bool PalmOnBar(CockpitProbe palm,out float separation,out Vector3 contact,float halfWidth,float radius,float margin)
+        {
+            var axis=new BoundingBox(new Vector3(-halfWidth,0,-radius),new Vector3(halfWidth,0,-radius));
+            separation=(float)Math.Sqrt(palm.DistanceSquared(axis,out var nearest));
+            contact=new Vector3(nearest.X,0,0);
+            return separation<=BarGrabRadius+margin;
+        }
+        /// <summary>
+        /// <see cref="NearBar"/> for a hand whose palm may be closed on a stick, <paramref name="stickGap"/> from its grip
+        /// (float.MaxValue when not): then only the palm reaches a bar, and only one nearer it than the stick, so a bar beside
+        /// the stick neither takes the hand nor holds back its squeeze.
+        /// </summary>
+        private static bool BarReach(CockpitProbe finger,CockpitProbe? palm,float stickGap,out float distance,out Vector3 contact,float halfWidth,float radius,float margin=0)
+        {
+            if(stickGap==float.MaxValue) return NearBar(finger,palm,out distance,out contact,halfWidth,radius,margin);
+            distance=float.MaxValue; contact=Vector3.Zero;
+            return palm.HasValue && PalmOnBar(palm.Value,out distance,out contact,halfWidth,radius,margin) && distance<stickGap;
         }
         internal static int NearKey(SurfaceView s,CockpitProbe probe,out float distance,out Vector3 contact,float padding=.001f,float margin=0)
         {
@@ -269,7 +291,10 @@ namespace SpaceEngineersVR.Cockpits
                 var pointer=Pointer(hand,seat);
                 var probe=new CockpitProbe(pointer,hand==Hand.Left);
                 bool guarded=false;
-                bool hasPalm=false; CockpitProbe palmRegion=default(CockpitProbe);
+                // His palm region on handle bars: the hand's palm (CockpitHand.Palm), so a bar is taken by closing the hand round it, not only by the fingertip.
+                Vector3D palmWorld=Vector3D.Transform(CockpitHand.Palm(CockpitControls.HandLocal(hand)),seat.WorldMatrix);
+                bool hasPalm=palmWorld.IsValid(); CockpitProbe palmRegion=new CockpitProbe { Tip=palmWorld,Start=palmWorld,End=palmWorld };
+                float stickGap=CockpitControls.OnStick(hand) ? CockpitControls.StickGap(hand) : float.MaxValue;
                 Target chosen=null; int key=-1; float nearest=float.MaxValue; Vector3 chosenContact=Vector3.Zero;
                 foreach(var target in targets)
                 {
@@ -278,10 +303,10 @@ namespace SpaceEngineersVR.Cockpits
                     var localProbe=probe.Transform(MatrixD.Invert(s.Pose));
                     float distance; Vector3 contact;
                     if(target.Analog && !target.Handle.Pinch)
-                        guarded|=NearBar(localProbe,hasPalm ? (CockpitProbe?)palmRegion.Transform(MatrixD.Invert(s.Pose)):null,
+                        guarded|=BarReach(localProbe,hasPalm ? (CockpitProbe?)palmRegion.Transform(MatrixD.Invert(s.Pose)):null,stickGap,
                             out _,out _,target.Handle.HalfWidth,target.Handle.Radius,CockpitPanelGuard.Margin);
                     else guarded|=NearKey(s,localProbe,out _,out _,target.Pull ? .004f : .001f,CockpitPanelGuard.Margin)>=0;
-                    int candidate=target.Analog && !target.Handle.Pinch ? NearBar(localProbe,hasPalm ? (CockpitProbe?)palmRegion.Transform(MatrixD.Invert(s.Pose)):null,out distance,out contact,target.Handle.HalfWidth,target.Handle.Radius) ? 0:-1 :
+                    int candidate=target.Analog && !target.Handle.Pinch ? BarReach(localProbe,hasPalm ? (CockpitProbe?)palmRegion.Transform(MatrixD.Invert(s.Pose)):null,stickGap,out distance,out contact,target.Handle.HalfWidth,target.Handle.Radius) ? 0:-1 :
                         NearKey(s,localProbe,out distance,out contact,target.Pull ? .004f : .001f);
                     if(candidate<0) continue;
                     guarded=true;

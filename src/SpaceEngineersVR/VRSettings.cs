@@ -31,7 +31,7 @@ namespace SpaceEngineersVR
             tooltip: "The rate the headset's screen runs at. Runtime default leaves it as the headset has it; the others are the rates the headset offers, listed once VR is running. A saved rate the headset does not offer is replaced by the nearest it does; a headset whose runtime has no refresh-rate control ignores this. A lower rate gives the GPU more time for each frame. Takes effect at once while a game runs."));
 
         private static readonly FlagSetting dynamicResolution = Add(new FlagSetting("dynamicResolution", "Dynamic resolution", "Display", true,
-            tooltip: "Draw the eyes at a lower resolution, down to 70% each way, while the GPU cannot keep up with the headset; back up when it can. A frame the GPU misses is shown again, which can feel like judder."));
+            tooltip: "Draw the eyes at a lower resolution, down to 70% each way, while the GPU cannot keep up with the headset, and sharper, up to 125%, while it has plenty of time to spare. Turned on during play, it stays at or below 100% until the headset or the game is restarted. A frame the GPU misses is shown again, which can feel like judder."));
 
         private static readonly FlagSetting lensMask = Add(new FlagSetting("lensMask", "Lens mask", "Display", true,
             tooltip: "Skip lighting and shading the corners of each eye the headset's lenses never show (their shape comes from the headset's runtime), which saves GPU time. Those corners show black in the desktop window. Off draws every pixel."));
@@ -79,11 +79,8 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting visorWeather = Add(new FlagSetting("visorWeather", "Weather on the visor", "Display", true,
             tooltip: "Out in a planet's weather with your visor closed, rain spatters it and runs down in streaks, snow settles round its edges, and a dust or sand storm coats it in the storm's own colour. A roof, a room or a closed cockpit keeps it off. It stays on the glass until you wipe it, it dries or the rain washes it. Needs Helmet view."));
 
-        private static readonly FlagSetting visorMisting = Add(new FlagSetting("visorMisting", "Visor mists up indoors", "Display", true,
-            tooltip: "Come in from the freezing cold (space, or a frozen planet) into a warm room with your visor closed and the cold glass mists over, then clears over a few seconds as it warms. A wipe clears it sooner. Needs Helmet view."));
-
         private static readonly FlagSetting visorWipe = Add(new FlagSetting("visorWipe", "Wipe the visor", "Display", true,
-            tooltip: "Draw a fingertip across the outside of your visor to wipe away frost, mist, rain, snow or dust along its path, leaving clear trails you can draw with, as on a misted mirror. Your hand buzzes softly as it wipes. Off: the visor only clears by itself. Needs Helmet view."));
+            tooltip: "Draw a fingertip across the outside of your visor to wipe away frost, rain, snow or dust along its path, leaving clear trails you can draw with, as on a misted mirror. Your hand buzzes softly as it wipes. Off: the visor only clears by itself. Needs Helmet view."));
 
         private static readonly NumberSetting helmetAirVolume = Add(new NumberSetting("helmetAirVolume", "Helmet air", "Display",
             Rendering.HelmetAir.DefaultVolumePercent / 100f, 0f, 3f, 0.1f, unit: "%", decimals: 0, displayScale: 100f,
@@ -142,8 +139,10 @@ namespace SpaceEngineersVR
             tooltip: "The HUD's parts sit on your helmet's visor, with the middle of your view clear. With Helmet view on the HUD is projected onto the glass as one display curved round your head, laid out whole as the game lays it out: light on the glass that you see through, focused at the HUD distance so your eyes can rest on it, and swinging up with the glass when the helmet opens. With it off, each part moves out toward its own edge or corner, curves round your head and faces your eyes. Markers on things in the world (ore, antennas, target locks, the selection box) and the crosshair stay where they are. Off: the whole HUD on one flat panel ahead of you, as before. The distance and width under HUD set how far and how wide the visor is."));
         private static readonly FlagSetting showToolbarOnFoot = Add(new FlagSetting("showToolbarOnFoot", "Toolbar on the HUD", "Interface", false,
             tooltip: "The HUD's bottom toolbar (the hotbar, its page numbers, the Customize Toolbar and Color lines, and the plate behind them) on foot and on the jetpack. Off: left out there, since the tools wheel and the wrist panel do its job, and a short label names the tool you pick; in a seat, a camera view, the G menu and the terminal it is shown as the game shows it."));
+        private static readonly FlagSetting inventoryToolbarFlat = Add(new FlagSetting("inventoryToolbarFlat", "Inventory toolbar without a headset", "Interface", true,
+            tooltip: "Playing without a headset, the inventory screen shows the toolbar along its bottom, as it does in VR: drag a tool or gun from the inventory onto a slot with the mouse to put it there, or onto the selected slot to hold it. Off: the game's own inventory screen when there is no headset. In VR the toolbar is always there."));
         private static readonly FlagSetting controlHints = Add(new FlagSetting("controlHints", "Control hints", "Interface", true,
-            tooltip: "Short reminders on the HUD: \"B: back, right stick: scroll\" the first time a menu opens, where the tools wheel and the wrist panel are the first time you walk, and how to move an item to the other inventory the first time the inventory opens. Off: none. B and the left Menu button close a menu either way."));
+            tooltip: "Short reminders on the HUD: \"B: back, right stick: scroll\" the first time a menu opens, where the tools wheel and the wrist panel are the first time you walk and the first time you sit in a seat, and how to move an item to the other inventory the first time the inventory opens. Off: none. B and the left Menu button close a menu either way."));
         private static readonly FlagSetting externalView = Add(new FlagSetting("externalView", "External view", "Interface", false,
             tooltip: "A small screen on the dash showing your ship (or you, on foot) from behind and above, or the view from one of the ship's cameras, while you stay in the cockpit. On the desktop it is in the lower left of the picture. Costs a third scene pass. The actions wheel's External view entry turns it on and off and chooses what it shows; its size and source are under Display."));
         private static readonly FlagSetting suitPowerFailing = Add(new FlagSetting("suitPowerFailing", "Suit power failing", "Interface", true,
@@ -244,7 +243,7 @@ namespace SpaceEngineersVR
 
         private static readonly ChoiceSetting zeroGTurn = Add(new ChoiceSetting("zeroGTurn", "Zero-g pitch and roll", "Controls",
             new[] { "Smooth", "Snap", "Off" }, 0,
-            tooltip: "On the jetpack in zero g, hold the left stick click and the right stick pitches you (up and down) and rolls you (sideways), turning about your eyes. Smooth: steadily, at the Smooth turn speed. Snap: one step of the Snap turn angle a flick. Off: the left stick click does nothing on the jetpack. In gravity the jetpack never pitches or rolls you."));
+            tooltip: "On the jetpack, hold the left stick click and the right stick pitches you (up and down) and rolls you (sideways), turning about your eyes. Tap the click instead and the right stick keeps pitching and rolling until you click it again. Smooth: steadily, at the Smooth turn speed. Snap: one step of the Snap turn angle a flick. Off: the left stick click does nothing on the jetpack. As Q and E do on a keyboard, it works in gravity too while the jetpack flies; landing stands you up again."));
 
         private static readonly NumberSetting stickDeadzone = Add(new NumberSetting("stickDeadzone", "Stick deadzone", "Controls",
             0.15f, 0.05f, 0.4f, 0.01f, decimals: 2,
@@ -270,13 +269,13 @@ namespace SpaceEngineersVR
             tooltip: "A quick squeeze of the grip on a cockpit handle keeps hold of it without squeezing; squeeze again to let go. Off: you hold a handle only while squeezing."));
 
         private static readonly FlagSetting colbyVehicleFlight = Add(new FlagSetting("colbyVehicleFlight", "Fly with the wheel and handlebars", "Cockpits", false,
-            tooltip: "In a rover, buggy or speeder seat, turning the wheel or handlebars yaws the vehicle as a ship, and with the right hand on the wheel the right thumbstick pitches and rolls. A speeder's right grip is a throttle: twist it to go forward. Off: the wheel and handlebars steer the wheels. A cockpit's own Flight Settings, opened from the quick menu's Seat page, override this for that cockpit."));
+            tooltip: "In a rover, buggy or speeder seat, turning the wheel or handlebars yaws the vehicle as a ship, and with the right hand on the wheel the right thumbstick pitches and rolls. A speeder's right grip is a throttle: twist it to go forward. Off: the wheel and handlebars steer the wheels. A cockpit's own Flight Settings, opened from the quick menu's Cockpit page, override this for that cockpit."));
 
         private static readonly FlagSetting colbyBarTilt = Add(new FlagSetting("colbyBarTilt", "Two-hand pitch and roll on handlebars", "Cockpits", false,
-            tooltip: "Flying a speeder with the handlebars, holding both grips, raise or lower both hands together to pitch and tilt the bars to roll. Needs Fly with the wheel and handlebars. A cockpit's own Flight Settings, opened from the quick menu's Seat page, override this for that cockpit."));
+            tooltip: "Flying a speeder with the handlebars, holding both grips, raise or lower both hands together to pitch and tilt the bars to roll. Needs Fly with the wheel and handlebars. A cockpit's own Flight Settings, opened from the quick menu's Cockpit page, override this for that cockpit."));
 
         private static readonly FlagSetting colbyWheelMotion = Add(new FlagSetting("colbyWheelMotion", "Wheel pitch and roll", "Cockpits", false,
-            tooltip: "Flying a rover or buggy with the wheel, push and pull the wheel to pitch and turn it to roll; with the right hand on the wheel the right thumbstick yaws. Needs Fly with the wheel and handlebars. A cockpit's own Flight Settings, opened from the quick menu's Seat page, override this for that cockpit."));
+            tooltip: "Flying a rover or buggy with the wheel, push and pull the wheel to pitch and turn it to roll; with the right hand on the wheel the right thumbstick yaws. Needs Fly with the wheel and handlebars. A cockpit's own Flight Settings, opened from the quick menu's Cockpit page, override this for that cockpit."));
 
         private static readonly TextSetting colbySeatFits = Add(new TextSetting("colbySeatFits", "Cockpit seat positions", "Cockpits", hidden: true,
             tooltip: "Where the quick menu's seat arrows have moved your view in each kind of cockpit, one entry per cockpit, separated by semicolons: cockpit:x,y,z in metres (right, up, back)."));
@@ -288,13 +287,16 @@ namespace SpaceEngineersVR
             tooltip: "What each dashboard switch of each cockpit does and which switch covers are open, kept per world and cockpit."));
 
         private static readonly TextSetting colbyFlightTunings = Add(new TextSetting("colbyFlightTunings", "Cockpit flight settings", "Cockpits", hidden: true,
-            tooltip: "Each cockpit's own flight settings, as set from the quick menu's Seat page, kept per world and cockpit."));
+            tooltip: "Each cockpit's own flight settings, as set from the quick menu's Cockpit page, kept per world and cockpit."));
 
         private static readonly FlagSetting leftHanded = Add(new FlagSetting("leftHanded", "Left-handed", "Controls", false,
             tooltip: "Your left hand is the main one. It points the menu laser (its trigger clicks, its grip right-clicks, its thumbstick scrolls) and holds tools and guns, with the right hand on the front grip. Its trigger fires, welds, grinds and drills, the right trigger is the secondary, and its stick click reloads. Building and seats keep their buttons. Off: the right hand."));
 
         private static readonly TextSetting gripFit = Add(new TextSetting("gripFit", "Grip fit", "Controls", hidden: true,
             tooltip: "How your character's hand sits on each kind of controller, one entry per OpenXR interaction profile, separated by semicolons: profile:pitch,roll,yaw,x,y,z (degrees, then millimetres), as the RenderDebug keys HandIKPitch, HandIKRoll, HandIKYaw, HandIKX, HandIKY and HandIKZ set them for the controllers in use. A controller with no entry gets the plugin's own placement."));
+
+        private static readonly TextSetting controllerBindings = Add(new TextSetting("controllerBindings", "Controller bindings", "Controls", hidden: true,
+            tooltip: "Your own controller bindings, one entry per OpenXR interaction profile, separated by |: profile:Action=Hand.Control.Kind[+Hand.Control][@seconds];... A controller with no entry has the default bindings."));
 
         private static readonly NumberSetting hapticStrength = Add(new NumberSetting("hapticStrength", "Haptic strength", "Controls",
             1f, 0f, 1f, 0.05f, unit: "%", decimals: 0, displayScale: 100f,
@@ -314,14 +316,7 @@ namespace SpaceEngineersVR
             tooltip: "How wide the quick-actions panel is when it opens on your left wrist, in metres. A larger one is easier to read and to point at, and covers more of your view. You see the change as the panel opens."));
 
         private static readonly FlagSetting wristPanel = Add(new FlagSetting("wristPanel", "Wrist panel", "Controls", true,
-            tooltip: "On foot and on the jetpack, Y on the left controller opens the quick-actions panel on your left wrist (inventory, terminal, G menu, lights, helmet, heal, dampeners, broadcast, symmetry, colour picker and the external view); Y again closes it. Off: Y does nothing there."));
-
-        private static readonly NumberSetting datapadWidth = Add(new NumberSetting("datapadWidth", "Datapad size", "Controls",
-            0.34f, 0.22f, 0.5f, 0.01f, unit: "m", decimals: 2, hidden: Hands.Datapad.Shelved,
-            tooltip: "How wide the datapad's screen is: the game's own datapad, drawn larger than the item. Take it out with the wrist panel's Datapad tile: it comes out in your left hand, with chat, your GPS list and the terminal; touch it with your right fingertip. Grip it with your right hand to take it over; grip it and let go and it stands in the air for a few seconds, or in a seat stays where you let it go, and comes out there again in that kind of seat. Y or B puts it away. Larger is easier to touch and read, smaller is lighter to hold up."));
-
-        private static readonly TextSetting datapadSeatSpots = Add(new TextSetting("datapadSeatSpots", "Datapad spots in seats", "Controls", hidden: true,
-            tooltip: "Where the datapad was last let go in each kind of seat, so it comes out there again: one entry per seat, separated by semicolons: subtype:x,y,z,qx,qy,qz,qw (metres and a turn, in the pilot's space). A pad put away from the hand takes its seat's entry out."));
+            tooltip: "Y on the left controller opens the quick-actions panel on your left wrist: along its top the game menu, the Controls page (what each button does), these VR settings and the HUD switch; under them inventory, terminal, G menu, lights, helmet, heal, dampeners, broadcast, symmetry, colour picker and the external view. Y again closes it. In a seat, turn your wrist up to read it and tap Y (a tap elsewhere is the tools wheel). Off: Y does nothing on foot, and in a seat is only the tools wheel."));
 
         private static readonly FlagSetting fingerPress = Add(new FlagSetting("fingerPress", "Press with fingertip", "Controls", true,
             tooltip: "On foot, touching a push-button with the tip of a controller's index finger presses it, as the Use key does: the buttons of a button panel, and the next, previous and pause buttons of a jukebox. Doors, seats, terminals and cargo are not touched. Not while that hand holds a tool, a menu is up or you are on a ladder or seated. Off: only the Use key and the hand's ray."));
@@ -331,7 +326,7 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting moveViewByHand = Add(new FlagSetting("moveViewByHand", "Move the external view by hand", "Controls", true,
             tooltip: "Grip the external view screen with either hand to pick it up and put it anywhere; it stays where you let go, the next time too. The External view page's Reset puts it back on the dash. Off: it stays on the dash."));
         private static readonly FlagSetting touchToolbar = Add(new FlagSetting("touchToolbar", "Touch toolbar on the cockpit screen", "Controls", true,
-            tooltip: "Set any cockpit screen to the script \"Touch Toolbar\" in its screen settings and, piloting, that screen shows the ship's toolbar: tap a slot to use it, as its number key does, and the arrows to turn the page. A screen out of reach is tapped with the laser and the trigger. With no screen set to it, this puts it on the cockpit's most central screen while you pilot; only your view of that screen changes, and it gets its own picture back when you leave the seat. Off: only screens set to Touch Toolbar show it."));
+            tooltip: "Set any cockpit screen to the script \"Touch Toolbar\" in its screen settings and, piloting, that screen shows the ship's toolbar: tap a slot to use it, as its number key does, and the arrows to turn the page. A screen out of reach is tapped with the laser and the trigger. With no screen set to it, this puts it on the cockpit's most central screen while you pilot, unless you have picked something else for that screen; only your view of that screen changes, and it gets its own picture back when you leave the seat. Off: only screens set to Touch Toolbar show it."));
         private static readonly FlagSetting grabItems = Add(new FlagSetting("grabItems", "Grab items", "Controls", true,
             tooltip: "On foot, close a hand's grip on a floating item (ore, ice, components, a dropped tool) to take it out of the air and hold it; open the hand and it flies on at the hand's speed. Let go of it at your chest and it goes into your inventory. Heavy stacks come along slowly. Off: a grip near an item means what it does in empty air."));
         private static readonly FlagSetting grabHulls = Add(new FlagSetting("grabHulls", "Grab hulls", "Controls", true,
@@ -349,6 +344,9 @@ namespace SpaceEngineersVR
         private static readonly FlagSetting twoHandedTools = Add(new FlagSetting("twoHandedTools", "Two-handed tools", "Controls", true,
             tooltip: "On foot, close your other hand's grip on the front of the tool or gun you hold, where the astronaut's other hand goes, to hold it with both hands: it then points along the line from your tool hand to your other hand. A light tick tells you the hand is close enough. Let go and it goes back to one hand. A pistol is steadied but still aims with the tool hand. A grip anywhere else keeps its old job (the toolbar wheel). Off: tools in one hand only."));
 
+        private static readonly FlagSetting toolLaser = Add(new FlagSetting("toolLaser", "Laser on hand tools", "Controls", true,
+            tooltip: "A welder, grinder or hand drill in your hand shows a thin laser from its tip as far as it reaches, with a dot where it meets something it can work on, so you can see where it will act. Off: no laser."));
+
         private static readonly FlagSetting twoHandGripStays = Add(new FlagSetting("twoHandGripStays", "Two-hand grip stays on", "Controls", true,
             tooltip: "Once your other hand has taken the tool's front grip, the astronaut's hand stays on it for as long as you hold that grip button, however far your real hand moves. Up to 15 cm off the grip your other hand still aims the tool; further off, its pull eases away and the tool points where your tool hand points. Let go of the button to go back to one hand. Off: pulling the hand 15 cm off the grip lets go as well."));
 
@@ -365,7 +363,7 @@ namespace SpaceEngineersVR
             Hands.Holsters.PlaceNames, 5, hidden: Hands.Holsters.Shelved, tooltip: "Where on your body the hand drill's holster is, with Tool holsters on."));
 
         private static readonly FlagSetting physicalReload = Add(new FlagSetting("physicalReload", "Reload by hand", "Controls", true,
-            tooltip: "Reloading a hand weapon is done with your hands. Click the gun hand's stick, or pull your other hand's trigger or close its grip at the magazine (a light tick tells you the hand is there), and the magazine drops out. Once it is out, reach down to your other hand's hip, or anywhere at belt height or lower (your lap, seated), and pull that trigger to take a fresh one: a tick says you have it, two light ticks that there are none for this weapon. Keep the trigger pulled, push the magazine up into the well under the gun and it clicks home; the weapon is loaded then, or when the game's own reload time is up if that is later. Let go of the trigger anywhere else and it falls, or back at your hip and it goes back; neither costs a magazine. The rounds left in a dropped magazine are lost, as with the game's own reload. A magazine fired empty stays in until you click (in multiplayer as a client, the server drops it). R on the keyboard still reloads the game's way. Off: the click reloads on the game's timer."));
+            tooltip: "Reloading a hand weapon is done with your hands. Click the gun hand's stick, or pull your other hand's trigger or close its grip at the magazine (a light tick tells you the hand is there), and the magazine drops out. Once it is out, reach down to your other hand's hip, or anywhere at belt height or lower (your lap, seated), and pull that trigger or close that grip to take a fresh one: a tick says you have it, two light ticks that there are none for this weapon. Keep either held and push the magazine up into the well under the gun: near it, it lines itself up with a light tick, and it clicks home; the weapon is loaded then, or when the game's own reload time is up if that is later. Let go anywhere else and it falls, or back at your hip and it goes back; neither costs a magazine. The rounds left in a dropped magazine are lost, as with the game's own reload. A magazine fired empty stays in until you click (in multiplayer as a client, the server drops it). R on the keyboard still reloads the game's way. Off: the click reloads on the game's timer."));
 
         private static readonly FlagSetting colbyAimDownSights = Add(new FlagSetting("colbyAimDownSights", "Aim down the sights", "Controls", true,
             tooltip: "Raise a gun and look down its sights, your eye in line with the sight and the muzzle, and you are aiming down the sights as the iron sight button does in flat play: tighter shots, a slower walk and no sprinting. A light tick on the gun hand tells you when you start and stop. Your view is not zoomed. Off: never aiming down the sights."));
@@ -378,6 +376,13 @@ namespace SpaceEngineersVR
 
         private static readonly FlagSetting vrButtonNames = Add(new FlagSetting("vrButtonNames", "VR button names", "Controls", true,
             tooltip: "The game's prompts name the controller buttons instead of the keys: \"Press [Right grip] to open\", \"[A] to jump\", \"[Y > Inventory]\" for what the wrist panel opens. A control the controllers have no way to press keeps its key. Off: the keyboard's names."));
+
+        private static readonly ChoiceSetting handHints = Add(new ChoiceSetting("handHints", "Button labels by the hands", "Controls",
+            Rendering.HandHints.ModeNames, Rendering.HandHints.ModeUntilLearned,
+            tooltip: "Look at one of your hands and a small label beside it names what each of its buttons does in what you are doing now: walking, on the jetpack, building, in a seat, at a turret, with the tools wheel open or in a menu, each button by the name it has on your controller. Until learned: a button's line fades a little each time you use it and is gone after three uses, and once all of a hand's are learned its label no longer shows; Show the labels again brings them all back. Always: every line, every time you look. Off: no labels. The wrist panel's Controls page lists them all either way."));
+
+        private static readonly TextSetting handHintsLearned = Add(new TextSetting("handHintsLearned", "Button labels learned", "Controls", hidden: true,
+            tooltip: "Which buttons' labels have been learned, so they stay gone: situation.hand.button=uses, separated by semicolons. Empty shows them all."));
 
         private static readonly FlagSetting vrRadialMenu = Add(new FlagSetting("vrRadialMenu", "VR radial menus", "Controls", true,
             tooltip: "The tools wheel and the game's actions wheel say which controller buttons work them, and the game's actions wheel leaves out what has no use in VR: the keyboard help screen, the spectator camera, and the camera switch while third person is off. Off: the game's wheels as they are on a gamepad."));
@@ -425,6 +430,12 @@ namespace SpaceEngineersVR
             1080f, 360f, 2160f, 40f, unit: "px", decimals: 0, restart: true, integer: true,
             tooltip: "Height of the game window on your monitor."));
 
+        private static readonly FlagSetting keepMonitor = Add(new FlagSetting("keepMonitor", "Keep the game on its monitor", "Advanced", true,
+            tooltip: "With more than one monitor, the game opens on the monitor it was last set to, even when Windows lists the monitors in another order since. Off: the game takes the monitor at the place in that list it saved, as it does without the plugin. You see the change at the next start."));
+
+        private static readonly TextSetting monitor = Add(new TextSetting("monitor", "Game monitor", "Advanced", hidden: true,
+            tooltip: "The monitor the game was last set to, by its graphics card and display name (\"NVIDIA GeForce RTX 3060 + DISPLAY1\")."));
+
         private static readonly FlagSetting desktopView = Add(new FlagSetting("desktopView", "Desktop view", "Advanced", true,
             tooltip: "The game window on your monitor shows what the headset sees. Off: the window is hidden while the headset shows the game (on Linux it stays, black), and the GPU does not spend time on it; a hidden window takes no keyboard or mouse, so play is by the controllers alone. What you see in the headset is the same either way. You see the change at once."));
 
@@ -432,7 +443,7 @@ namespace SpaceEngineersVR
             tooltip: "The game window on your monitor shows what the headset does: the visor and the HUD on it, menus, the laser and the external view's screen over the eye. Off: the window shows the eye alone, without them, and the headset's frames take a little less time to draw. What you see in the headset is the same either way."));
 
         private static readonly FlagSetting freeMouse = Add(new FlagSetting("freeMouse", "Mouse can leave the window", "Advanced", true,
-            tooltip: "While VR runs, the game does not hold the desktop mouse inside its window (it does that whenever the cursor is hidden in play), so the mouse can reach your other monitors. Off: the game's own confinement. You see the change at once. Windows only."));
+            tooltip: "While VR runs, the game does not hold the desktop mouse inside its window (it does that whenever the cursor is hidden in play), so the mouse can reach your other monitors. Playing by the keyboard and mouse keeps it in the window until the controllers are used again. Off: the game's own confinement. You see the change at once. Windows only."));
 
         // ---- What the rest of the plugin reads. ----
 
@@ -456,6 +467,16 @@ namespace SpaceEngineersVR
 
         public static int MirrorHeight => (int)mirrorHeight.Value;
 
+        /// <summary>The game opens on the monitor it was last set to (<see cref="Rendering.MonitorChoice"/>). Read at start.</summary>
+        public static bool KeepMonitor => keepMonitor.Value;
+
+        /// <summary>That monitor's name in the game's list (MyAdapterInfo.Name); empty until the game has used one with the plugin.</summary>
+        public static string Monitor
+        {
+            get => monitor.Value;
+            set => monitor.Set(value);
+        }
+
         /// <summary>The game does not confine the desktop mouse to its window while VR runs (<see cref="Input.CursorClip"/>).</summary>
         public static bool FreeMouse => freeMouse.Value;
 
@@ -464,6 +485,9 @@ namespace SpaceEngineersVR
 
         /// <summary>The game's toolbar stays on the HUD on foot too; off (the default) it is left out there (<see cref="Rendering.HudToolbar"/>).</summary>
         public static bool ShowToolbarOnFoot => showToolbarOnFoot.Value;
+
+        /// <summary>The toolbar on the inventory screen without a headset too (<see cref="Gui.InventoryToolbar"/>); in VR it is always there.</summary>
+        public static bool InventoryToolbarFlat => inventoryToolbarFlat.Value;
 
         /// <summary>The HUD's parts are on the visor, curved round the head (one display with the helmet view, a layer each without), and its markers on the flat panel (<see cref="Rendering.HudVisor"/>); off, all of it is on the panel.</summary>
         public static bool HudVisor => hudVisor.Value;
@@ -537,9 +561,6 @@ namespace SpaceEngineersVR
 
         /// <summary>Rain, snow and dust from the planet's weather land on the closed visor (<see cref="Rendering.VisorWeather"/>).</summary>
         public static bool VisorWeather => visorWeather.Value;
-
-        /// <summary>The closed visor mists over coming from freezing cold into warm air (<see cref="Rendering.VisorWeather"/>).</summary>
-        public static bool VisorMisting => visorMisting.Value;
 
         /// <summary>A fingertip on the visor's outside wipes what is on it (<see cref="Rendering.VisorWeather"/>).</summary>
         public static bool VisorWipe => visorWipe.Value;
@@ -760,6 +781,13 @@ namespace SpaceEngineersVR
             set => gripFit.Set(value);
         }
 
+        /// <summary>The player's own controller bindings per profile, as the settings file holds them (<see cref="Input.Bindings.ControllerBindings"/>).</summary>
+        public static string ControllerBindings
+        {
+            get => controllerBindings.Value;
+            set => controllerBindings.Set(value);
+        }
+
         /// <summary>On foot, the eye is kept out of the character's own body (<see cref="Tracking.BodyGuard"/>).</summary>
         public static bool BodyClearance => bodyClearance.Value;
 
@@ -832,7 +860,18 @@ namespace SpaceEngineersVR
         public static bool ColbyThumbsticks => !ColbyCockpit || colbyThumbsticks.Value;
 
         /// <summary>A held cockpit stick's twist counts (his StickTwist).</summary>
-        public static bool ColbyStickTwist => colbyStickTwist.Value;
+        public static bool ColbyStickTwist
+        {
+            get => colbyStickTwist.Value;
+            set => colbyStickTwist.Set(value);
+        }
+
+        /// <summary>The Thumbstick controls in cockpits setting itself (<see cref="ColbyThumbsticks"/> is what it means with the cockpit setting off too).</summary>
+        public static bool ColbyThumbsticksChoice
+        {
+            get => colbyThumbsticks.Value;
+            set => colbyThumbsticks.Set(value);
+        }
 
         /// <summary>A tap on a cockpit stick latches the hold (his TapHoldSticks).</summary>
         public static bool ColbyTapHoldSticks
@@ -891,16 +930,6 @@ namespace SpaceEngineersVR
         /// <summary>Y opens the quick-actions panel on the wrist (<see cref="Input.WristButton"/>).</summary>
         public static bool WristPanel => wristPanel.Value;
 
-        /// <summary>The datapad's width, metres.</summary>
-        public static float DatapadWidth => datapadWidth.Value;
-
-        /// <summary>The datapad's spot in each kind of seat it was last let go in (<see cref="Hands.Datapad"/>).</summary>
-        public static string DatapadSeatSpots
-        {
-            get => datapadSeatSpots.Value;
-            set => datapadSeatSpots.Set(value);
-        }
-
         /// <summary>The suit and body status is on a screen on the gauntlet, and not on the HUD (<see cref="Rendering.WristStatus"/>).</summary>
         public static bool WristStatus => wristStatus.Value;
 
@@ -940,6 +969,9 @@ namespace SpaceEngineersVR
         /// <summary>The other hand's grip on the held tool's front grip holds it in both hands, aimed along the line between them (<see cref="Hands.TwoHand"/>).</summary>
         public static bool TwoHandedTools => twoHandedTools.Value;
 
+        /// <summary>A held welder, grinder or drill shows a laser over its sensor's reach, with a dot where it meets something (<see cref="Hands.HandRay"/>).</summary>
+        public static bool ToolLaser => toolLaser.Value;
+
         /// <summary>Looking down a gun's sights aims down them, the game's iron sight (ColbyJack1134's, <see cref="Hands.IronSight"/>).</summary>
         public static bool ColbyAimDownSights => colbyAimDownSights.Value;
 
@@ -968,6 +1000,16 @@ namespace SpaceEngineersVR
 
         /// <summary>The HUD reminders for backing out of a menu, and the first-time ones on foot and in the inventory (<see cref="Input.ControlHints"/>).</summary>
         public static bool ControlHints => controlHints.Value;
+
+        /// <summary>The labels beside the hands: <see cref="Rendering.HandHints.ModeOff"/>, until learned, or always.</summary>
+        public static int HandHints => handHints.Value;
+
+        /// <summary>The labels beside the hands already learned, as the settings file holds them (<see cref="Rendering.HandHints"/>).</summary>
+        public static string HandHintsLearned
+        {
+            get => handHintsLearned.Value;
+            set => handHintsLearned.Set(value);
+        }
 
         /// <summary>Prompts name the controller buttons (<see cref="Input.VRPrompts"/>).</summary>
         public static bool VRButtonNames => vrButtonNames.Value;
@@ -1021,15 +1063,12 @@ namespace SpaceEngineersVR
 
         // ---- The list, for the options screen. ----
 
-        /// <summary>Bug Swarm is held for a later release: its setting stays hidden and off. Its code is not exported.</summary>
-        internal static readonly bool BugSwarmShelved = true;
-
         private static readonly FlagSetting swarmBlocks = Add(new FlagSetting("swarmBlocks", "Bug Swarm on button panels", "Bug Swarm", false,
             tooltip: "A button panel's control panel gets a Bug Swarm section, which makes it a swarm block: pressing it wakes waves of bugs that go for a block you choose. In a world you host, swarm blocks work only with this on. Off, button panels are the game's own.",
-            hidden: BugSwarmShelved));
+            hidden: Scenarios.BugSwarm.BugSwarmSession.Shelved));
 
-        /// <summary>Whether button panels can be swarm blocks: never while Bug Swarm is shelved, whatever the settings file says.</summary>
-        public static bool SwarmBlocks => !BugSwarmShelved && swarmBlocks.Value;
+        /// <summary>Whether button panels can be swarm blocks (<see cref="Scenarios.BugSwarm.BugSwarmSession"/>): never while Bug Swarm is shelved, whatever the settings file says.</summary>
+        public static bool SwarmBlocks => !Scenarios.BugSwarm.BugSwarmSession.Shelved && swarmBlocks.Value;
 
         /// <summary>Every setting, in the order they were declared.</summary>
         public static IReadOnlyList<Setting> All => all;

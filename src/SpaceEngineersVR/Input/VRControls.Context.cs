@@ -9,6 +9,7 @@ using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Gui;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Tracking;
 using VRage.Input;
 using VRage.Utils;
@@ -104,30 +105,32 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// The terminal's amount modifiers, a pad's two bumpers (MyControlsGUI.SHIFT_LEFT and SHIFT_RIGHT), held on the hand that
-        /// does not point the laser: its grip is SHIFT_LEFT, its trigger SHIFT_RIGHT. The inventory's move to the other side (A on
-        /// an item: <see cref="Laser"/>, or a double click) then moves 10, 100, or with both 1000 instead of the whole stack, and a
-        /// click on a blueprint queues 10, 100 or 1000. Only while the terminal has the focus: the G menu and the radial menus
-        /// read the same two controls for other things.
+        /// The terminal's amount modifiers, a pad's two bumpers (MyControlsGUI.SHIFT_LEFT and SHIFT_RIGHT): Amounts x10 and x100
+        /// (by default the grip and trigger of the hand that does not point the laser; left-handed, mirrored). The inventory's move
+        /// to the other side (A on an item: <see cref="Laser"/>, or a double click) then moves 10, 100, or with both 1000 instead of
+        /// the whole stack, and a click on a blueprint queues 10, 100 or 1000. Only while the terminal has the focus: the G menu
+        /// and the radial menus read the same two controls for other things.
         /// </summary>
         private static bool WantsAmount(bool shiftLeft, MyControlStateType type)
         {
             if (!(menuNow is MyGuiScreenTerminal) || !VRInput.Active)
                 return false;
             Hand off = Hands.TwoHand.OffHand;
-            VRButtons button = shiftLeft ? VRButtons.Grip : VRButtons.Trigger;
+            bool mirrored = off == Hand.Right;
+            VRAction action = shiftLeft ? VRAction.AmountTimes10 : VRAction.AmountTimes100;
+            bool held = ControllerBindings.IsActive(action, mirrored), began = ControllerBindings.Started(action, mirrored);
             bool answer;
             switch (type)
             {
                 case MyControlStateType.NEW_PRESSED:
                 case MyControlStateType.NEW_PRESSED_REPEATING:
-                    answer = VRInput.IsNewPressed(off, button);
+                    answer = began;
                     break;
                 case MyControlStateType.PRESSED:
-                    answer = VRInput.IsPressed(off, button);
+                    answer = held;
                     break;
                 case MyControlStateType.NEW_RELEASED:
-                    answer = VRInput.IsReleased(off, button);
+                    answer = ControllerBindings.Ended(action, mirrored);
                     break;
                 default:
                     answer = false;
@@ -139,7 +142,7 @@ namespace SpaceEngineersVR.Input
             if (answer && ticks - amountNoted[i] > Stopwatch.Frequency)
             {
                 amountNoted[i] = ticks;
-                bool both = VRInput.IsPressed(off, shiftLeft ? VRButtons.Trigger : VRButtons.Grip);
+                bool both = ControllerBindings.IsActive(shiftLeft ? VRAction.AmountTimes100 : VRAction.AmountTimes10, mirrored);
                 Log.Info($"Input: the {off} {(shiftLeft ? "grip" : "trigger")} answered the terminal's {(shiftLeft ? "SHIFT_LEFT" : "SHIFT_RIGHT")} ({type}): " +
                               (both ? "x1000 with the other" : shiftLeft ? "x10" : "x100"));
             }

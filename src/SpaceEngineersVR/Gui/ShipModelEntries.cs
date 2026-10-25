@@ -12,8 +12,7 @@ namespace SpaceEngineersVR.Gui
     /// <item>"Model overlays" (a page, while the model is out): thrusters, power, doors and weapons, each switched on and off
     /// with the wheel left up for the next, as the game's own switches are.</item>
     /// </list>
-    /// Not on the wheel with the ship model setting off (<see cref="VRSettings.ShipModel"/>). The overlays' switches are the
-    /// datapad's Ship page's too (<see cref="DatapadShipPage"/>).
+    /// Not on the wheel with the ship model setting off (<see cref="VRSettings.ShipModel"/>).
     /// </summary>
     internal static class ShipModelEntries
     {

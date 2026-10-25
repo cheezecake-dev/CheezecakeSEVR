@@ -5,6 +5,7 @@ using System.Reflection;
 using HarmonyLib;
 using Sandbox.Game;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Screens.Helpers;
 using Sandbox.Game.World;
@@ -19,6 +20,7 @@ namespace SpaceEngineersVR.Gui
     /// The actions wheel's entries for what the game has a key for but its radial definitions leave out, after the game's
     /// own entries (theirs keep their places):
     /// <list type="bullet">
+    /// <item>"G menu", beside Inventory: the toolbar configuration screen, on foot or from a ship's seat.</item>
     /// <item>"Remote access", on the Menu page beside the game's other screens: the remote access screen
     /// (MyGuiScreenGamePlay.cs:828 REMOTE_ACCESS_MENU -> controlledEntity.ShowRemoteAccessMenu), on foot or from a seat.</item>
     /// <item>"Emotes", a page of the game's emotes: the emote switcher's own list, in its order, with its icons, each played by
@@ -55,6 +57,7 @@ namespace SpaceEngineersVR.Gui
         /// <summary>Adds the entries to the wheel as it opens. Game thread.</summary>
         internal static void AddTo(List<ActionsWheel.Entry> top)
         {
+            AddGMenu(top);
             AddRemoteAccess(top);
             AddEmotes(top);
         }
@@ -68,6 +71,23 @@ namespace SpaceEngineersVR.Gui
                 StateText = stateText,
                 Run = () => WristButton.Press(control, name + " (actions wheel)"),
             };
+
+        /// <summary>
+        /// "G menu" beside Inventory, first on the ring: the toolbar configuration screen (MyGuiScreenGamePlay.cs:910
+        /// BUILD_SCREEN), which the game opens on foot and from a ship's seat but not from a cryo chamber. In a seat the
+        /// wrist panel's G menu tile is two steps further in (Quick actions), so it is here as Inventory is.
+        /// </summary>
+        private static void AddGMenu(List<ActionsWheel.Entry> top)
+        {
+            ActionsWheel.Entry entry = Control("G menu", Hud + "MultiBlockBuilding.png", MyControlsSpace.BUILD_SCREEN, () => "Blocks and toolbar");
+            entry.CanUse = () =>
+            {
+                var controlled = MySession.Static?.ControlledEntity;
+                return controlled is MyCharacter || (controlled is MyShipController && !(controlled is MyCryoChamber));
+            };
+            int inventory = top.FindIndex(e => e.IsInventory);
+            top.Insert(inventory + 1, entry);
+        }
 
         private static void AddRemoteAccess(List<ActionsWheel.Entry> top)
         {

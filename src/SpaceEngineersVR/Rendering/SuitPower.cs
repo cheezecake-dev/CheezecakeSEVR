@@ -33,9 +33,10 @@ namespace SpaceEngineersVR.Rendering
     /// <para>
     /// Low stat warnings (<see cref="VRSettings.LowStatWarnings"/>): small icons at the HUD's edge, one per stat at its own
     /// critical mark - health (<c>MyCharacterStatComponent.HEALTH_RATIO_CRITICAL</c>, 0.2), food (its own
-    /// <c>MyFoodStatDefinition.CriticalLevel</c>, data from the stat's definition), energy and hydrogen (0.1 above); oxygen has no
-    /// warning of its own in MyHudWarnings, so it uses the same 0.1 as its sibling gas, hydrogen, by analogy (worth a headset
-    /// check against the real HUD bar's own red mark). This game version has no water/thirst stat, so only these five.
+    /// <c>MyFoodStatDefinition.CriticalLevel</c>, data from the stat's definition), energy and hydrogen (0.1 above), and oxygen at a third of
+    /// <c>MyCharacterOxygenComponent.LOW_OXYGEN_RATIO</c> (0.2, so about 0.067): the mark below which the game itself switches the
+    /// suit's breathing sound to its gasping one (<c>MyCharacterSoundComponent</c>), the nearest thing the game has to a critical
+    /// oxygen mark - MyHudWarnings has none of its own. This game version has no water/thirst stat, so only these five.
     /// </para>
     /// <para>
     /// The icon for each is the game's own: <see cref="MyStatControlImage"/> is the HUD's own per-stat icon control (one
@@ -49,6 +50,9 @@ namespace SpaceEngineersVR.Rendering
     {
         /// <summary>The game's own suit energy marks (MyHudWarnings.cs: EnergyLowWarningMethod, EnergyCritWarningMethod).</summary>
         private const float LowRatio = 0.25f, CriticalRatio = 0.1f;
+
+        /// <summary>The suit oxygen mark the game's own breathing sound turns to gasping at: a third of its low-oxygen ratio.</summary>
+        private static readonly float OxygenCriticalRatio = MyCharacterOxygenComponent.LOW_OXYGEN_RATIO / 3f;
 
         /// <summary>How dark the HUD and lamp get as energy nears empty, before the cut at zero.</summary>
         private const float DimFloor = 0.3f;
@@ -132,7 +136,9 @@ namespace SpaceEngineersVR.Rendering
                         if (on) r = character.SuitEnergyLevel;
                         break;
                     case Oxygen:
-                        on &= on && character.OxygenComponent != null && character.OxygenComponent.NeedsOxygenFromSuit && MySession.Static.Settings.EnableOxygen;
+                        // The suit's tank is breathed from, and drains, with the helmet closed (HelmetEnabled: the game's gas sink asks for
+                        // oxygen only then, and NeedsOxygenFromSuit is the opposite, the helmet open); an open helmet breathes the air.
+                        on &= on && character.OxygenComponent != null && character.OxygenComponent.HelmetEnabled && MySession.Static.Settings.EnableOxygen;
                         if (on) r = character.OxygenComponent.GetGasFillLevel(MyCharacterOxygenComponent.OxygenId);
                         break;
                     case Hydrogen:
@@ -142,7 +148,7 @@ namespace SpaceEngineersVR.Rendering
                 }
                 bool crit = on && i == Food && character.StatComp.Food.StatDefinition is MyFoodStatDefinition food
                     ? r <= food.CriticalLevel
-                    : on && r <= CriticalRatio;
+                    : on && r <= (i == Oxygen ? OxygenCriticalRatio : CriticalRatio);
                 // Health's own mark (0.2) differs from the shared 0.1 used by the rest.
                 if (on && i == Health)
                     crit = r <= MyCharacterStatComponent.HEALTH_RATIO_CRITICAL;

@@ -19,9 +19,9 @@ namespace SpaceEngineersVR.Input
     /// <para>The game's own switch to one inventory item, MyCharacter.SwitchToWeapon(itemId), as the toolbar's slot does
     /// for its weapon, so it is synced and the game's rules apply (CanSwitchToWeapon: not on a ladder, and so on). The item
     /// must be one the G menu would let you pick (<see cref="Gui.InventoryToolbar.TryHandItem"/>), in your own inventory.</para>
-    /// <para>The grip over such an item is the pull's for as long as it is held (<see cref="OwnsGrip"/>), as the datapad's
-    /// grip is: the laser does not make it the right mouse button, which on a tool or gun in the inventory does nothing in
-    /// the game (MyTerminalInventoryController.ActivateItemKeyboard acts only on consumables and datapads). Over anything
+    /// <para>The grip over such an item is the pull's for as long as it is held (<see cref="OwnsGrip"/>): the laser does not
+    /// make it the right mouse button, which on a tool or gun in the inventory does nothing in the game
+    /// (MyTerminalInventoryController.ActivateItemKeyboard acts only on consumables and datapads). Over anything
     /// else the grip stays the right button. The pull is measured along the panel's facing (<see cref="Rendering.HudPanel"/>), so
     /// it is the same however the panel stands.</para>
     /// </remarks>

@@ -24,9 +24,10 @@ namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
     /// The HUD's bottom toolbar (the hotbar) is left out on foot and on the jetpack, where the tools wheel (left grip) and the
-    /// wrist panel do its job; a short label names the tool you pick instead. Seated, in a camera view, in the G menu and the
-    /// terminal, and in flat play, it is drawn as the game draws it. Off with the VR setting "Toolbar on the HUD"
-    /// (<see cref="VRSettings.ShowToolbarOnFoot"/>); RenderDebug HudToolbar=1 shows it again.
+    /// wrist panel do its job; a short label names the tool you pick instead. Seated, in a camera view, in flat play and
+    /// under a menu that leaves the HUD up, it is drawn as the game draws it. The G menu and the terminal hide the whole HUD
+    /// when they open (MyScreenManager.AddScreens hides the screen below one that CanHideOthers) and show their own toolbar.
+    /// Off with the VR setting "Toolbar on the HUD" (<see cref="VRSettings.ShowToolbarOnFoot"/>); RenderDebug HudToolbar=1 shows it again.
     /// </summary>
     /// <remarks>
     /// <para>

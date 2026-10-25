@@ -128,8 +128,16 @@ namespace SpaceEngineersVR.OpenXR
 
         /// <summary>The session's state as the runtime last announced it.</summary>
         public static XrSessionState State => state;
+        /// <summary>The eye images' size: the runtime's recommendation with room for <see cref="Rendering.DynamicResolution.Ceiling"/> above it.</summary>
         public static int EyeWidth { get; private set; }
         public static int EyeHeight { get; private set; }
+
+        /// <summary>The runtime's recommended eye size, the eyes' 100%.</summary>
+        public static int RecommendedWidth { get; private set; }
+        public static int RecommendedHeight { get; private set; }
+
+        /// <summary>The smaller of two runtime limits, either 0 when not given.</summary>
+        private static int Smaller(int a, int b) => a <= 0 ? b : b <= 0 ? a : Math.Min(a, b);
 
         /// <summary>The head (the runtime's VIEW space) in the LOCAL space, at the current frame's display time.</summary>
         public static XrPosef Head { get; private set; } = XrPosef.Identity;
@@ -223,8 +231,10 @@ namespace SpaceEngineersVR.OpenXR
             Xr.Check(Xr.xrCreateReferenceSpace(session, ref spaceInfo, out viewSpace), "xrCreateReferenceSpace", XrRuntime.Instance);
             CreateStageSpace();
 
-            EyeWidth = (int)XrRuntime.EyeWidth;
-            EyeHeight = (int)XrRuntime.EyeHeight;
+            RecommendedWidth = (int)XrRuntime.EyeWidth;
+            RecommendedHeight = (int)XrRuntime.EyeHeight;
+            EyeWidth = Rendering.DynamicResolution.Headroom(RecommendedWidth, Smaller((int)XrRuntime.MaxEyeWidth, XrRuntime.MaxImageWidth));
+            EyeHeight = Rendering.DynamicResolution.Headroom(RecommendedHeight, Smaller((int)XrRuntime.MaxEyeHeight, XrRuntime.MaxImageHeight));
             Format format = swapchainFormat = ChooseFormat(eyeFormat);
             runtimeFormat = dxvk != null ? VulkanFormat(format) : (long)format;
             for (int eye = 0; eye < 2; eye++)
@@ -235,7 +245,7 @@ namespace SpaceEngineersVR.OpenXR
 
             XrInput.Create(session, space); // never throws: without controllers the display still works
             VisibilityMaskChanges++;
-            Log.Info($"OpenXR session created: eyes {EyeWidth}x{EyeHeight} {format}" + (dxvk != null ? $" (VkFormat {runtimeFormat}), on Vulkan through DXVK" : ""));
+            Log.Info($"OpenXR session created: eyes {RecommendedWidth}x{RecommendedHeight}, images {EyeWidth}x{EyeHeight} {format}" + (dxvk != null ? $" (VkFormat {runtimeFormat}), on Vulkan through DXVK" : ""));
         }
 
         /// <summary>Handles the runtime's events: starts and stops the session as the headset comes and goes.</summary>

@@ -5,19 +5,24 @@
 // points at. Opened from the quick menu's Seat page (SeatPage). His For(seat) read the tuning from the cockpit's shared memory (MultiplayerRuntime);
 // here it is kept locally per world and cockpit, his own LocalOnly path, in VRSettings.ColbyFlightTunings. A cockpit with none of
 // its own starts from FlightTuning's defaults with its three vehicle switches from our settings (colbyVehicleFlight, colbyBarTilt,
-// colbyWheelMotion). Not carried: the wrist copy (OnWrist), the window drag (UpdateWindow, Floating). His TapHoldLevers (phase 6)
-// is VRSettings.ColbyTapHoldLevers, on the Grip page as his.
+// colbyWheelMotion). Not carried: the wrist copy (OnWrist), the window drag (UpdateWindow, Floating). His Grip page is the Hands
+// page, with his TapHoldSticks and TapHoldLevers (phase 6) and our twist and thumbstick settings beside them, so every cockpit
+// choice is changed from the seat; a Levers page (ours) sets each throttle lever to spring back to zero or stay where let go, and a
+// Screens page (ours) sets what each of the cockpit's screens shows, from the same list as the game's own screen settings.
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Sandbox;
 using Sandbox.Game.Entities;
+using Sandbox.Game.GameSystems.TextSurfaceScripts;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using Sandbox.ModAPI;
 using SpaceEngineersVR.Gui;
+using VRage;
 using VRage.Game;
+using VRage.Game.GUI.TextPanel;
 using VRage.Utils;
 using VRageMath;
 
@@ -124,35 +129,85 @@ namespace SpaceEngineersVR.Cockpits
             internal Action<float> Change;
         }
 
-        internal static List<Key> Layout(FlightTuning value,bool personal,bool sticks,string subtype,int page,Action<int> setPage,
-            Action<bool> setPersonal,Action toggleSticks,bool levers=false,Action toggleLevers=null)
+        /// <summary>The page shown: one of the cockpit's tuning pages (a vehicle has three), its levers, or the grip (the player's own, every cockpit).</summary>
+        internal const int LeversPage=10,GripPage=11,ScreensPage=12;
+
+        /// <summary>A Screens page row: the screen's name, what it shows, and a step back or on through the game's list.</summary>
+        internal sealed class ScreenChoice
+        {
+            internal string Name,Shows;
+            internal Action Previous,Next;
+        }
+
+        /// <summary>The Grip page's switches, the player's own for every cockpit: name, what it does, its state, and its change.</summary>
+        internal sealed class Choice
+        {
+            internal string Label;
+            internal bool On;
+            internal Action Toggle;
+        }
+
+        internal static List<Key> Layout(FlightTuning value,string subtype,int page,Action<int> setPage,IList<Choice> grip,
+            IList<(int Slot,string Name)> throttles,bool hasHandles,Func<int,bool> holds,Action<int> toggleHold,IList<ScreenChoice> screens=null)
         {
             var keys=new List<Key>();
             bool vehicle=CockpitRig.Find(subtype)?.Wheel!=null;
             bool saddle=CockpitRig.Find(subtype)?.Wheel?.ThrottleActor>=0;
             Action<string,float,float,float,float,Action,bool> button=(label,x,y,w,h,action,active)=>keys.Add(new Key {Label=label,X=x,Y=y,W=w,H=h,Action=action,Active=active});
             Action<string,float,float,float,float> caption=(label,x,y,w,h)=>keys.Add(new Key {Label=label,X=x,Y=y,W=w,H=h,Caption=true});
-            if(vehicle)
+            var tabs=new List<(string Label,int Page)>();
+            if(vehicle) { tabs.Add(("Steering",0)); tabs.Add(("Flight",1)); tabs.Add((saddle ? "Bars":"Motion",2)); }
+            else tabs.Add(("Tuning",0));
+            if(hasHandles) tabs.Add(("Levers",LeversPage));
+            if(screens?.Count>0) tabs.Add(("Screens",ScreensPage));
+            tabs.Add(("Hands",GripPage));
+            float tabStep=.95f/tabs.Count;
+            for(int t=0;t<tabs.Count;t++)
             {
-                float width=.23f,step=.24f;
-                button("Steering",.025f,.12f,width,.075f,()=>{setPersonal(false); setPage(0);},!personal && page==0);
-                button("Flight",.025f+step,.12f,width,.075f,()=>{setPersonal(false); setPage(1);},!personal && page==1);
-                button(saddle ? "Bars":"Motion",.025f+step*2,.12f,width,.075f,()=>{setPersonal(false); setPage(2);},!personal && page==2);
-                button("Grip",.025f+step*3,.12f,width,.075f,()=>setPersonal(true),personal);
+                int target=tabs[t].Page;
+                button(tabs[t].Label,.025f+tabStep*t,.12f,tabStep-.01f,.075f,()=>setPage(target),page==target);
             }
-            else
+            if(page==GripPage)
             {
-                button("Tuning",.025f,.12f,.47f,.075f,()=>setPersonal(false),!personal);
-                button("Grip",.505f,.12f,.47f,.075f,()=>setPersonal(true),personal);
-            }
-            if(personal)
-            {
-                button(vehicle ? "Tap to hold steering":"Tap to hold joysticks",.035f,.29f,.93f,.12f,toggleSticks,sticks);
-                keys[keys.Count-1].Value=sticks ? "On":"Off";
-                if(toggleLevers!=null)
+                for(int i=0;i<grip.Count;i++)
                 {
-                    button("Tap to hold analog levers",.035f,.46f,.93f,.12f,toggleLevers,levers);
-                    keys[keys.Count-1].Value=levers ? "On":"Off";
+                    var choice=grip[i];
+                    button(choice.Label,.035f,.225f+i*.105f,.93f,.09f,choice.Toggle,choice.On);
+                    keys[keys.Count-1].Value=choice.On ? "On":"Off";
+                }
+                caption("These are yours, in every cockpit.",.035f,.76f,.93f,.055f);
+            }
+            else if(page==ScreensPage && screens!=null)
+            {
+                caption("What each screen shows, as in the game's screen settings.",.035f,.215f,.93f,.05f);
+                for(int i=0;i<screens.Count && i<7;i++)
+                {
+                    var row=screens[i];
+                    float y=.28f+i*.085f;
+                    caption(row.Name,.035f,y,.36f,.075f);
+                    button("<",.40f,y,.075f,.075f,row.Previous,false);
+                    button(row.Shows,.485f,y,.40f,.075f,row.Next,true);
+                    button(">",.895f,y,.075f,.075f,row.Next,false);
+                }
+            }
+            else if(page==LeversPage)
+            {
+                if(throttles.Count==0)
+                {
+                    caption("No handle here works a thrust override yet.",.035f,.26f,.93f,.055f);
+                    caption("Assign one: touch a handle and tap Y,",.035f,.33f,.93f,.055f);
+                    caption("or Assign switches on the quick menu's Cockpit page.",.035f,.40f,.93f,.055f);
+                }
+                else
+                {
+                    caption("A throttle lever let go goes back to zero thrust.",.035f,.215f,.93f,.05f);
+                    for(int i=0;i<throttles.Count && i<7;i++)
+                    {
+                        int slot=throttles[i].Slot;
+                        bool stays=holds(slot);
+                        button(throttles[i].Name,.035f,.28f+i*.085f,.93f,.075f,()=>toggleHold(slot),!stays);
+                        keys[keys.Count-1].Value=stays ? "Stays where let go":"Springs back to zero";
+                    }
                 }
             }
             else if(vehicle && page==0)
@@ -235,10 +290,17 @@ namespace SpaceEngineersVR.Cockpits
         private static readonly Vector2 ScreenSize=new Vector2(.80f,.80f*.31f/.55f*1600f/1200f+.06f);
         private const float Head=.07f,TextScale=.8f;
 
+        /// <summary>The colour of a button that is not the one chosen.</summary>
+        private static readonly Vector4 DimColor=new Vector4(0.6f,0.66f,0.7f,1f);
+
         private readonly MyCockpit owner;
         private FlightTuning draft;
-        private bool personal,stickHold,leverHold;
-        private int vehiclePage;
+        private bool stickHold,leverHold,twist,thumbsticks;
+        private int page;
+        private bool[] holds;
+        // The Screens page: each screen's choice as an index into contents (0 none, 1 text and images, then the scripts).
+        private readonly int[] shows,shown;
+        private readonly List<(string Name,ContentType Type,string Script)> contents=Contents();
         private bool rebuild;
 
         internal FlightSettingsScreen(MyCockpit owner,FlightTuning draft)
@@ -246,6 +308,13 @@ namespace SpaceEngineersVR.Cockpits
                    MySandboxGame.Config.UIBkOpacity,MySandboxGame.Config.UIOpacity)
         {
             this.owner=owner; this.draft=draft; stickHold=VRSettings.ColbyTapHoldSticks; leverHold=VRSettings.ColbyTapHoldLevers;
+            twist=VRSettings.ColbyStickTwist; thumbsticks=VRSettings.ColbyThumbsticksChoice;
+            holds=new bool[CockpitLayout.Count(owner.BlockDefinition.Id.SubtypeName)];
+            bool[] saved=CockpitActions.HoldsCopy();
+            Array.Copy(saved,holds,Math.Min(saved.Length,holds.Length));
+            var surfaces=Surfaces(owner);
+            shows=new int[surfaces.Count]; shown=new int[surfaces.Count];
+            for(int i=0;i<surfaces.Count;i++) shows[i]=shown[i]=Showing(surfaces[i]);
             EnabledBackgroundFade=true;
             RecreateControls(true);
         }
@@ -260,9 +329,18 @@ namespace SpaceEngineersVR.Cockpits
             float left=-size.X/2f,top=-size.Y/2f+Head,width=size.X,height=size.Y-Head;
             Func<float,float,Vector2> at=(x,y)=>new Vector2(left+x*width,top+y*height);
 
-            var keys=FlightSettings.Layout(draft,personal,stickHold,owner.BlockDefinition.Id.SubtypeName,vehiclePage,
-                page=>{vehiclePage=page; rebuild=true;},value=>{personal=value; rebuild=true;},()=>{stickHold=!stickHold; rebuild=true;},
-                leverHold,()=>{leverHold=!leverHold; rebuild=true;});
+            string subtype=owner.BlockDefinition.Id.SubtypeName;
+            bool vehicle=CockpitRig.Find(subtype)?.Wheel!=null;
+            var grip=new List<FlightSettings.Choice>
+            {
+                new FlightSettings.Choice { Label=vehicle ? "Tap to hold steering":"Tap to hold joysticks",On=stickHold,Toggle=()=>stickHold=!stickHold },
+                new FlightSettings.Choice { Label="Tap to hold analog levers",On=leverHold,Toggle=()=>leverHold=!leverHold },
+            };
+            if(!vehicle) grip.Add(new FlightSettings.Choice { Label="Twist a stick to yaw, or to move up and down",On=twist,Toggle=()=>twist=!twist });
+            grip.Add(new FlightSettings.Choice { Label="Thumbsticks fly and drive too",On=thumbsticks,Toggle=()=>thumbsticks=!thumbsticks });
+            var keys=FlightSettings.Layout(draft,subtype,page,value=>{page=value; rebuild=true;},grip,
+                CockpitActions.ThrottleLevers(),CockpitActions.HasHandles,slot=>slot<holds.Length && holds[slot],
+                slot=>{ if(slot<holds.Length) holds[slot]=!holds[slot]; rebuild=true; },ScreenRows());
             foreach(var key in keys)
             {
                 if(key.Caption)
@@ -280,7 +358,10 @@ namespace SpaceEngineersVR.Cockpits
             // His bottom row.
             AddButton("Reset defaults",at(.035f,.875f),new Vector2(.25f*width,.085f*height),false,()=>
             {
-                if(personal) stickHold=leverHold=false; else draft=FlightSettings.Defaults();
+                if(page==FlightSettings.GripPage) { stickHold=leverHold=thumbsticks=false; twist=true; }
+                else if(page==FlightSettings.LeversPage) Array.Clear(holds,0,holds.Length);
+                else if(page==FlightSettings.ScreensPage) Array.Copy(shown,shows,shows.Length);
+                else draft=FlightSettings.Defaults();
                 rebuild=true;
             });
             AddButton("Cancel",at(.65f,.875f),new Vector2(.15f*width,.085f*height),false,()=>CloseScreen());
@@ -293,10 +374,10 @@ namespace SpaceEngineersVR.Cockpits
             var button=new MyGuiControlButton(at,MyGuiControlButtonStyleEnum.Rectangular,size,null,MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_TOP,
                 null,new StringBuilder(text),TextScale,MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_CENTER,MyGuiControlHighlightType.WHEN_CURSOR_OVER,
                 sender=>Guard(text,pressed));
-            button.CustomStyle=DatapadScreen.ButtonStyle;
+            button.CustomStyle=QuickActionsScreen.TileStyle;
             button.Size=size;
             button.Checked=active;
-            button.ColorMask=active ? Vector4.One:DatapadScreen.DimColor;
+            button.ColorMask=active ? Vector4.One:DimColor;
             Controls.Add(button);
         }
 
@@ -321,9 +402,68 @@ namespace SpaceEngineersVR.Cockpits
         private void Apply()
         {
             if(draft.Encode()!=FlightSettings.For(owner).Encode()) FlightSettings.Save(owner,draft);
-            if(stickHold!=VRSettings.ColbyTapHoldSticks || leverHold!=VRSettings.ColbyTapHoldLevers)
-            { VRSettings.ColbyTapHoldSticks=stickHold; VRSettings.ColbyTapHoldLevers=leverHold; VRSettings.Save(); }
+            if(stickHold!=VRSettings.ColbyTapHoldSticks || leverHold!=VRSettings.ColbyTapHoldLevers || twist!=VRSettings.ColbyStickTwist || thumbsticks!=VRSettings.ColbyThumbsticksChoice)
+            {
+                VRSettings.ColbyTapHoldSticks=stickHold; VRSettings.ColbyTapHoldLevers=leverHold; VRSettings.ColbyStickTwist=twist; VRSettings.ColbyThumbsticksChoice=thumbsticks;
+                VRSettings.Save();
+            }
+            bool[] saved=CockpitActions.HoldsCopy();
+            if(holds.Where((stays,slot)=>stays!=(slot<saved.Length && saved[slot])).Any()) CockpitActions.SaveHolds(holds);
+            var surfaces=Surfaces(owner);
+            for(int i=0;i<shows.Length && i<surfaces.Count;i++)
+            {
+                if(shows[i]==shown[i]) continue;
+                var (name,type,script)=contents[shows[i]];
+                // The game's own content and script setters: synced with the cockpit and saved with the world, as its screen settings do.
+                surfaces[i].ContentType=type;
+                if(type==ContentType.SCRIPT) surfaces[i].Script=script;
+                Log.Info($"ColbyFlightSettings: screen {i} ({surfaces[i].DisplayName}) of {owner.BlockDefinition.Id.SubtypeName} now shows {name}");
+            }
             CloseScreen();
+        }
+
+        /// <summary>The game's screen choices, in its screen settings' order: none, text and images, then every script.</summary>
+        private static List<(string Name,ContentType Type,string Script)> Contents()
+        {
+            var list=new List<(string Name,ContentType Type,string Script)> { ("None",ContentType.NONE,null),("Text and images",ContentType.TEXT_AND_IMAGE,null) };
+            var scripts=MyTextSurfaceScriptFactory.Instance?.Scripts;
+            if(scripts!=null)
+                foreach(var script in scripts) list.Add((MyTexts.GetString(script.Value.DisplayName),ContentType.SCRIPT,script.Key));
+            return list;
+        }
+
+        /// <summary>The cockpit's screens, through the game's own surface provider.</summary>
+        internal static List<Sandbox.ModAPI.Ingame.IMyTextSurface> Surfaces(MyCockpit cockpit)
+        {
+            var list=new List<Sandbox.ModAPI.Ingame.IMyTextSurface>();
+            if(cockpit is Sandbox.ModAPI.Ingame.IMyTextSurfaceProvider provider)
+                for(int i=0;i<provider.SurfaceCount;i++) { var surface=provider.GetSurface(i); if(surface!=null) list.Add(surface); }
+            return list;
+        }
+
+        private int Showing(Sandbox.ModAPI.Ingame.IMyTextSurface surface)
+        {
+            if(surface.ContentType==ContentType.SCRIPT)
+            {
+                int at=contents.FindIndex(c=>c.Type==ContentType.SCRIPT && string.Equals(c.Script,surface.Script,StringComparison.OrdinalIgnoreCase));
+                return at>=0 ? at:0;
+            }
+            return surface.ContentType==ContentType.NONE ? 0:1;
+        }
+
+        private List<FlightSettings.ScreenChoice> ScreenRows()
+        {
+            var surfaces=Surfaces(owner);
+            var rows=new List<FlightSettings.ScreenChoice>();
+            for(int i=0;i<shows.Length && i<surfaces.Count;i++)
+            {
+                int at=i;
+                string key=surfaces[i].DisplayName ?? surfaces[i].Name;
+                string name=string.IsNullOrEmpty(key) ? "Screen "+(i+1):MyTexts.GetString(MyStringId.GetOrCompute(key));
+                rows.Add(new FlightSettings.ScreenChoice { Name=name,Shows=contents[shows[i]].Name,
+                    Previous=()=>shows[at]=(shows[at]+contents.Count-1)%contents.Count,Next=()=>shows[at]=(shows[at]+1)%contents.Count });
+            }
+            return rows;
         }
 
         public override bool Update(bool hasFocus)

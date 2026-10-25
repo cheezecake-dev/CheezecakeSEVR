@@ -12,11 +12,14 @@ namespace SpaceEngineersVR
     /// influence render device creation (adapter choice, stereo flag). Two hosts call it there:
     /// SpaceEngineersVR.Launcher, and Pulsar through <see cref="global::Preloader.Finish"/>.
     /// </summary>
-    public static class Bootstrap
+    public static partial class Bootstrap
     {
         private static bool initialized;
 
         internal static Harmony Harmony { get; private set; }
+
+        /// <summary>The start of a launch, before the settings are read; a test aid implements it (the test launcher's focus return).</summary>
+        static partial void TestAidsLaunch();
 
         /// <summary>True when we were set up before the game created its render device.</summary>
         internal static bool StartedBeforeGame { get; private set; }
@@ -44,7 +47,7 @@ namespace SpaceEngineersVR
             Log.Info($"SpaceEngineersVR {typeof(Bootstrap).Assembly.GetName().Version} starting via {host} ({(beforeGame ? "before" : "after")} the game started)");
             Log.Info("Plugin assembly: " + typeof(Bootstrap).Assembly.Location);
             Log.Info("Args: " + string.Join(" ", args ?? Array.Empty<string>()));
-            Input.FocusReturn.Start();
+            TestAidsLaunch();
 
             UserFiles.CopyFromOldPlace(VRSettings.FileName);
             VRSettings.Load(args);

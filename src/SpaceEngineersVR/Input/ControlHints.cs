@@ -1,6 +1,7 @@
 using System;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
+using SpaceEngineersVR.Input.Bindings;
 
 namespace SpaceEngineersVR.Input
 {
@@ -24,27 +25,76 @@ namespace SpaceEngineersVR.Input
     internal static class ControlHints
     {
         /// <summary>The first menu of a session: Back, the pointing hand's stick scrolling a list, and the recentre.</summary>
-        public static string MenuText =>
-            "B: back.  " + (VRSettings.DominantHand == Hand.Left ? "Left" : "Right") + " stick: scroll.  Hold Menu: recentre";
+        public static string MenuText => Join(
+            Named("", ActionNames.Name(VRAction.MenuBack), ": back"),
+            (VRSettings.DominantHand == Hand.Left ? "Left" : "Right") + " stick: scroll",
+            Named("", ActionNames.Describe(VRAction.Recentre), ": recentre"));
 
-        /// <summary>On foot, once a session: where the tools and the inventory are, and the recentre (VRControls.MenuButton).</summary>
-        public const string WalkText = "Hold left grip: tools wheel.  Y: wrist panel (inventory, terminal, G menu).  Hold Menu: recentre";
+        /// <summary>
+        /// On foot, once a session: where the tools, the inventory, the menus and the settings are, the recentre
+        /// (VRControls.MenuButton), and that a look at a hand names its buttons (Rendering.HandHints). Each button by its name on
+        /// the controller in use, from the bindings (<see cref="ActionNames"/>).
+        /// </summary>
+        public static string WalkText => Join(
+            Named("Hold ", ActionNames.Name(VRAction.ToolsWheel), ": tools wheel"),
+            WristButton.Enabled ? Named("", ActionNames.Describe(VRAction.WristPanel), ": wrist panel (inventory, terminal, menus, VR settings, controls)") : null,
+            Named("", ActionNames.Describe(VRAction.Recentre), ": recentre"),
+            Rendering.HandHints.On ? "Look at a hand to see what its buttons do" : null);
 
-        /// <summary>The same with the wrist panel turned off.</summary>
-        public const string WalkTextNoWrist = "Hold left grip: tools wheel.  Hold Menu: recentre";
+        /// <summary>
+        /// In a seat, once a session: the tools wheel and the wrist panel there (Y tapped while reading the wrist,
+        /// <see cref="WristButton.OpenSeatedAtWrist"/>). Getting up is the seat's own line ("Hold Y to leave ...").
+        /// </summary>
+        public static string SeatText
+        {
+            get
+            {
+                string y = ActionNames.Name(VRAction.SeatToolsWheel);
+                // A tap where its hold gets up (LeaveSeat on the same button), a press where it does not.
+                bool shared = ActionNames.Also(ActionNames.Find(VRAction.SeatToolsWheel), VRAction.LeaveSeat, "get up") != null;
+                return Join(
+                    Named("", ActionNames.Describe(VRAction.SeatToolsWheel), ": tools wheel"),
+                    WristButton.Enabled && Rendering.WristStatus.Active ? Named(shared ? "Turn your wrist up and tap " : "Turn your wrist up and press ", y, ": wrist panel") : null,
+                    Rendering.HandHints.On ? "Look at a hand to see what its buttons do" : null);
+            }
+        }
+
+        private static string Named(string before, string name, string after) => name == null ? null : before + name + after;
+
+        private static string Join(params string[] parts)
+        {
+            var kept = new System.Collections.Generic.List<string>();
+            foreach (string part in parts)
+                if (!string.IsNullOrEmpty(part))
+                    kept.Add(part);
+            return string.Join(".  ", kept);
+        }
 
         /// <summary>
         /// The inventory screen, the first time it opens in a session: moving an item to the other side, a tool or gun onto the
         /// toolbar below (Gui.InventoryToolbar) or into the hand (InventoryPull), the amounts (the hand that does not point:
         /// VRControls.WantsAmount), and out.
         /// </summary>
-        public static string InventoryText =>
-            VRSettings.DominantHand == Hand.Left
-                ? "X on an item: move it to the other inventory.  Drag a tool or gun onto the toolbar, or grip it and pull it out to hold it.  Hold right grip: 10, trigger: 100, both: 1000.  B: back"
-                : "A on an item: move it to the other inventory.  Drag a tool or gun onto the toolbar, or grip it and pull it out to hold it.  Hold left grip: 10, trigger: 100, both: 1000.  B: back";
+        public static string InventoryText
+        {
+            get
+            {
+                // The pointing hand's move button and the other hand's amounts mirror left-handed (VRControls.WantsAmount, Laser).
+                bool left = VRSettings.DominantHand == Hand.Left;
+                return Join(
+                    Named("", ActionNames.Name(VRAction.MenuMoveItem, left), " on an item: move it to the other inventory"),
+                    "Drag a tool or gun onto the toolbar, or grip it and pull it out to hold it",
+                    Named("Hold ", ActionNames.Name(VRAction.AmountTimes10, left), ": 10")
+                        + Named(", ", ActionNames.Name(VRAction.AmountTimes100, left), ": 100, both: 1000"),
+                    Named("", ActionNames.Name(VRAction.MenuBack), ": back"));
+            }
+        }
 
         /// <summary>The hand pointing at a container (cargo, a connector, a conveyor port), or a tool in it aimed at one, or the right hand on one, the first time in a session: the stick clicks there.</summary>
-        public const string ContainerText = "Left stick click: withdraw for the Build Planner.  Right stick click: put the planner in production.  Grip + right stick click: deposit all.";
+        public static string ContainerText => Join(
+            Named("", ActionNames.Name(VRAction.QuickTake), ": withdraw for the Build Planner"),
+            Named("", ActionNames.Name(VRAction.QuickProduction), ": put the planner in production"),
+            Named("", ActionNames.Name(VRAction.QuickDepositAll), ": deposit all"));
 
         /// <summary>How long a reminder stays up, milliseconds of simulation time.</summary>
         public const int Milliseconds = 4000;
@@ -52,6 +102,7 @@ namespace SpaceEngineersVR.Input
         /// <summary>Test seam: stands in for the HUD. Gets the text and the time; false when it could not be shown.</summary>
         internal static Func<string, int, bool> ShowOverride { get; set; }
 
+        private static bool seatShown;
         private static bool wasMenu, wasInventory, menuPending, menuShown, walkShown, inventoryPending, inventoryShown, containerShown, broken;
         private static MyHudNotificationBase current;
 
@@ -65,7 +116,7 @@ namespace SpaceEngineersVR.Input
         /// one, or it is empty) or the right hand is on one, where the stick clicks take, put the planner in production and, with
         /// the right grip held, dump.
         /// </summary>
-        public static void Update(bool menu, bool walking = false, bool inventory = false, bool container = false)
+        public static void Update(bool menu, bool walking = false, bool inventory = false, bool container = false, bool seated = false)
         {
             if (menu && !wasMenu && !menuShown)
                 menuPending = true;
@@ -78,9 +129,10 @@ namespace SpaceEngineersVR.Input
             if (!inventory)
                 inventoryPending = false;
             bool walkPending = walking && !walkShown;
+            bool seatPending = seated && !menu && !seatShown;
             // Pending while the hand stays at the container, as the others wait for their situation.
             bool containerPending = container && !menu && !containerShown;
-            if (!VRSettings.ControlHints || broken || (!menuPending && !inventoryPending && !walkPending && !containerPending))
+            if (!VRSettings.ControlHints || broken || (!menuPending && !inventoryPending && !walkPending && !containerPending && !seatPending))
                 return;
 
             // The walk or the container reminder still up: the other one comes when it has gone.
@@ -103,15 +155,23 @@ namespace SpaceEngineersVR.Input
                 containerShown = true;
                 onFootHint = true;
             }
-            else if (!onFootUp && walkPending && !menuPending && Show(WristButton.Enabled ? WalkText : WalkTextNoWrist))
+            else if (!onFootUp && walkPending && !menuPending && Show(WalkText))
             {
                 walkShown = true;
                 onFootHint = true;
             }
+            else if (!onFootUp && seatPending && Show(SeatText))
+            {
+                seatShown = true;
+                onFootHint = true;
+            }
         }
 
-        /// <summary>A cutscene plays on the forced view's screen: how to skip it (<see cref="VRControls"/>' Back).</summary>
-        public const string CutsceneText = "B: skip";
+        /// <summary>
+        /// A cutscene plays on the forced view's screen: how to skip it (<see cref="VRControls"/>' Back there: the jetpack's
+        /// button, or a seat's thrust down); null when neither is bound, so no hint names a button that does not skip.
+        /// </summary>
+        public static string CutsceneText => Named("", ActionNames.Describe(VRAction.ToggleJetpack) ?? ActionNames.Describe(VRAction.ThrustDown), ": skip");
 
         private static MyHudNotificationBase cutsceneHint;
 
@@ -129,7 +189,8 @@ namespace SpaceEngineersVR.Input
                 MyHudNotifications notifications = MyHud.Notifications;
                 if (notifications == null || MySession.Static == null)
                     return;
-                if (!skippable)
+                string text = skippable ? CutsceneText : null;
+                if (text == null)
                 {
                     if (cutsceneHint != null)
                         notifications.Remove(cutsceneHint);
@@ -138,7 +199,7 @@ namespace SpaceEngineersVR.Input
                 }
                 if (cutsceneHint != null && cutsceneHint.Alive)
                     return;
-                cutsceneHint = new MyHudNotificationDebug(CutsceneText, Milliseconds, level: MyNotificationLevel.Important);
+                cutsceneHint = new MyHudNotificationDebug(text, Milliseconds, level: MyNotificationLevel.Important);
                 notifications.Add(cutsceneHint);
             }
             catch (Exception e)

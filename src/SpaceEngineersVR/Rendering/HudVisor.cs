@@ -70,7 +70,8 @@ namespace SpaceEngineersVR.Rendering
     /// where it moved it. It fails safe: tags that do not pair, or a part with no layer or no room in the visor image,
     /// leave that frame's HUD on the flat panel as without the visor; after <see cref="FaultsToStop"/> such frames, or
     /// any error, or a frame the runtime refuses, the whole HUD stays on the flat panel for the rest of the run. The
-    /// desktop window shows the visor as the headset does (<see cref="MirrorLayers"/>). The setting "HUD on the visor" off, or RenderDebug HudVisor=0:
+    /// desktop window shows the visor as the headset does (<see cref="MirrorLayers"/>), and so it does with no headset
+    /// session running (the headset asleep or not started): the same display, curved round the head, drawn into the window. The setting "HUD on the visor" off, or RenderDebug HudVisor=0:
     /// all of it on the flat panel.
     /// </para>
     /// </summary>
@@ -399,7 +400,7 @@ namespace SpaceEngineersVR.Rendering
             {
                 bool on = Wanted;
                 Report(on);
-                tagging = on && hooked && HeadsetShown && InPlay();
+                tagging = on && hooked && Shown && InPlay();
                 if (!tagging)
                     return;
                 for (int i = 0; i < controls.Length; i++)
@@ -433,6 +434,18 @@ namespace SpaceEngineersVR.Rendering
         private static bool HeadsetShown => StereoPatches.VRPicture && XrSession.Running;
 
         /// <summary>
+        /// The picture is VR's but no headset session runs (the headset asleep, or not started yet): the desktop window shows the
+        /// visor as the headset would (<see cref="MirrorLayers"/>), when it draws the headset's layers at all.
+        /// </summary>
+        private static bool WindowShown => StereoPatches.VRPicture && !XrSession.Running && MirrorLayers.Available;
+
+        /// <summary>The visor is seen: in the headset, or in the window without one.</summary>
+        private static bool Shown => HeadsetShown || WindowShown;
+
+        /// <summary>The visor's pieces are curved: the runtime offers cylinder layers, or the window draws them itself.</summary>
+        private static bool Curved => (XrRuntime.HasCylinder || !XrSession.Running) && !NoCylinder;
+
+        /// <summary>
         /// The panel is a visor: no menu has the focus (as <see cref="WorldMenu"/> decides it, so the panel the parts are
         /// taken from is the head-locked one; with a menu, a wheel or the wrist panel open it is world-locked and the HUD
         /// stays on it whole).
@@ -446,12 +459,18 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>Logs whether the parts go on the visor, and how, when that changes.</summary>
         private static void Report(bool on)
         {
-            bool curved = XrRuntime.HasCylinder && !NoCylinder;
-            int key = on ? (curved ? (Zones ? 6 : 1) : 2) : failed ? 3 : Off ? 4 : 5;
-            // On, it is told once the headset's runtime is there to say how many layers it takes; a failure has its own log.
-            if (key == stateKey || on && !HeadsetShown)
+            bool curved = Curved;
+            bool window = WindowShown;
+            int key = on ? (curved ? (Zones ? 6 : 1) : 2) + (window ? 10 : 0) : failed ? 3 : Off ? 4 : 5;
+            // On, it is told once the headset's runtime is there to say how many layers it takes, or the window shows it; a failure has its own log.
+            if (key == stateKey || on && !Shown)
                 return;
             stateKey = key;
+            if (on && window)
+            {
+                Log.Info("HUD on the visor: on, in the desktop window without a headset session, as one display curved round the head");
+                return;
+            }
             if (on)
             {
                 string layers = curved && !Zones ? "one display, a cylinder layer (XR_KHR_composition_layer_cylinder) round the head"
@@ -629,7 +648,7 @@ namespace SpaceEngineersVR.Rendering
                 XrSession.VisorRefused = null;
                 Fail("the headset's runtime refused a frame with the HUD's parts in it (" + refused + "); it was sent again without them");
             }
-            bool wanted = hooked && Wanted && HeadsetShown;
+            bool wanted = hooked && Wanted && Shown;
             Tally(wanted);
             if (!hooked || failed)
                 return;
@@ -1080,10 +1099,11 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>
         /// The panel is shown: draws the parts into the visor image and hands it to the headset when they go on the visor
         /// (<paramref name="onVisor"/>: a headset frame, the panel head-locked), and otherwise back into the panel, where
-        /// they were. On a failure they go back into the panel too.
+        /// they were. On a failure they go back into the panel too. Without a headset frame (<paramref name="toHeadset"/>
+        /// false) the visor image is made all the same, for the desktop window alone (<see cref="MirrorLayers"/>).
         /// </summary>
         /// <returns>The parts are on the visor this frame (<see cref="Attach"/>).</returns>
-        public static bool Show(object panel, bool onVisor)
+        public static bool Show(object panel, bool onVisor, bool toHeadset = true)
         {
             if (!split)
                 return false;
@@ -1120,14 +1140,17 @@ namespace SpaceEngineersVR.Rendering
                     SuitPower.DrawEnergyIndicator(image, imageSize);
                 if (display)
                     PowerOn(image);
-                SharpDX.Direct3D11.Texture2D swapImage = XrSession.AcquireVisorImage(imageSize.X, imageSize.Y);
-                try
+                if (toHeadset)
                 {
-                    EyeRenderer.CopyToImage(image, swapImage);
-                }
-                finally
-                {
-                    XrSession.ReleaseVisorImage();
+                    SharpDX.Direct3D11.Texture2D swapImage = XrSession.AcquireVisorImage(imageSize.X, imageSize.Y);
+                    try
+                    {
+                        EyeRenderer.CopyToImage(image, swapImage);
+                    }
+                    finally
+                    {
+                        XrSession.ReleaseVisorImage();
+                    }
                 }
                 if (display)
                     PlaceDisplay();
@@ -1466,7 +1489,7 @@ namespace SpaceEngineersVR.Rendering
             float widthDegrees = VRSettings.HudWidthDegrees;
             // Tangent of the angle a pixel spans in the middle of the flat panel, seen from the head.
             float perPixel = 2f * (float)Math.Tan(MathHelper.ToRadians(widthDegrees) / 2f) / gui.X;
-            cylinder = XrRuntime.HasCylinder && !NoCylinder;
+            cylinder = Curved;
             if (loggedFor != (distance, widthDegrees, cylinder, VRSettings.HudTextSize, false))
             {
                 loggedFor = (distance, widthDegrees, cylinder, VRSettings.HudTextSize, false);
@@ -1540,7 +1563,7 @@ namespace SpaceEngineersVR.Rendering
         private static void PlaceDisplay()
         {
             float distance = VRSettings.HudDistance;
-            cylinder = XrRuntime.HasCylinder && !NoCylinder;
+            cylinder = Curved;
             float middleUp = (centreRow - imageSize.Y / 2f) / perRadian * distance;
             // On the glass: swung up with it in the helmet's space, then with the helmet's turn from the head (row vectors).
             Matrix onGlass = Matrix.CreateRotationX(GlassSwing);

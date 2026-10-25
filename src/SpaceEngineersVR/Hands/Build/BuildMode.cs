@@ -9,6 +9,7 @@ using Sandbox.Game.SessionComponents;
 using Sandbox.Game.SessionComponents.Clipboard;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Input.Bindings;
 using VRageMath;
 
 namespace SpaceEngineersVR.Hands
@@ -57,7 +58,6 @@ namespace SpaceEngineersVR.Hands
         /// <summary>How much nearer the next 90 degree step has to be than the one shown before the block moves to it, degrees: a single-axis turn steps at 50 degrees and back at 40.</summary>
         public const double SnapHysteresisDegrees = 10.0;
 
-        public const double SymmetryHoldSeconds = 0.5;
         public const double DistanceRepeatDelay = 0.4, DistanceRepeatEvery = 0.08;
 
         /// <summary>How long after a trigger pull a block has to be placed or removed before it counts as refused, seconds.</summary>
@@ -87,11 +87,6 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The voxel hand is on (creative) on foot or on the jetpack: the left stick click and the right stick move the brush.</summary>
         public static bool VoxelHand { get; private set; }
 
-        /// <summary>A is the block's stage step this frame (pressed with the left stick click held), not jump or the jetpack's climb, until it is let go.</summary>
-        public static bool TakesA => Active && stageA;
-
-        /// <summary>B is the block's stage step this frame, not the jetpack, until it is let go.</summary>
-        public static bool TakesB => Active && stageB;
 
         // One frame each, read by VRControls in the same frame: the game's MOVE_CLOSER, MOVE_FURTHER (and VOXEL_CLOSER,
         // VOXEL_FURTHER), USE_SYMMETRY, SYMMETRY_SWITCH, CUBE_BUILDER_CUBESIZE_MODE, NEXT_BLOCK_STAGE, PREV_BLOCK_STAGE.
@@ -128,17 +123,15 @@ namespace SpaceEngineersVR.Hands
         private static bool modifierWas, stickArmed;
         private static int stickTurn, stickDistance;
 
-        // The distance, X, the stick click, A and B. stageA, stageB: pressed with the click held for a stage step, until let go.
+        // The distance, symmetry, the size and the stage.
         private static double distanceDown = -1d, distanceNext;
         private static int distanceDirection;
         private static float distanceBefore;
         private static int distanceLogIn;
         private static string distanceOf;
-        private static bool stageA, stageB, building;
+        private static bool building;
         private static int stageLogIn, sizeLogIn;
         private static string stageAsked, stageBefore, sizeBefore;
-        private static double symmetryDown = -1d;
-        private static bool symmetryCycled;
         private static int symmetryLogIn;
         private static string symmetryAsked;
 
@@ -227,7 +220,7 @@ namespace SpaceEngineersVR.Hands
             ReportAfterGame(builder, clipboard);
 
             Vector2 stick = VRInput.Get(Hand.Right).Stick;
-            bool modifier = building && VRInput.IsPressed(Hand.Left, VRButtons.StickClick);
+            bool modifier = building && ControllerBindings.IsActive(VRAction.BuildModifier);
             if (modifier != Modifier)
                 Log.Info(modifier ? "Build: left stick click held, the right hand and stick turn and move what is in hand" : "Build: left stick click let go");
             Modifier = modifier;
@@ -235,10 +228,8 @@ namespace SpaceEngineersVR.Hands
             StickBusy = modifier || (StickBusy && stick.Length() > StickRelease);
             if (!active)
             {
-                symmetryDown = -1d;
                 placeAt = removeAt = -1d;
                 placeWas = removeWas = false;
-                stageA = stageB = false;
                 if (clipboard != null)
                 {
                     PasteTurn(clipboard.Clipboard);
@@ -255,9 +246,9 @@ namespace SpaceEngineersVR.Hands
 
             CheckRefused(builder, seconds);
             Turn(builder);
-            SizeAndStage(builder, modifier);
+            SizeAndStage(builder);
             Distance(seconds, "block");
-            Symmetry(seconds);
+            Symmetry();
         }
 
         /// <summary>
@@ -334,20 +325,20 @@ namespace SpaceEngineersVR.Hands
         // ---- A, B, X and the stick click ----
 
         /// <summary>
-        /// The right stick click: the block's other size (CUBE_BUILDER_CUBESIZE_MODE; the game switches only a block whose
-        /// group has one). A and B with the left stick click held, in creative and survival: the next and the previous stage
-        /// (NEXT_BLOCK_STAGE, PREV_BLOCK_STAGE; the game steps only a block that has stages, past those not available here).
-        /// A button pressed for a stage is not jump or the jetpack until it is let go (<see cref="TakesA"/>, <see cref="TakesB"/>).
+        /// Large or small block (the right stick click, by default): the block's other size (CUBE_BUILDER_CUBESIZE_MODE; the game
+        /// switches only a block whose group has one). Next and previous stage (A and B with the left stick click held), in
+        /// creative and survival: NEXT_BLOCK_STAGE, PREV_BLOCK_STAGE; the game steps only a block that has stages, past those not
+        /// available here. A press made for a stage is not jump or the jetpack (ControllerBindings: it belongs to the click).
         /// </summary>
-        private static void SizeAndStage(MyCubeBuilder builder, bool modifier)
+        private static void SizeAndStage(MyCubeBuilder builder)
         {
-            if (VRInput.IsNewPressed(Hand.Right, VRButtons.StickClick))
+            if (ControllerBindings.Started(VRAction.CubeSize))
             {
                 CubeSize = true;
                 sizeBefore = Name(builder.CurrentBlockDefinition);
                 sizeLogIn = 2;
             }
-            bool next = modifier && VRInput.IsNewPressed(Hand.Right, VRButtons.A), previous = modifier && VRInput.IsNewPressed(Hand.Right, VRButtons.B);
+            bool next = ControllerBindings.Started(VRAction.NextStage), previous = !next && ControllerBindings.Started(VRAction.PreviousStage);
             if (next || previous)
             {
                 NextStage = next;
@@ -356,8 +347,6 @@ namespace SpaceEngineersVR.Hands
                 stageBefore = Name(builder.CurrentBlockDefinition);
                 stageLogIn = 2;
             }
-            stageA = VRInput.IsPressed(Hand.Right, VRButtons.A) && (stageA || next);
-            stageB = VRInput.IsPressed(Hand.Right, VRButtons.B) && (stageB || previous);
         }
 
         /// <summary>The left stick click held with the right stick up farther, down nearer: one of the game's steps on the push, then repeated while held. <paramref name="of"/>: the block, the paste or the voxel brush.</summary>
@@ -415,32 +404,21 @@ namespace SpaceEngineersVR.Hands
                     return float.NaN;
             }
         }
-
-        private static void Symmetry(double seconds)
+        /// <summary>Symmetry on/off (a tap of X, by default) and the next symmetry plane (X held), with a tick on the hand as the hold takes.</summary>
+        private static void Symmetry()
         {
-            bool down = VRInput.IsPressed(Hand.Left, VRButtons.X);
-            if (down && symmetryDown < 0d)
+            if (ControllerBindings.Started(VRAction.SymmetryPlane))
             {
-                symmetryDown = seconds;
-                symmetryCycled = false;
-            }
-            else if (down && !symmetryCycled && seconds - symmetryDown >= SymmetryHoldSeconds)
-            {
-                symmetryCycled = true;
                 SymmetryCycle = true;
                 symmetryAsked = "plane";
                 symmetryLogIn = 2;
-                Haptics.Pulse(Hand.Left, TickAmplitude, TickSeconds);
+                Haptics.Pulse(ControllerBindings.HandOf(VRAction.SymmetryPlane), TickAmplitude, TickSeconds);
             }
-            else if (!down && symmetryDown >= 0d)
+            else if (ControllerBindings.Started(VRAction.Symmetry))
             {
-                if (!symmetryCycled)
-                {
-                    SymmetryTap = true;
-                    symmetryAsked = "switch";
-                    symmetryLogIn = 2;
-                }
-                symmetryDown = -1d;
+                SymmetryTap = true;
+                symmetryAsked = "switch";
+                symmetryLogIn = 2;
             }
         }
 

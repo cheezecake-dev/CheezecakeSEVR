@@ -27,16 +27,15 @@ namespace SpaceEngineersVR.Rendering
     /// probe between the eyes, so they lit with slightly different probes. Now it steps once a frame, in the first eye, as on a
     /// flat screen.</item>
     /// </list>
-    /// Both are off because a freeze seen with them and SharedShadows enabled together (GPU idle, card nearly full) has not been
-    /// told apart from a known driver freeze; RenderDebug SharedSpotShadows=1 and ProbeOnce=1 turn them on.
+    /// RenderDebug SharedSpotShadows=0 and ProbeOnce=0 have every pass do its own, as the renderer does.
     /// </summary>
     internal static class SceneOnce
     {
-        /// <summary>Every pass draws its own spot light shadow maps, as the renderer does; RenderDebug SharedSpotShadows=1 shares the first eye's.</summary>
-        public static bool SpotShadowsEachEye = true;
+        /// <summary>Every pass draws its own spot light shadow maps, as the renderer does (RenderDebug SharedSpotShadows=0).</summary>
+        public static bool SpotShadowsEachEye;
 
-        /// <summary>The environment probe steps in every pass, as the renderer does; RenderDebug ProbeOnce=1 steps it once a frame.</summary>
-        public static bool ProbeEachPass = true;
+        /// <summary>The environment probe steps in every pass, as the renderer does (RenderDebug ProbeOnce=0).</summary>
+        public static bool ProbeEachPass;
 
         private static bool spotsPrepared;
         private static bool loggedSpots, loggedProbe;
@@ -48,7 +47,7 @@ namespace SpaceEngineersVR.Rendering
                 Type shadows = typeof(MyDX11Render).Assembly.GetType("VRageRender.MyShadows", throwOnError: true);
                 harmony.Patch(AccessTools.Method(shadows, "PrepareSpotlights") ?? throw new MissingMethodException("MyShadows", "PrepareSpotlights"),
                     prefix: new HarmonyMethod(typeof(SceneOnce), nameof(BeforeSpotlights)));
-                Log.Info("Spot light shadows: hooked; each pass draws its own unless RenderDebug SharedSpotShadows=1");
+                Log.Info("Spot light shadows: hooked; the second eye takes the first eye's maps unless RenderDebug SharedSpotShadows=0");
             }, "Spot light shadows: could not hook MyShadows.PrepareSpotlights; every pass draws its own");
             PatchRegistry.Apply("environment probe", () =>
             {
@@ -57,7 +56,7 @@ namespace SpaceEngineersVR.Rendering
                     prefix: new HarmonyMethod(typeof(SceneOnce), nameof(ProbeStep)));
                 harmony.Patch(AccessTools.Method(probe, "FinalizeEnvProbes") ?? throw new MissingMethodException("MyEnvironmentProbe", "FinalizeEnvProbes"),
                     prefix: new HarmonyMethod(typeof(SceneOnce), nameof(ProbeStep)));
-                Log.Info("Environment probe: hooked; it steps in every pass unless RenderDebug ProbeOnce=1");
+                Log.Info("Environment probe: hooked; it steps once a frame unless RenderDebug ProbeOnce=0");
             }, "Environment probe: could not hook MyEnvironmentProbe; it steps in every pass");
         }
 

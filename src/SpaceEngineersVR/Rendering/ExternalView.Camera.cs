@@ -40,6 +40,8 @@ namespace SpaceEngineersVR.Rendering
                     kind = Kind.Screen;
                     pose = camera * viewMatrix;
                 }
+                if (kind == Kind.Screen)
+                    SendWorldTexture();
                 lock (gate)
                 {
                     views[next] = viewMatrix;

@@ -1,4 +1,4 @@
-// VisorCoat: what lies on the visor's glass: frost, mist, rain, snow and dust on its outside, and the fingertip's wipes through them.
+// VisorCoat: what lies on the visor's glass: frost, rain, snow and dust on its outside, and the fingertip's wipes through them.
 using System;
 using System.Threading.Tasks;
 using VRageMath;
@@ -13,7 +13,6 @@ namespace SpaceEngineersVR.Rendering
     /// (<see cref="Step"/>'s frost reach, in shares of the way from the edge to the middle), over a granular rime at the rim and a
     /// faint haze between the feathers; scraped off, it grows back slowly while the reach lasts, and melts tips first as the reach
     /// draws back.</item>
-    /// <item>Mist, condensed over the whole glass at once and gone as its cause (the glass colder than the air) goes.</item>
     /// <item>Water: raindrops of mixed sizes beading where they land, merging where they touch, and the heavier sliding down the
     /// glass the way gravity pulls it in fits and starts, gathering what they meet and leaving a thin wet trail and a line of tiny
     /// droplets behind; they dry slowly.</item>
@@ -23,7 +22,7 @@ namespace SpaceEngineersVR.Rendering
     /// A fingertip's stroke (<see cref="Wipe"/>) clears all of them along its path, each as much as a glove would, pushing water to
     /// the stroke's sides and leaving a streaked, smeared film along the arc that dries in seconds.
     /// <para>
-    /// The spread-out things (frost's reach, mist, snow, dust, the wet film) are worked out on a coarse grid (<see cref="Width"/> by
+    /// The spread-out things (frost's reach, snow, dust, the wet film) are worked out on a coarse grid (<see cref="Width"/> by
     /// <see cref="Height"/>, about 0.65 deg a cell); the picture (<see cref="Compose"/>) is <see cref="Detail"/> times finer each way
     /// (about 0.22 deg a texel), with the frost's crystals, the drops, the trails and the smears drawn at that detail, so beads are
     /// round and crystals fine in the headset rather than squares of the grid. Only the parts of the picture whose grid has changed
@@ -59,14 +58,14 @@ namespace SpaceEngineersVR.Rendering
 
         // ---- The grid: what lies on the glass, each cell 0 (nothing) to about 1 (a full coat). Water is the wet film, for washing dust.
 
-        private readonly float[] frost = new float[Count], mist = new float[Count], water = new float[Count], snow = new float[Count], dust = new float[Count];
+        private readonly float[] frost = new float[Count], water = new float[Count], snow = new float[Count], dust = new float[Count];
 
         // Fixed: how far each cell is in from the opening's edge (a share of the way to the middle, negative outside), and broad
         // patches for a dust coat that is thicker in places.
         private readonly float[] edge = new float[Count], patches = new float[Count];
 
         // What each cell held when its part of the picture was last worked out, and which parts are to be worked out again.
-        private readonly float[] lastFrost = new float[Count], lastMist = new float[Count], lastSnow = new float[Count], lastDust = new float[Count];
+        private readonly float[] lastFrost = new float[Count], lastSnow = new float[Count], lastDust = new float[Count];
         private readonly bool[] dirty = new bool[Count], blockShows = new bool[Count];
         private int blocksShowing;
         private bool allDirty = true;
@@ -148,7 +147,6 @@ namespace SpaceEngineersVR.Rendering
         public void Clear()
         {
             Array.Clear(frost, 0, Count);
-            Array.Clear(mist, 0, Count);
             Array.Clear(water, 0, Count);
             Array.Clear(snow, 0, Count);
             Array.Clear(dust, 0, Count);
@@ -163,14 +161,14 @@ namespace SpaceEngineersVR.Rendering
 
         /// <summary>
         /// <paramref name="seconds"/> on the glass: frost grows toward <paramref name="frostReach"/> (shares of the way in from the
-        /// edge; 0 melts it all), mist toward <paramref name="mistLevel"/> (0 to 1; it clears at once as that falls), rain, snow and
+        /// edge; 0 melts it all), rain, snow and
         /// a dust storm land as hard as their shares (0 to 1), water runs down along <paramref name="down"/> (the way gravity pulls,
         /// in the picture's texels across and down; zero: it stays), and with <paramref name="freezing"/> off settled snow melts.
         /// </summary>
-        public void Step(float seconds, float frostReach, float mistLevel, float rain, float snowfall, float storm, Vector2 down, bool freezing)
+        public void Step(float seconds, float frostReach, float rain, float snowfall, float storm, Vector2 down, bool freezing)
         {
             reach = frostReach;
-            float grow = 0.12f * seconds, melt = 0.2f * seconds, condense = 0.5f * seconds, dry = (freezing ? 0.008f : 0.02f) * seconds;
+            float grow = 0.12f * seconds, melt = 0.2f * seconds, dry = (freezing ? 0.008f : 0.02f) * seconds;
             float settle = 0.5f * seconds, thaw = freezing ? 0f : 0.03f * seconds;
             float coat = storm * 0.035f * seconds, wash = 0.15f * seconds;
             for (int i = 0; i < Count; i++)
@@ -179,9 +177,6 @@ namespace SpaceEngineersVR.Rendering
                 float target = frostReach <= 0f ? 0f : Smooth(-0.03f, 0.02f, frostReach + 0.03f - edge[i]);
                 float f = frost[i];
                 frost[i] = f < target ? Math.Min(target, f + grow) : Math.Max(target, f - melt);
-
-                float m = mist[i];
-                mist[i] = m < mistLevel ? Math.Min(mistLevel, m + condense) : mistLevel;
 
                 float w = water[i];
                 if (w > 0f)
@@ -267,7 +262,7 @@ namespace SpaceEngineersVR.Rendering
                     if (k <= 0f)
                         continue;
                     int i = y * Width + x;
-                    taken += Take(frost, i, 0.9f * k) + Take(mist, i, 0.97f * k) + Take(water, i, 0.6f * k) + Take(snow, i, 0.95f * k) + Take(dust, i, 0.75f * k);
+                    taken += Take(frost, i, 0.9f * k) + Take(water, i, 0.6f * k) + Take(snow, i, 0.95f * k) + Take(dust, i, 0.75f * k);
                 }
             }
 
@@ -338,11 +333,10 @@ namespace SpaceEngineersVR.Rendering
             Array.Clear(dirty, 0, Count);
             for (int i = 0; i < Count; i++)
             {
-                if (!all && Math.Abs(frost[i] - lastFrost[i]) <= 0.025f && Math.Abs(mist[i] - lastMist[i]) <= 0.01f
+                if (!all && Math.Abs(frost[i] - lastFrost[i]) <= 0.025f
                     && Math.Abs(snow[i] - lastSnow[i]) <= 0.01f && Math.Abs(dust[i] - lastDust[i]) <= 0.01f)
                     continue;
                 lastFrost[i] = frost[i];
-                lastMist[i] = mist[i];
                 lastSnow[i] = snow[i];
                 lastDust[i] = dust[i];
                 int cx = i % Width, cy = i / Width;
@@ -441,7 +435,7 @@ namespace SpaceEngineersVR.Rendering
                     for (int nx = Math.Max(0, cx - 1); nx <= Math.Min(Width - 1, cx + 1); nx++)
                     {
                         int n = ny * Width + nx;
-                        held += frost[n] + mist[n] + snow[n] + dust[n];
+                        held += frost[n] + snow[n] + dust[n];
                     }
                 }
                 if (held <= 0f)
@@ -477,10 +471,6 @@ namespace SpaceEngineersVR.Rendering
                     float w00 = (1f - fx) * (1f - fy), w10 = fx * (1f - fy), w01 = (1f - fx) * fy, w11 = fx * fy;
                     float grain = pattern.Grain[i];
                     float r = 0f, gr = 0f, bl = 0f, al = 0f;
-
-                    float m = mist[a] * w00 + mist[b] * w10 + mist[c] * w01 + mist[d] * w11;
-                    if (m > 0.002f)
-                        Over(ref r, ref gr, ref bl, ref al, 0.8f, 0.82f, 0.84f, 0.7f * m * (0.85f + 0.3f * grain));
 
                     // Frost: the crystals' pattern, each texel showing once the reach has come along its branch to it.
                     float f = frost[a] * w00 + frost[b] * w10 + frost[c] * w01 + frost[d] * w11;

@@ -10,7 +10,9 @@ namespace SpaceEngineersVR.Hands
     /// starts with the hand on the screen holds it, the screen follows the hand (where it is and how it is turned) as if held
     /// by the place it was gripped, and letting go leaves it there. Where it was left is kept in the settings file, from the
     /// head's heading when the screen appears, so it comes back there; the wrist panel's External view page puts it back on
-    /// the dash (Reset). Either hand; a second hand takes it over from the first.
+    /// the dash (Reset). Either hand; a second hand takes it over from the first, and with both hands on it, drawing them apart
+    /// or together makes it larger or smaller (the External view size setting, kept when a hand lets go), as a picture is
+    /// stretched between two hands.
     /// </summary>
     /// <remarks>
     /// The grip is claimed through <see cref="GripClaim"/> at <see cref="ClaimPriority"/>, before items, doors, seats and the
@@ -28,7 +30,7 @@ namespace SpaceEngineersVR.Hands
         private const int ClaimPriority = 15;
 
         /// <summary>How far round the screen's edge, and in front of it or behind it, a grip still takes it, metres.</summary>
-        private const float EdgeReach = 0.04f, FaceReach = 0.10f;
+        private const float EdgeReach = GrabTolerance.Edge, FaceReach = (float)GrabTolerance.Body;
 
         private const float GrabAmplitude = 0.3f, GrabSeconds = 0.03f, LetGoAmplitude = 0.18f, LetGoSeconds = 0.015f;
 
@@ -37,6 +39,10 @@ namespace SpaceEngineersVR.Hands
         private static readonly Matrix[] offset = new Matrix[2];
         private static readonly Matrix[] last = new Matrix[2];
         private static int moving = -1;
+
+        // Both hands on it: the hands' distance and the screen's width as the second took hold, and whether it is being resized.
+        private static float resizeFrom, widthFrom;
+        private static bool resizing;
         private static bool registered;
         private static int errors;
 
@@ -94,12 +100,27 @@ namespace SpaceEngineersVR.Hands
                 held[i] = true;
                 TakeOver(i, state);
                 Haptics.Pulse(hand, GrabAmplitude, GrabSeconds);
+                HandState other = VRInput.Get(Hands[1 - i]);
+                if (held[1 - i] && other.Tracked && state.Tracked)
+                {
+                    resizeFrom = Vector3.Distance(state.Grip.Translation, other.Grip.Translation);
+                    widthFrom = VRSettings.ExternalViewSize;
+                    resizing = resizeFrom > 0.05f;
+                    if (resizing)
+                        Log.Info($"External view screen: both hands on it, {resizeFrom * 100f:0} cm apart; drawing them apart or together resizes it from {widthFrom * 100f:0} cm wide");
+                }
                 Vector3 at = last[i].Translation;
                 Log.Info($"External view screen: picked up with the {hand.ToString().ToLowerInvariant()} hand at ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00})");
             }
             else if (!holds && held[i])
             {
                 held[i] = false;
+                if (resizing)
+                {
+                    resizing = false;
+                    ExternalViewSource.QueueSave();
+                    Log.Info($"External view screen: resized to {VRSettings.ExternalViewSize * 100f:0} cm wide; kept for next time");
+                }
                 if (moving != i)
                     return;
                 Matrix put = last[i];
@@ -123,6 +144,9 @@ namespace SpaceEngineersVR.Hands
             {
                 last[i] = offset[i] * state.Grip;
                 ExternalView.MoveScreen(last[i]);
+                HandState other = VRInput.Get(Hands[1 - i]);
+                if (resizing && held[1 - i] && other.Tracked)
+                    VRSettings.ExternalViewSize = widthFrom * Vector3.Distance(state.Grip.Translation, other.Grip.Translation) / resizeFrom;
             }
         }
 

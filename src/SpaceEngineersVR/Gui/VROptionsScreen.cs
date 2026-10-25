@@ -78,6 +78,14 @@ namespace SpaceEngineersVR.Gui
 
         private readonly List<Binding> bindings = new List<Binding>();
         private readonly Dictionary<Setting, object> opened = new Dictionary<Setting, object>();
+
+        /// <summary>The Controller tab, after the settings' tabs (<see cref="ControllerBindingsPage"/>), and its tab's place.</summary>
+        private ControllerBindingsPage controllerPage;
+        private MyGuiControlTabControl tabControl;
+        private int controllerTab = -1;
+
+        /// <summary>The controller bindings as they were when the screen opened: a hidden setting the Controller tab changes.</summary>
+        private readonly string bindingsOpened;
         private readonly int savesWhenOpened;
         private bool refreshing, settled;
         private MyGuiControlLabel status;
@@ -95,6 +103,7 @@ namespace SpaceEngineersVR.Gui
             GripFitSettings.Load();
             foreach (Setting setting in Shown())
                 opened[setting] = setting.Snapshot();
+            bindingsOpened = VRSettings.ControllerBindings;
             savesWhenOpened = VRSettings.SaveCount;
             RecreateControls(constructor: true);
         }
@@ -102,6 +111,10 @@ namespace SpaceEngineersVR.Gui
         public override string GetFriendlyName() => "VROptionsScreen";
 
         // ---- What goes on the screen, and where. ----
+
+        /// <summary>The Prompts group's button: every label beside the hands shows again (<see cref="Rendering.HandHints.ShowAgain"/>).</summary>
+        private static readonly VROptionsTabs.GroupButton ShowLabelsAgain = new VROptionsTabs.GroupButton("Show the labels again",
+            "Brings back every button label beside your hands, also the ones you have learned, as when you first played.", Rendering.HandHints.ShowAgain);
 
         /// <summary>The shown settings in their tabs and groups (<see cref="VROptionsTabs"/>).</summary>
         private static List<VROptionsTabs.Tab> Describe()
@@ -116,6 +129,8 @@ namespace SpaceEngineersVR.Gui
                         group.Caption = GripFitSettings.Caption;
                         group.Button = GripFitSettings.ResetButton;
                     }
+                    else if (group.Name == "Prompts")
+                        group.Button = ShowLabelsAgain;
                 }
             }
             return tabs;
@@ -181,7 +196,8 @@ namespace SpaceEngineersVR.Gui
             // The game's tab buttons, as wide as its default button, side by side; smaller only if that many would not fit.
             Vector2 button = MyGuiConstants.TEXTURE_BUTTON_DEFAULT_NORMAL.MinSizeGui;
             float panelWidth = width + ScrollbarWidth;
-            layout.TabScale = tabs.Count == 0 ? 1f : Math.Min(1f, panelWidth / (tabs.Count * button.X));
+            int tabCount = tabs.Count + 1; // and the Controller tab
+            layout.TabScale = Math.Min(1f, panelWidth / (tabCount * button.X));
             layout.TabHeight = button.Y * layout.TabScale;
             float above = HeaderHeight + layout.TabHeight + TabGap;
             float screenHeight = Math.Min(MaxHeight, above + tallest + FooterHeight);
@@ -205,6 +221,8 @@ namespace SpaceEngineersVR.Gui
         public override void RecreateControls(bool constructor)
         {
             base.RecreateControls(constructor);
+            controllerPage?.Dispose();
+            controllerPage = null;
             bindings.Clear();
             status = null;
             statusShown = null;
@@ -248,14 +266,24 @@ namespace SpaceEngineersVR.Gui
                 if (page.Tab.Name == lastTab)
                     open = i;
             }
+            controllerTab = layout.Pages.Count;
+            MyGuiControlTabPage controller = tabs.GetTabSubControl(controllerTab);
+            controller.Text = new StringBuilder(ControllerBindingsPage.TabName);
+            controller.TextScale = TabTextScale;
+            controller.SetToolTip("Your controller's buttons: see what each does, and change them");
+            controllerPage = new ControllerBindingsPage(controller.Controls, new Vector2(-layout.Panel.X / 2f, -(TabGap + layout.Panel.Y) / 2f + TabGap), layout.Panel);
+            if (lastTab == ControllerBindingsPage.TabName)
+                open = controllerTab;
             Controls.Add(tabs);
-            if (layout.Pages.Count > 0)
-                tabs.SelectedPage = open;
+            tabControl = tabs;
+            tabs.SelectedPage = open;
             tabs.OnPageChanged += () => Guard("tab", () =>
             {
                 int shown = tabs.SelectedPage;
                 if (shown >= 0 && shown < layout.Pages.Count)
                     lastTab = layout.Pages[shown].Tab.Name;
+                else if (shown == controllerTab)
+                    lastTab = ControllerBindingsPage.TabName;
             });
 
             // What has to stay in reach however far the list is scrolled: the height calibration and the recentre, then the
@@ -276,7 +304,7 @@ namespace SpaceEngineersVR.Gui
                 "Puts your view at your character's eyes (in a seat, at the seat's eyes) from where your head is now, and makes the way you face now the way your character faces. Sit or stand as you play and look straight ahead. Standing play with a calibrated height keeps the height from the floor. Use it after moving or turning your chair, or switching play position. Sitting down in a seat does it for you. Anywhere, hold the left Menu button for a moment to do the same (a tap still opens the menu).",
                 new Vector2(right, buttonsY), MyGuiDrawAlignEnum.HORISONTAL_RIGHT_AND_VERTICAL_CENTER, OnRecentre);
             float firstX = -size.X / 2f + ScreenMargin + PanelPadX;
-            AddButton("Defaults", "Sets every setting, on every tab, to its default so you can see it. Leaving this screen keeps them; Undo changes brings back what you opened it with.",
+            AddButton("Defaults", "Sets every setting, on every tab, to its default so you can see it, and every controller's buttons to their defaults. Leaving this screen keeps them; Undo changes brings back what you opened it with.",
                 new Vector2(firstX, buttonsY), MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_CENTER, OnDefaults);
             MyGuiControlButton ok = AddButton("OK", "Saves the settings and closes. Back, Escape and the close button save them too.",
                 new Vector2(-ButtonGap / 2f, buttonsY), MyGuiDrawAlignEnum.HORISONTAL_RIGHT_AND_VERTICAL_CENTER, OnOk);
@@ -529,6 +557,8 @@ namespace SpaceEngineersVR.Gui
         {
             foreach (KeyValuePair<Setting, object> value in opened)
                 value.Key.Restore(value.Value);
+            VRSettings.ControllerBindings = bindingsOpened;
+            controllerPage?.Refresh();
             ShowAll();
         }
 
@@ -536,6 +566,8 @@ namespace SpaceEngineersVR.Gui
         {
             foreach (Setting setting in Shown())
                 setting.ResetToDefault();
+            VRSettings.ControllerBindings = string.Empty;
+            controllerPage?.Refresh();
             ShowAll();
         }
 
@@ -563,6 +595,7 @@ namespace SpaceEngineersVR.Gui
         protected override void OnClosed()
         {
             Keep(force: false);
+            controllerPage?.Dispose();
             base.OnClosed();
         }
 
@@ -584,6 +617,8 @@ namespace SpaceEngineersVR.Gui
                     if (!Equals(value.Value, value.Key.Snapshot()))
                         changed.Add(value.Key.Key);
                 }
+                if (!string.Equals(bindingsOpened, VRSettings.ControllerBindings, StringComparison.Ordinal))
+                    changed.Add("controllerBindings");
                 Log.Info(changed.Count > 0
                     ? "VR options: leaving keeps " + string.Join(", ", changed)
                     : "VR options: leaving, nothing changed");
@@ -598,9 +633,21 @@ namespace SpaceEngineersVR.Gui
 
         // ---- Every frame. ----
 
+        /// <summary>While the Controller tab listens for a control, the screen takes no input, so the press clicks, goes back or closes nothing.</summary>
+        public override void HandleInput(bool receivedFocusInThisUpdate)
+        {
+            if (controllerPage != null && controllerPage.TakesAllInput)
+            {
+                Guard("controller tab input", controllerPage.HandleInput);
+                return;
+            }
+            base.HandleInput(receivedFocusInThisUpdate);
+        }
+
         public override bool Update(bool hasFocus)
         {
             bool result = base.Update(hasFocus);
+            controllerPage?.Update(tabControl != null && tabControl.SelectedPage == controllerTab);
             if (status != null && !statusFailed)
             {
                 try

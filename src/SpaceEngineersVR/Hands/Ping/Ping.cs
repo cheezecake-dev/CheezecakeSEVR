@@ -2,6 +2,7 @@ using System;
 using HarmonyLib;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Input.Bindings;
 
 namespace SpaceEngineersVR.Hands
 {
@@ -17,7 +18,7 @@ namespace SpaceEngineersVR.Hands
     /// <list type="bullet">
     /// <item>Hold X (<see cref="HoldSeconds"/>) on foot, on the jetpack or in a ship's seat: a tick, and the laser shows what
     /// you point at, named on the HUD. Let go of X to ping it. Pull the pointing hand's trigger while X is held to mark it as
-    /// your own GPS instead. A tap of X is still the dampeners, given when it is let go (<see cref="DampingTap"/>).</item>
+    /// your own GPS instead. A tap of X is still the dampeners, given when it is let go (the bindings' Dampeners).</item>
     /// <item>The actions wheel's Ping and Mark GPS entries (<see cref="Gui.PingEntries"/>) start the same aim with X up: the
     /// trigger pings or marks, B cancels, and it gives up after <see cref="WheelAimSeconds"/>.</item>
     /// </list>
@@ -84,28 +85,19 @@ namespace SpaceEngineersVR.Hands
 
         private static Aim aim;
         private static Kind wheelKind;
-        private static double xDownAt = -1d, aimStartedAt;
-        private static bool xMarked, takesB, dampingTap, hooked;
+        private static double aimStartedAt;
+        private static bool xMarked, hooked;
         private static VRContext aimContext;
         private static int errors;
 
-        /// <summary>Holding X aims, a tap is the dampeners: on while the setting is and the context has a ping.</summary>
-        private static bool TakesXSetting => !Off && VRSettings.PingHoldX;
+        /// <summary>The Ping binding (holding X, by default) aims: on while the setting is.</summary>
+        private static bool HoldSetting => !Off && VRSettings.PingHoldX;
 
         /// <summary>Something is being aimed at: the laser and the label are up, and the pointing hand's trigger commits.</summary>
         public static bool Aiming => aim != Aim.None;
 
-        /// <summary>
-        /// X is the ping's this frame (held to aim, a tap for the dampeners): the controls then take the dampeners from
-        /// <see cref="DampingTap"/> and not from X held.
-        /// </summary>
-        public static bool TakesX { get; private set; }
-
-        /// <summary>X was tapped and let go this frame: the dampeners, once.</summary>
-        public static bool DampingTap => dampingTap;
-
-        /// <summary>B is the ping's, to cancel an aim from the wheel, until it is let go: not the jetpack or down thrust.</summary>
-        public static bool TakesB => takesB;
+        /// <summary>An aim started from the actions wheel is up: the trigger commits it and B stops it (ControllerBindings' PingAim).</summary>
+        public static bool AimingFromWheel => aim == Aim.Wheel;
 
         public static void Patch(Harmony harmony)
         {
@@ -124,14 +116,10 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         internal static void Frame(VRContext context, bool blocked, double seconds)
         {
-            dampingTap = false;
             try
             {
                 HoldFade();
                 bool applies = hooked && !Off && !blocked && VRInput.Active && Applies(context) && MySession.Static?.LocalCharacter != null;
-                TakesX = applies && TakesXSetting && !BuildMode.Active;
-                if (!VRInput.IsPressed(Hand.Right, VRButtons.B))
-                    takesB = false;
 
                 // The wheel that started an aim keeps the focus for a moment while it fades out.
                 if (!applies && aim == Aim.Wheel && seconds - aimStartedAt < WheelFadeSeconds)
@@ -140,7 +128,6 @@ namespace SpaceEngineersVR.Hands
                 {
                     if (aim != Aim.None)
                         EndAim(applies ? "the seat changed" : "the hands are needed elsewhere");
-                    xDownAt = -1d;
                     return;
                 }
 
@@ -155,7 +142,6 @@ namespace SpaceEngineersVR.Hands
                 if (errors++ < 3)
                     Log.Error(e, "Ping: the frame failed");
                 aim = Aim.None;
-                xDownAt = -1d;
             }
         }
 
@@ -163,56 +149,46 @@ namespace SpaceEngineersVR.Hands
         private static bool Applies(VRContext context) =>
             context == VRContext.OnFoot || context == VRContext.Jetpack || context == VRContext.Ship;
 
-        /// <summary>X: held past <see cref="HoldSeconds"/> it aims, let go it pings; let go sooner it is the dampeners.</summary>
+        /// <summary>
+        /// Ping (X held past <see cref="HoldSeconds"/>, by default) aims, let go it pings; Mark a GPS (a trigger pulled with X
+        /// held) marks instead. A tap of X is the dampeners (the bindings' Dampeners).
+        /// </summary>
         private static void HoldX(VRContext context, double seconds)
         {
-            if (!TakesX)
+            if (!HoldSetting)
             {
-                xDownAt = -1d;
+                if (aim == Aim.HeldX)
+                    EndAim("the setting went off");
                 return;
             }
-            bool down = VRInput.IsPressed(Hand.Left, VRButtons.X);
-            if (down && xDownAt < 0d && VRInput.IsNewPressed(Hand.Left, VRButtons.X))
+            if (aim == Aim.None && ControllerBindings.Started(VRAction.Ping))
             {
-                xDownAt = seconds;
                 xMarked = false;
-                return;
+                StartAim(Aim.HeldX, Kind.Ping, context, seconds);
+                Haptics.Pulse(ControllerBindings.HandOf(VRAction.Ping), TickAmplitude, TickSeconds);
             }
-            if (xDownAt < 0d)
+            if (aim != Aim.HeldX)
                 return;
-            if (down)
+            if (ControllerBindings.IsActive(VRAction.Ping))
             {
-                if (aim == Aim.None && seconds - xDownAt >= HoldSeconds)
-                {
-                    StartAim(Aim.HeldX, Kind.Ping, context, seconds);
-                    Haptics.Pulse(Hand.Left, TickAmplitude, TickSeconds);
-                }
-                if (aim == Aim.HeldX && !xMarked && CommitPressed())
+                if (!xMarked && ControllerBindings.Started(VRAction.MarkGps))
                 {
                     xMarked = true;
                     Commit(Kind.Mark);
                 }
                 return;
             }
-
             // Let go.
-            if (aim == Aim.HeldX)
-            {
-                if (!xMarked)
-                    Commit(Kind.Ping);
-                EndAim(null);
-            }
-            else if (aim == Aim.None)
-                dampingTap = true;
-            xDownAt = -1d;
+            if (!xMarked)
+                Commit(Kind.Ping);
+            EndAim(null);
         }
 
         private static void WheelAim(double seconds)
         {
-            if (VRInput.IsNewPressed(Hand.Right, VRButtons.B))
+            if (ControllerBindings.Started(VRAction.PingCancel))
             {
-                takesB = true;
-                EndAim("cancelled with B");
+                EndAim("cancelled");
                 Notify("Ping cancelled", NotifyMilliseconds);
                 return;
             }
@@ -228,15 +204,11 @@ namespace SpaceEngineersVR.Hands
             }
         }
 
-        /// <summary>The pointing hand's trigger was pulled this frame; the pull is the ping's, not a shot or a weld.</summary>
-        private static bool CommitPressed()
-        {
-            Hand hand = VRSettings.DominantHand;
-            if (!VRInput.IsNewPressed(hand, VRButtons.Trigger))
-                return false;
-            VRControls.SwallowTrigger(hand, "the trigger pulled to ping or mark");
-            return true;
-        }
+        /// <summary>
+        /// Ping or mark (the pointing hand's trigger, by default: mirrored left-handed) was pressed this frame; the press is the
+        /// aim's, not a shot or a weld (ControllerBindings: it belongs to the aim).
+        /// </summary>
+        private static bool CommitPressed() => ControllerBindings.Started(VRAction.PingCommit, VRSettings.DominantHand == Hand.Left);
 
         /// <summary>The actions wheel's entries can start an aim: on foot, on the jetpack or in a pilot seat.</summary>
         internal static bool CanStart() => !Off && hooked && Applies(VRControls.Context);
@@ -276,6 +248,24 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>The prompt while aiming, per how it was started.</summary>
-        private static string AimVerb => aim == Aim.Wheel ? (wheelKind == Kind.Ping ? "Trigger: ping" : "Trigger: mark GPS") : "Let go: ping. Trigger: mark GPS";
+        private static string AimVerb => aim == Aim.Wheel ? (wheelKind == Kind.Ping ? "Trigger: ping" : "Trigger: mark GPS")
+            : MarkName is string mark ? "Let go: ping. " + mark + ": mark GPS" : "Let go: ping";
+
+        /// <summary>
+        /// What marks a GPS while a ping is aimed by holding: the control alone when the button that aims is its held button
+        /// ("Trigger", with X held), else all of it ("Right Menu + Left trigger" on a Vive wand); null with none bound.
+        /// </summary>
+        private static string MarkName
+        {
+            get
+            {
+                Binding mark = ActionNames.Find(VRAction.MarkGps), ping = ActionNames.Find(VRAction.Ping);
+                if (mark == null)
+                    return null;
+                if (ping != null && mark.Modifier.HasValue && mark.Modifier.Value.Equals(ping.Control))
+                    return ActionNames.Control(mark.Control.Hand, mark.Control.Control);
+                return ActionNames.Name(VRAction.MarkGps);
+            }
+        }
     }
 }

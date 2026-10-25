@@ -34,6 +34,10 @@ namespace SpaceEngineersVR.OpenXR
         public static int MinFeatureLevel { get; private set; }
         public static uint EyeWidth { get; private set; }
         public static uint EyeHeight { get; private set; }
+
+        /// <summary>The largest eye image the runtime takes (XrViewConfigurationView.MaxImageRect).</summary>
+        public static uint MaxEyeWidth { get; private set; }
+        public static uint MaxEyeHeight { get; private set; }
         public static bool HasVisibilityMask { get; private set; }
 
         /// <summary>
@@ -413,9 +417,11 @@ namespace SpaceEngineersVR.OpenXR
                     "xrEnumerateViewConfigurationViews", Instance);
             EyeWidth = views[0].RecommendedImageRectWidth;
             EyeHeight = views[0].RecommendedImageRectHeight;
+            MaxEyeWidth = Math.Max(EyeWidth, views[0].MaxImageRectWidth);
+            MaxEyeHeight = Math.Max(EyeHeight, views[0].MaxImageRectHeight);
 
             Volatile.Write(ref systemId, found);
-            Log.Info($"Headset: {SystemName}, eye {EyeWidth}x{EyeHeight}, GPU LUID {AdapterLuid:X}, " +
+            Log.Info($"Headset: {SystemName}, eye {EyeWidth}x{EyeHeight} (up to {MaxEyeWidth}x{MaxEyeHeight}), GPU LUID {AdapterLuid:X}, " +
                      $"tracking orientation={properties.OrientationTracking != 0} position={properties.PositionTracking != 0}, " +
                      $"up to {properties.MaxLayerCount} layers a frame, images up to {properties.MaxSwapchainImageWidth}x{properties.MaxSwapchainImageHeight}, " +
                      $"cylinder layers {(HasCylinder ? "offered" : "not offered")}" +

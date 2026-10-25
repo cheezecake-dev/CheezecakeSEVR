@@ -28,8 +28,8 @@ namespace SpaceEngineersVR.Rendering
     /// </remarks>
     internal static class SharedShadows
     {
-        /// <summary>Each eye fits and draws its own cascades, as the renderer does. Off (not shared) because the shared fit is not yet confirmed safe: a freeze seen with it enabled has not been told apart from a known driver freeze. <see cref="RenderDebug"/> SharedShadows=1 shares.</summary>
-        public static bool Off { get; set; } = true;
+        /// <summary>True: each eye fits and draws its own cascades, as the renderer does (<see cref="RenderDebug"/> SharedShadows=0).</summary>
+        public static bool Off { get; set; }
 
         private static object env;
         private static bool patched, fitValid, prepared, swapped, loggedFit, loggedCanted;

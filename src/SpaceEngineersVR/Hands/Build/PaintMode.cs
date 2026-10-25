@@ -4,6 +4,7 @@ using Sandbox.Game;
 using Sandbox.Game.Entities;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Input.Bindings;
 using VRage.Utils;
 using VRageMath;
 
@@ -138,7 +139,7 @@ namespace SpaceEngineersVR.Hands
         {
             if (paint && !paintWas)
             {
-                bool a = VRInput.IsPressed(Hand.Right, VRButtons.A), b = VRInput.IsPressed(Hand.Right, VRButtons.B);
+                bool a = ControllerBindings.IsActive(VRAction.MediumBrush), b = ControllerBindings.IsActive(VRAction.LargeBrush);
                 BrushControl = a && b ? MyControlsSpace.RECOLOR_WHOLE_GRID : a ? MyControlsSpace.MEDIUM_COLOR_BRUSH
                     : b ? MyControlsSpace.LARGE_COLOR_BRUSH : MyControlsSpace.RECOLOR;
                 painting = true;

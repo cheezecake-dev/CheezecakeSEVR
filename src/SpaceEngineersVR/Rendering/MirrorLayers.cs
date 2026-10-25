@@ -70,6 +70,9 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The window shows the headset's layers: a headset frame's window draws them here and not flat.</summary>
         public static bool Ready => GameSprites.CanAddTextures && guard.On;
 
+        /// <summary>The window draws the headset's layers now: it can (<see cref="Ready"/>) and the settings have it (<see cref="Drawn"/>).</summary>
+        public static bool Available => Ready && Drawn;
+
         // The laser's beam: a small target of its own, kept for the session and filled again only when the beam's colour changes
         // or the device was reset (a new resource behind it).
         private static object beamSquare;
@@ -123,7 +126,7 @@ namespace SpaceEngineersVR.Rendering
         /// <paramref name="inHead"/>, x right, y up, facing +z; half its size in metres), seen through the visor when it stands outside
         /// the helmet (<paramref name="throughVisor"/>); then the laser's beam over it, and the HUD's pieces on the visor over both.
         /// </summary>
-        public static void Show(object panel, Vector2I size, in Matrix inHead, float halfWidth, float halfHeight, bool throughVisor)
+        public static void Show(object panel, Vector2I size, in Matrix inHead, float halfWidth, float halfHeight, bool throughVisor, bool beam = true)
         {
             if (!Ready || !Drawn)
                 return;
@@ -131,7 +134,8 @@ namespace SpaceEngineersVR.Rendering
             {
                 Color tint = throughVisor ? new Color(VisorGlass.Behind) : Color.White;
                 Draw(panel, new Rectangle(0, 0, size.X, size.Y), Flat(inHead, 2f * halfWidth, 2f * halfHeight), tint, null);
-                Beam();
+                if (beam)
+                    Beam();
                 Visor();
             }
             catch (Exception e)

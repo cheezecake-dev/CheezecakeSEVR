@@ -186,7 +186,7 @@ namespace SpaceEngineersVR.Gui
 
                 if (on != null && !laserDown && VRInput.IsNewPressed(hand, VRButtons.Trigger))
                 {
-                    VRControls.SwallowTrigger(hand);
+                    VRControls.SwallowTrigger(hand, $"the {hand.ToString().ToLowerInvariant()} trigger pulled on the touch toolbar");
                     laserDown = true;
                     laserOn = on;
                     Touch(on, pixel, TouchPhase.Down, hand, "laser");

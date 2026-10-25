@@ -75,7 +75,8 @@ namespace SpaceEngineersVR.Hands
             (a, b) => a.Distance != b.Distance ? a.Distance.CompareTo(b.Distance) : a.Center.CompareTo(b.Center);
 
         /// <summary>
-        /// The use object a hand takes: of those in <see cref="candidates"/> within <see cref="Reach"/> that are taken, the
+        /// The use object a hand takes: of those in <see cref="candidates"/> within <see cref="UseRadius"/> (the one the hand is
+        /// already on, highlighted, by <see cref="GrabTolerance.Held"/> more) that are taken, the
         /// nearest (inside beats near, then the one whose middle is closest) the arm reaches without going through something
         /// solid (<see cref="LineOfReach"/>). With <paramref name="trace"/>, one log line of what was checked and why.
         /// </summary>
@@ -86,7 +87,7 @@ namespace SpaceEngineersVR.Hands
             inReach.Clear();
             foreach (Candidate c in candidates)
             {
-                if (c.Kind != Kind.None && c.Distance <= UseRadius)
+                if (c.Kind != Kind.None && c.Distance <= GrabTolerance.Reach(UseRadius, ReferenceEquals(c.Use, hover[(int)hand])))
                     inReach.Add(c);
             }
             if (inReach.Count == 0)

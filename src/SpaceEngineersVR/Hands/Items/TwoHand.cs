@@ -80,11 +80,11 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Asked before the helmet (10): a hand on the tool's own grip is reaching for the tool, not the helmet behind it.</summary>
         public const int ClaimPriority = 5;
 
-        /// <summary>A grip this close to the tool's grip (metres, from the other controller's grip) takes it (ColbyJack1134's reach).</summary>
-        internal const double GrabReach = 0.12;
+        /// <summary>A grip this close to the tool's grip (metres, from the other controller's grip) takes it (<see cref="GrabTolerance.Spot"/>; a hand already at it keeps <see cref="GrabTolerance.Held"/> more).</summary>
+        internal const double GrabReach = GrabTolerance.Spot;
 
-        /// <summary>The other hand this far off the grip line (metres, across it or along it) lets go.</summary>
-        internal const double ReleaseOff = 0.15;
+        /// <summary>The other hand this far off the grip line (metres, across it or along it) lets go: past the furthest a grip takes it from, so a hold never drops the frame it is taken.</summary>
+        internal const double ReleaseOff = 0.25;
 
         /// <summary>The other hand untracked this long (seconds) lets go; until then it is taken where it last was on the tool hand.</summary>
         internal const double TrackingGrace = 0.25;
@@ -130,6 +130,15 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>The other hand holds the tool's grip now.</summary>
         private static bool held;
+
+        /// <summary>The hold was taken by the other hand's trigger, not its grip: it lasts while the trigger is held.</summary>
+        private static bool byTrigger, triggerWas;
+
+        /// <summary>
+        /// Where the other hand took hold, off the tool's grip spot, in the tool's own turn (as the tool hand alone holds it): a
+        /// hand that took hold beside the spot steadies the tool from there, so the tool does not swing toward it as it is taken.
+        /// </summary>
+        private static Vector3D takeOffset;
 
         /// <summary>The tool held (or, while the aim eases back, last held) in both hands, and its grip spots in its own space.</summary>
         private static MyEntity weapon;
@@ -259,6 +268,9 @@ namespace SpaceEngineersVR.Hands
 
             /// <summary>From the other hand's grip to the tool's.</summary>
             public double Gap;
+
+            /// <summary>The tool as the tool hand alone holds it.</summary>
+            public MatrixD One;
         }
 
         private static bool TryMeasure(in MatrixD grip, in MatrixD aim, Vector3 toolGrasp, Vector3 otherGrasp, in Vector3D off, out Measure m)
@@ -270,15 +282,19 @@ namespace SpaceEngineersVR.Hands
             double length = span.Length();
             if (!(length > 1e-3))
                 return false;
+            Vector3D off0 = off;
+            if (held)
+                off0 -= Vector3D.TransformNormal(takeOffset, one);
+            m.One = one;
             m.Grip = grip.Translation;
             m.Support = support;
             m.Base = length;
             m.Along = span / length;
-            m.Off = off;
-            Vector3D d = off - m.Grip;
+            m.Off = off0;
+            Vector3D d = off0 - m.Grip;
             m.T = Vector3D.Dot(d, m.Along);
             m.Across = (d - m.T * m.Along).Length();
-            m.Gap = Vector3D.Distance(off, support);
+            m.Gap = Vector3D.Distance(off0, support);
             return true;
         }
 
@@ -380,11 +396,18 @@ namespace SpaceEngineersVR.Hands
                 Apply(character, ref grip, ref aim);
                 if (!TryMeasure(grip, aim, toolGrasp, otherGrasp, offGrip.Translation, out Measure m))
                     return false;
-                if (SupportZone.At(character, character.CurrentWeapon as MyEntity, character.HandItemDefinition, offGrip.Translation) == SupportZone.Place.Grip)
+                SupportZone.Place zone = SupportZone.At(character, character.CurrentWeapon as MyEntity, character.HandItemDefinition, offGrip.Translation);
+                if (zone == SupportZone.Place.Grip)
+                {
+                    Note($"Two-hand: {hand} grip on the {Name(character.HandItemDefinition)}'s front grip, {SupportZone.LastToGrip * 100:0.0} cm from it " +
+                         $"(reach {GrabReach * 100:0} cm, {GrabReach * GrabTolerance.Held * 100:0} cm once at it{(SupportZone.Current == SupportZone.Place.Grip ? ", as it was" : string.Empty)})");
                     return true;
-                // Near the tool but not on its grip: why the grip opened the wheel instead, for the log.
+                }
+                // Near the tool but not on its grip: why the grip did something else instead, for the log.
                 if (m.Gap <= DeclineNoted)
-                    Note($"Two-hand: {hand} grip {m.Gap * 100:0.0} cm from the {Name(character.HandItemDefinition)}'s grip (reach {GrabReach * 100:0} cm): not taken");
+                    Note($"Two-hand: {hand} grip {m.Gap * 100:0.0} cm from the {Name(character.HandItemDefinition)}'s grip (reach {GrabReach * 100:0} cm" +
+                         $"{(SupportZone.Current == SupportZone.Place.Grip ? $", {GrabReach * GrabTolerance.Held * 100:0} cm from the hover" : string.Empty)}): " +
+                         $"{(zone == SupportZone.Place.Magazine ? "at the magazine instead" : "not taken")}");
                 return false;
             }
             catch (Exception e)
@@ -423,6 +446,12 @@ namespace SpaceEngineersVR.Hands
             Hand off = OffHand;
             // Asking every frame keeps the claim current: it forgets a grip only when asked once it is let go.
             bool holds = GripClaim.Holds(off, ClaimName);
+            // The trigger holds the tool as the grip does (a hand's secondary action is given up while it is on the tool).
+            bool trigger = VRInput.IsPressed(off, VRButtons.Trigger);
+            bool triggerNew = trigger && !triggerWas;
+            triggerWas = trigger;
+            if (held && byTrigger)
+                holds = trigger;
 
             bool live = Live(character);
             MyEntity tool = null;
@@ -457,7 +486,7 @@ namespace SpaceEngineersVR.Hands
             {
                 string why = null;
                 if (!holds)
-                    why = "the grip let go";
+                    why = byTrigger ? "the trigger let go" : "the grip let go";
                 else if (!live)
                     why = Off || !VRSettings.TwoHandedTools || HandTools.Off ? "switched off" : "no longer on foot";
                 else if (!ReferenceEquals(character.CurrentWeapon, weapon))
@@ -473,10 +502,21 @@ namespace SpaceEngineersVR.Hands
             }
             else if (holds)
             {
+                byTrigger = false;
                 if (main && measured)
                     Engage(off, tool, item, toolGrasp, otherGrasp, m);
                 else
                     GripClaim.Release(off, ClaimName);
+            }
+            else if (triggerNew && live && hasGrip && main && measured && !Reload.MagazineOut
+                     && GripClaim.Owner(off) == null // a hand already holding a hull, ladder, item or the helmet by its grip is busy
+                     && !ToolbarWheel.Owns && MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay
+                     && SupportZone.At(character, tool, item, offPos) == SupportZone.Place.Grip)
+            {
+                byTrigger = true;
+                VRControls.SwallowTrigger(off, "the trigger holding the tool in both hands");
+                Note($"Two-hand: {off} trigger on the {Name(item)}'s front grip, {SupportZone.LastToGrip * 100:0.0} cm from its spot");
+                Engage(off, tool, item, toolGrasp, otherGrasp, m);
             }
 
             // A tool that went away takes the aim with it: the next one starts in one hand.
@@ -560,6 +600,7 @@ namespace SpaceEngineersVR.Hands
 
         private static void Engage(Hand off, MyEntity tool, MyHandItemDefinition item, Vector3 toolGrasp, Vector3 otherGrasp, in Measure m)
         {
+            takeOffset = Vector3D.TransformNormal(m.Off - m.Support, MatrixD.Transpose(m.One));
             if (!ReferenceEquals(tool, weapon))
                 aimProgress = 0.0;
             held = true;
@@ -573,7 +614,7 @@ namespace SpaceEngineersVR.Hands
             Haptics.Pulse(Hand.Right, GrabAmplitude, GrabPulseSeconds);
             Note($"Two-hand: {off} hand took the {Name(item)} by its grip ({m.Gap * 100:0.0} cm from it, hands {Vector3D.Distance(m.Off, m.Grip) * 100:0.0} cm apart, " +
                  $"grip {m.Base * 100:0.0} cm from the tool hand; aims by both hands {aimShare * 100:0}%; " +
-                 (Stays ? "stays on until the grip opens)" : $"lets go {ReleaseOff * 100:0} cm off the grip line)"));
+                 (byTrigger ? "stays on until the trigger opens)" : Stays ? "stays on until the grip opens)" : $"lets go {ReleaseOff * 100:0} cm off the grip line)"));
         }
 
         /// <summary>The other hand is needed elsewhere (<see cref="Reload"/>: the magazine came out): it lets go of the tool's grip now.</summary>
@@ -586,6 +627,7 @@ namespace SpaceEngineersVR.Hands
         private static void LetGo(Hand off, bool holds, string why)
         {
             held = false;
+            byTrigger = false;
             if (holds)
                 GripClaim.Release(off, ClaimName);
             Haptics.Pulse(off, LetGoAmplitude, LetGoSeconds);

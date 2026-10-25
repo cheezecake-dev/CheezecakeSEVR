@@ -63,11 +63,12 @@ namespace SpaceEngineersVR.Input
         {
             TestAidsFrame(__instance, gameFocused);
             VRInput.Update();
+            Bindings.ControllerBindings.Update();
+            CursorClip.NoteInput(__instance, gameFocused);
             VRControls.Update();
             Hands.ViewScreenGrab.Frame();
             Hands.ShipModel.Frame();
             WristButton.Update();
-            Hands.Datapad.Update();
             VRControls.WalkBesidePanel();
         }
 

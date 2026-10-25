@@ -26,7 +26,10 @@ namespace SpaceEngineersVR.Rendering
         public static bool Off = true;
 
         private const int PollMs = 250;
-        private const double StuckMs = 2000.0;
+        /// <summary>A thread with no stamp for this long is stuck, ms; RenderDebug StallMs=n sets it (the main thread's 1 s ticks need less than the default).</summary>
+        public static double StuckMs = DefaultStuckMs;
+
+        public const double DefaultStuckMs = 2000.0;
         private static readonly double[] ReportAtMs = { 2000.0, 10000.0, 30000.0 };
         private static readonly double TicksToMs = 1000.0 / Stopwatch.Frequency;
 
@@ -85,6 +88,7 @@ namespace SpaceEngineersVR.Rendering
             // The watchdog's own.
             public long Seen;
             public int Stage;           // the next entry of ReportAtMs (then every 30 s)
+            public double LastReportMs; // how long stuck the last report came, ms (0: none yet in this stall)
             public long BaseTicks;      // when the thread was last seen moving, with what the process had read and written then
             public Io BaseIo;
             public double BaseCpuMs;
@@ -150,20 +154,29 @@ namespace SpaceEngineersVR.Rendering
                 w.BaseIo = ReadIo();
                 w.BaseCpuMs = CpuMs(w.Tid);
                 w.Stage = 0;
+                w.LastReportMs = 0.0;
                 w.Reported = false;
                 return;
             }
             double stuckMs = (now - w.BaseTicks) * TicksToMs;
             if (stuckMs < StuckMs)
                 return;
-            double due = w.Stage < ReportAtMs.Length ? ReportAtMs[w.Stage] : ReportAtMs[ReportAtMs.Length - 1] + 30000.0 * (w.Stage - ReportAtMs.Length + 1);
-            if (stuckMs < due)
+            // Under 2 s, a threshold set lower (StallMs) reports once per StuckMs, so a stall of half a second to two is caught in the act.
+            bool staged = stuckMs >= Due(w.Stage);
+            bool early = !staged && stuckMs < ReportAtMs[0] && (w.LastReportMs <= 0.0 || stuckMs - w.LastReportMs >= StuckMs);
+            if (!staged && !early)
                 return;
-            w.Stage++;
+            while (Due(w.Stage) <= stuckMs)
+                w.Stage++;
+            w.LastReportMs = stuckMs;
             w.Reported = true;
             Log.Warn($"Perf stall: {w.Name} stuck {stuckMs / 1000.0:0.0} s (no stack: CoreCLR cannot read another thread's); {ThreadText(w.Tid)}, cpu +{CpuMs(w.Tid) - w.BaseCpuMs:0} ms; " +
                      $"the process {IoText(w.BaseIo, ReadIo())}; GC {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}; {VideoMemory.Describe()}");
         }
+
+        /// <summary>How long stuck the given report comes: <see cref="ReportAtMs"/>, then every 30 s, never before <see cref="StuckMs"/>.</summary>
+        private static double Due(int stage) =>
+            Math.Max(StuckMs, stage < ReportAtMs.Length ? ReportAtMs[stage] : ReportAtMs[ReportAtMs.Length - 1] + 30000.0 * (stage - ReportAtMs.Length + 1));
 
         /// <summary>The thread's state letter (R running, S sleeping, D uninterruptible disk or driver wait) and the kernel function it waits in.</summary>
         private static string ThreadText(int tid)

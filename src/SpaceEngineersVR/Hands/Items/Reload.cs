@@ -12,6 +12,7 @@ using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Common;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Tracking;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
@@ -226,9 +227,9 @@ namespace SpaceEngineersVR.Hands
                     magazinePull.Release();
                     return false;
                 }
-                // The click taken for the Build Planner's production or deposit (QuickInventory) stays out of reload until it is let go.
-                Hand buttonHand = ButtonHandIn(VRControls.Context);
-                bool button = VRInput.IsPressed(buttonHand, Button) && !(buttonHand == Hand.Right ? QuickInventory.TakesClick : QuickInventory.TakesLeftClick);
+                // Reload (the gun hand's stick click, by default: mirrored left-handed). A press the Build Planner's production
+                // or deposit has (QuickInventory) is not reload (ControllerBindings).
+                bool button = ControllerBindings.IsActive(VRAction.Reload, ButtonHandIn(VRControls.Context) == Hand.Left);
                 magazinePull.Update(OffTrigger, () => AtMagazine(TwoHand.OffHand, "trigger pulled"));
                 bool gesture = magazinePull.Held || GripClaim.Holds(TwoHand.OffHand, GripName);
                 bool want = button || gesture;

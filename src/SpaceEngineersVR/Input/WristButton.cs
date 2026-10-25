@@ -10,6 +10,7 @@ using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Gui;
+using SpaceEngineersVR.Input.Bindings;
 using VRage.Game.Entity.UseObject;
 using VRage.Game.Models;
 using VRage.Input;
@@ -272,7 +273,7 @@ namespace SpaceEngineersVR.Input
                 return;
             }
 
-            if (VRInput.IsNewPressed(WristHand, VRButtons.Y))
+            if (ControllerBindings.Started(VRAction.WristPanel, WristHand == Hand.Right))
             {
                 Toggle toggle = Decide(true, screen != null, VRControls.Context, VRControls.CameraView, MyScreenManager.GetScreenWithFocus() is MyGuiScreenGamePlay);
                 if (toggle == Toggle.Close)
@@ -288,6 +289,20 @@ namespace SpaceEngineersVR.Input
                     Log.Info($"Wrist panel: opened (Y), {screen.TileCount} tiles");
                 }
             }
+        }
+
+        /// <summary>
+        /// Game thread, from the tools wheel as Y is tapped in a seat: while the player reads the gauntlet's screen (turned up and
+        /// looked at: <see cref="Rendering.WristStatus.LookedAt"/>) the tap opens the wrist panel on its seated page, as Y opens
+        /// it on foot, and Y again closes it; anywhere else the tap is the tools wheel's. True when it opened the panel.
+        /// </summary>
+        internal static bool OpenSeatedAtWrist()
+        {
+            if (!Enabled || screen != null || !Rendering.WristStatus.LookedAt)
+                return false;
+            OpenedOn();
+            screen = QuickActionsScreen.OpenSeated("Y at the wrist");
+            return true;
         }
 
         /// <summary>

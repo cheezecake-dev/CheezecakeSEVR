@@ -1,6 +1,6 @@
 using System;
-using System.Threading;
 using HarmonyLib;
+using SpaceEngineersVR.Common;
 
 namespace SpaceEngineersVR.Rendering
 {
@@ -9,22 +9,28 @@ namespace SpaceEngineersVR.Rendering
     /// its main thread every frame, through the HUD's performance warnings (MyGuiScreenHudSpace.UpdatePerfWarnings). Steam's
     /// client now and then takes 0.3 to 1.5 s to answer, and the whole game waits on it: measured with dotnet-trace on
     /// 2026-10-17, every main-thread stall of 250 ms or more in a minute of standing still had that one stack. In a headset a
-    /// held main thread is a world that stops moving. A thread of our own asks Steam once a second and the game reads its
-    /// last answer, so the game sees the same value at most a second late and never waits for Steam.
+    /// held main thread is a world that stops moving. A thread of our own asks Steam every ten seconds and the game reads its
+    /// last answer, so the game sees the same value at most ten seconds late and never waits for Steam. Not more often: while
+    /// our slow call is in Steam's client, the game's own Steam calls (voice chat, push to talk) wait behind it on the main
+    /// thread (run M: two 1 s main-thread ticks ended in the same millisecond as our 672 and 1015 ms answers), and the only
+    /// reader is the HUD's offline warning.
     /// Only while VR draws the picture (<see cref="StereoPatches.VRPicture"/>): played flat, the game asks Steam itself as it
-    /// always does, and the thread is not started until VR first draws the picture, nor asks Steam while it does not.
+    /// always does. The thread starts when VR first draws the picture and asks Steam; when VR stops drawing it
+    /// (<see cref="DemandThread"/>) it ends, so a game with no headset has no thread of ours and makes no call to Steam.
     /// </summary>
     internal static class SteamOnlineCache
     {
-        private const int RefreshMs = 1000;
+        private const int RefreshMs = 10000;
 
         private static volatile int known; // 0 not yet asked, 1 offline, 2 online
         private static Func<bool> ask;
+        private static readonly DemandThread Worker = new DemandThread("SEVR Steam online check", RefreshMs,
+            () => StereoPatches.VRPicture, Refresh, () => known = 0, Failed);
 
         [ThreadStatic]
         private static bool asking;
 
-        private static int started; // 1 once the thread is running
+        private static long slowest;
 
         public static void Patch(Harmony harmony)
         {
@@ -53,11 +59,8 @@ namespace SpaceEngineersVR.Rendering
         {
             if (asking || !StereoPatches.VRPicture)
                 return true;
-            if (started == 0 && Interlocked.Exchange(ref started, 1) == 0)
-            {
-                new Thread(Refresh) { IsBackground = true, Name = "SEVR Steam online check" }.Start();
-                Log.Info("Steam online check: asked of Steam once a second off the game's thread while VR draws the picture; the game reads the last answer (it waited on Steam up to 1.5 s a frame)");
-            }
+            if (Worker.Ensure())
+                Log.Info("Steam online check: asked of Steam every 10 s off the game's thread while VR draws the picture; the game reads the last answer (it waited on Steam up to 1.5 s a frame)");
             int value = known;
             if (value == 0)
                 return true;
@@ -65,41 +68,28 @@ namespace SpaceEngineersVR.Rendering
             return false;
         }
 
+        // On the worker's thread, once a round.
         private static void Refresh()
         {
             asking = true;
-            long slowest = 0;
-            while (true)
+            long start = Environment.TickCount;
+            bool online = ask();
+            long took = Environment.TickCount - start;
+            int value = online ? 2 : 1;
+            if (value != known)
+                Log.Info($"Steam online check: Steam says the player is {(online ? "online" : "offline")}");
+            known = value;
+            if (took >= 250 && took > slowest)
             {
-                if (!StereoPatches.VRPicture)
-                {
-                    known = 0;
-                    Thread.Sleep(RefreshMs);
-                    continue;
-                }
-                try
-                {
-                    long start = Environment.TickCount;
-                    bool online = ask();
-                    long took = Environment.TickCount - start;
-                    int value = online ? 2 : 1;
-                    if (value != known)
-                        Log.Info($"Steam online check: Steam says the player is {(online ? "online" : "offline")}");
-                    known = value;
-                    if (took >= 250 && took > slowest)
-                    {
-                        slowest = took;
-                        Log.Info($"Steam online check: Steam took {took} ms to answer, off the game's thread (the slowest yet)");
-                    }
-                }
-                catch (Exception e)
-                {
-                    Log.Info($"Steam online check: asking Steam failed ({e.GetType().Name}: {e.Message}); the game asks it itself again");
-                    known = 0;
-                    return;
-                }
-                Thread.Sleep(RefreshMs);
+                slowest = took;
+                Log.Info($"Steam online check: Steam took {took} ms to answer, off the game's thread (the slowest yet)");
             }
+        }
+
+        private static void Failed(Exception e)
+        {
+            Log.Info($"Steam online check: asking Steam failed ({e.GetType().Name}: {e.Message}); the game asks it itself again");
+            known = 0;
         }
     }
 }

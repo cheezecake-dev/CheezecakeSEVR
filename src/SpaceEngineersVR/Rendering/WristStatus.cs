@@ -300,6 +300,15 @@ namespace SpaceEngineersVR.Rendering
         // Game thread.
         private static long lastFrame;
         private static bool looked;
+
+        /// <summary>The gauntlet's screen is being looked at now (turned up and in the gaze, as it brightens). Game thread.</summary>
+        internal static bool LookedAt => Active && looked;
+
+        // Game thread: the last frame's angles, gaze off the screen and its face from the eyes (180: not near), for the log and the drive.
+        private static float lastGaze = 180f, lastFaced = 180f;
+
+        /// <summary>The look at the gauntlet's screen now, as words: its two angles and whether it counts as looked at.</summary>
+        internal static string LookReading => $"gaze {lastGaze:0} deg off it, its face {lastFaced:0} deg from the eyes; {(LookedAt ? "looked at" : Active ? "not looked at" : "not shown")}";
         private static float lookHeld, level = DimLevel;
         private static string lastState;
         private static long nextValuesAt;

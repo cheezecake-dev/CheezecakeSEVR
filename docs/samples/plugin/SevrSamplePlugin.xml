@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- Pulsar plugin data file: add this folder in Pulsar's sources as a local plugin with this file. Only the Source folder is
+     compiled, so a build of SevrSamplePlugin.csproj (its obj folder) is never compiled with it. -->
+<PluginData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="GitHubPlugin">
+  <Id>SevrSamplePlugin</Id>
+  <FriendlyName>SEVR sample plugin</FriendlyName>
+  <Tooltip>A sample of Cheezecake's SE VR's API: an action, menu items, events, state and haptics.</Tooltip>
+  <SourceDirectories>
+    <Directory>Source/</Directory>
+  </SourceDirectories>
+  <!-- The plugin's icon, for its actions-wheel item and wrist tile: Pulsar gives its full path to Plugin.LoadAssets. The path is
+       from this folder (the repository's root for a plugin on GitHub). -->
+  <Asset Name="icon" Path="Assets/SevrSampleIcon.dds" />
+</PluginData>

@@ -8,6 +8,7 @@ using Sandbox.Game.Entities.Character;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Gui;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Tracking;
 using VRage.Input;
 using VRageMath;
@@ -53,21 +54,35 @@ namespace SpaceEngineersVR.Input
             else if (Math.Abs(x) < FlickRelease)
                 flickArmed = true;
 
-            // With a block in hand X is symmetry (Hands.BuildMode) instead of the dampers, and A and B stay jump (the jetpack's
-            // climb) and the jetpack, except a press made with the left stick click held, which steps the block's stage. A paste and
-            // the voxel hand leave A, B and X as they are; the colour tool takes A and B for its brush (Hands.PaintMode). The quick
-            // take, production and dump at a container are on the stick clicks, not A and B (Hands.QuickInventory); sprint, the
-            // zero-g roll and reload (Hands.Reload) leave a click while a press of it is taken there.
+            // The buttons are the player's bindings (ControllerBindings), which give building, painting and a container in reach
+            // the buttons they use over the place under them: with a block in hand X is symmetry instead of the dampers and the
+            // left stick click with A or B steps the block's stage; the colour tool takes A and B for its brush; the quick take,
+            // production and dump at a container are on the stick clicks, so sprint, the zero-g roll and reload are not.
             bool build = Hands.BuildMode.Active;
-            // The triggers follow the hand holding the gun or tool: left-handed, the left one is primary (Hands.ItemSpots).
+            // The triggers follow the hand holding the gun or tool: left-handed, the bindings mirrored (Hands.ItemSpots).
             bool swap = Hands.ItemSpots.TriggersSwapped;
-            Hand fire = swap ? Hand.Left : Hand.Right, second = swap ? Hand.Right : Hand.Left;
+            Hand second = swap ? Hand.Right : Hand.Left;
             // A hand weapon's secondary trigger is only its iron sight, which in VR is the gun brought up to the eye (Hands.IronSight).
             if (Hands.IronSight.Frame())
                 SwallowTrigger(second, "a hand weapon's secondary trigger (its iron sight)");
             bool paint = Hands.PaintMode.Active;
-            bool place = TriggerHeld(fire), remove = TriggerHeld(second);
-            jumpButton = !paint && !Hands.BuildMode.TakesA && VRInput.IsPressed(Hand.Right, VRButtons.A);
+            bool place, remove;
+            if (build)
+            {
+                place = On(VRAction.PlaceBlock);
+                remove = On(VRAction.RemoveBlock);
+            }
+            else if (paint)
+            {
+                place = On(VRAction.Paint);
+                remove = On(VRAction.CopyColour);
+            }
+            else
+            {
+                place = ControllerBindings.IsActive(VRAction.PrimaryAction, swap);
+                remove = ControllerBindings.IsActive(VRAction.SecondaryAction, swap);
+            }
+            jumpButton = On(VRAction.Jump) || On(VRAction.JetpackUp);
             // With the colour tool the triggers paint and take a colour, as the game's gamepad has them, not primary and secondary.
             Set(Intent.Primary, place && !paint);
             Set(Intent.Secondary, remove && !paint);
@@ -81,17 +96,13 @@ namespace SpaceEngineersVR.Input
             Set(Intent.CyclePrev, Hands.PaintMode.CyclePrev);
             // At a container the grip's Use waits for the grip to be let go, so the right stick click can deposit with it held
             // (Hands.QuickInventory.HoldsBack; the ray Use is done there on release, a grab's in Hands.GrabUse).
-            Set(Intent.Use, VRInput.IsPressed(Hand.Right, VRButtons.Grip) && Hands.GripClaim.Owner(Hand.Right) == null && !Hands.QuickInventory.HoldsBack);
+            Set(Intent.Use, On(VRAction.Use) && Hands.GripClaim.Owner(Hand.Right) == null && !Hands.QuickInventory.HoldsBack);
             Set(Intent.Jump, jumpButton || stickUp);
-            Set(Intent.Crouch, stickDown);
-            Set(Intent.Thrusts, !paint && !Hands.BuildMode.TakesB && !Hands.Ping.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B));
-            Set(Intent.Damping, !build && DampingFromX());
-            // The left stick click held with a block in hand is building's (Hands.BuildMode.Modifier), not sprint; pressed at a
-            // container it is the quick withdraw (Hands.QuickInventory.TakesLeftClick) until it is let go.
-            // Left-handed with a hand weapon that reloads, the left click is reload and sprint is the right click (Hands.Reload.SprintHand).
-            Hand sprintHand = Hands.Reload.SprintHand;
-            bool sprintTaken = sprintHand == Hand.Left ? Hands.BuildMode.Modifier || Hands.QuickInventory.TakesLeftClick : Hands.QuickInventory.TakesClick;
-            Set(Intent.Sprint, VRInput.IsPressed(sprintHand, VRButtons.StickClick) && !sprintTaken);
+            Set(Intent.Crouch, stickDown || On(VRAction.Crouch) || On(VRAction.JetpackDown));
+            Set(Intent.Thrusts, On(VRAction.ToggleJetpack));
+            Set(Intent.Damping, On(VRAction.Dampeners));
+            // Left-handed with a hand weapon that reloads, the clicks are mirrored: the left is reload, sprint the right (Hands.Reload.SprintHand).
+            Set(Intent.Sprint, ControllerBindings.IsActive(VRAction.Sprint, Hands.Reload.SprintHand == Hand.Right));
             Set(Intent.MoveCloser, Hands.BuildMode.Closer);
             Set(Intent.MoveFurther, Hands.BuildMode.Further);
             Set(Intent.UseSymmetry, Hands.BuildMode.SymmetryTap);
@@ -102,12 +113,6 @@ namespace SpaceEngineersVR.Input
             Set(Intent.Reload, Hands.Reload.Wanted());
         }
 
-        /// <summary>
-        /// The dampeners from X: while X is the ping's (<see cref="Hands.Ping.TakesX"/>) a tap, given once as it is let go, so a
-        /// hold can aim instead; otherwise X held, as the game reads a key.
-        /// </summary>
-        private static bool DampingFromX() =>
-            Hands.Ping.TakesX ? Hands.Ping.DampingTap : VRInput.IsPressed(Hand.Left, VRButtons.X);
 
         /// <summary>
         /// Smooth turn: how far the body turns this frame, radians, + right. The stick has had its deadzone taken out, so
@@ -130,14 +135,19 @@ namespace SpaceEngineersVR.Input
         /// rotation and roll inputs a pad's right stick and LB give it (<see cref="AddRotation"/>, <see cref="AddRoll"/>), made
         /// about the eyes (<see cref="Tracking.ZeroGPivot"/>). While the click is held the right stick does nothing else (no yaw,
         /// no climb), and after it is let go the right stick stays off until it has been back near the middle, so a roll does not
-        /// run on as a turn or a climb. In gravity, with the setting Off, or in a camera block's view, the click does nothing.
+        /// run on as a turn or a climb. With the setting Off, or in a camera block's view, the click does nothing; in gravity it pitches and rolls on the jetpack as Q and E roll a flat player.
+        /// A tap of the click (let go within <see cref="ZeroGTapSeconds"/>, the right stick left alone meanwhile) keeps pitch and
+        /// roll on without holding it, until the next tap or press: holding one stick in while steering with the other is hard
+        /// on a thumb, and testers found the roll hard to do that way (2026-10-20). The hold works as before.
         /// </summary>
         private static void UpdateZeroG()
         {
             int mode = VRSettings.ZeroGTurn;
             bool click = ZeroGClick();
             string why = null;
-            bool held = click && CanPitchAndRoll(out why);
+            bool allowed = CanPitchAndRoll(out why);
+            UpdateZeroGLock(click, allowed, why);
+            bool held = (click || zeroGLocked) && allowed;
             if (click && !held && !zeroGRefused)
                 Log.Info($"Zero-g pitch and roll: not here ({why}); the left stick click does nothing on the jetpack");
             zeroGRefused = click && !held;
@@ -150,8 +160,8 @@ namespace SpaceEngineersVR.Input
                     // A stick already pushed as the click goes down has to come back to the middle before it snaps.
                     zeroGArmed = rightStick.Length() < FlickRelease;
                     Log.Info(mode == VRSettings.ZeroGTurnSnap
-                        ? $"Zero-g pitch and roll: left stick click held, the right stick pitches and rolls {VRSettings.SnapTurnDegrees:F0} deg a flick"
-                        : $"Zero-g pitch and roll: left stick click held, the right stick pitches and rolls at up to {VRSettings.SmoothTurnSpeedDegrees:F0} deg/s");
+                        ? $"Zero-g pitch and roll: left stick click {(zeroGLocked ? "tapped" : "held")}, the right stick pitches and rolls {VRSettings.SnapTurnDegrees:F0} deg a flick"
+                        : $"Zero-g pitch and roll: left stick click {(zeroGLocked ? "tapped" : "held")}, the right stick pitches and rolls at up to {VRSettings.SmoothTurnSpeedDegrees:F0} deg/s");
                 }
                 else
                 {
@@ -203,6 +213,45 @@ namespace SpaceEngineersVR.Input
             LogZeroGSmooth(ref zeroGRollLogged, Math.Sign(zeroGRoll), "roll", "right", "left", speed);
         }
 
+        /// <summary>
+        /// Zero-g pitch and roll kept on by a tap of the left stick click (<see cref="UpdateZeroG"/>): a press let go within
+        /// <see cref="ZeroGTapSeconds"/>, with the right stick left near the middle meanwhile, keeps it on; the next press turns
+        /// it off (and holds it while it lasts, as any press does). It goes off by itself where the click could not hold it:
+        /// the jetpack off, a block in hand, a camera block's view, the setting Off.
+        /// </summary>
+        private static void UpdateZeroGLock(bool click, bool allowed, string why)
+        {
+            bool lockable = context == VRContext.Jetpack && !cameraView && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff && !Hands.BuildMode.Active;
+            if (zeroGLocked && !(allowed && lockable))
+            {
+                zeroGLocked = false;
+                Log.Info($"Zero-g pitch and roll: no longer kept on ({(allowed ? "not on the jetpack's own controls" : why)})");
+            }
+            if (click && !zeroGClickWas)
+            {
+                zeroGDownAt = lastSeconds;
+                zeroGStickUsed = false;
+                zeroGPressEnds = zeroGLocked;
+                if (zeroGLocked)
+                {
+                    zeroGLocked = false;
+                    Hands.Haptics.Pulse(Hand.Left, ZeroGLockAmplitude, ZeroGLockSeconds);
+                    Log.Info("Zero-g pitch and roll: left stick click pressed again, no longer kept on once it is let go");
+                }
+            }
+            if (click && rightStick.Length() > FlickRelease)
+                zeroGStickUsed = true;
+            if (!click && zeroGClickWas && allowed && lockable && !zeroGPressEnds && !zeroGStickUsed
+                && lastSeconds - zeroGDownAt <= ZeroGTapSeconds)
+            {
+                zeroGLocked = true;
+                Hands.Haptics.Pulse(Hand.Left, ZeroGLockAmplitude, ZeroGLockSeconds);
+                Rendering.HudToolbar.Notice("Pitch and roll on the right stick: click the left stick to stop");
+                Log.Info($"Zero-g pitch and roll: left stick click tapped ({(lastSeconds - zeroGDownAt) * 1000d:F0} ms), kept on until the next press");
+            }
+            zeroGClickWas = click;
+        }
+
         private static void LogZeroGSmooth(ref int logged, int direction, string what, string positive, string negative, float speed)
         {
             if (direction == logged)
@@ -226,12 +275,8 @@ namespace SpaceEngineersVR.Input
                 why = "this character flies upright only";
                 return false;
             }
-            float gravity = character.Gravity.LengthSquared();
-            if (gravity > ZeroGSquared)
-            {
-                why = $"gravity {Math.Sqrt(gravity):0.00} m/s2";
-                return false;
-            }
+            // Gravity is no bar: the game's jetpack pitches and rolls the body in gravity as in zero g (MyCharacterJetpackComponent
+            // .MoveAndRotate, Q and E), and stands it up only off the jetpack (MyCharacter.UpdateStandup is skipped while it flies).
             return true;
         }
 
@@ -260,8 +305,8 @@ namespace SpaceEngineersVR.Input
         {
             now &= ~((1 << (int)Intent.Jump) | (1 << (int)Intent.Crouch) | (1 << (int)Intent.Thrusts)
                      | (1 << (int)Intent.Damping) | (1 << (int)Intent.Sprint));
-            spectatorUp = (VRInput.IsPressed(Hand.Right, VRButtons.A) ? 1f : 0f) - (VRInput.IsPressed(Hand.Right, VRButtons.B) ? 1f : 0f);
-            Set(Intent.SpectatorBoost, VRInput.IsPressed(Hand.Left, VRButtons.StickClick));
+            spectatorUp = (On(VRAction.SpectatorUp) ? 1f : 0f) - (On(VRAction.SpectatorDown) ? 1f : 0f);
+            Set(Intent.SpectatorBoost, On(VRAction.SpectatorBoost));
 
             int direction = stickUp ? 1 : stickDown ? -1 : 0;
             if (direction == 0 || (direction == speedStepDirection && seconds < speedStepNext))
@@ -299,7 +344,7 @@ namespace SpaceEngineersVR.Input
             Gui.TouchToolbar.SeatedInput();
             GamepadFeel feel = GamepadFeel.Current();
             float sensitivity = VRSettings.ShipStickSensitivity;
-            bool fire = TriggerHeld(Hand.Right);
+            bool fire = On(context == VRContext.Ship ? VRAction.ShipFire : VRAction.TurretFire);
             // In a seat ColbyJack1134's rig owns, the thumbsticks fly or drive on their own only with Thumbstick controls in
             // cockpits on (VRSettings.ColbyThumbsticks); his ApplyFlight below still has them for his held sticks, wheel and bars.
             bool thumbsticks = !Cockpits.CockpitControls.Owns || VRSettings.ColbyThumbsticks;
@@ -312,12 +357,12 @@ namespace SpaceEngineersVR.Input
                 // A turret, a searchlight, or a turret control block through its camera: A zooms in and B out while
                 // held, as a pad's zoom buttons; the zoomed view is on the forced view's screen (Rendering.ForcedView).
                 // Not with a menu open, where B is Back (UpdateBack).
-                Zoom(!zoomInMenu && VRInput.IsPressed(Hand.Right, VRButtons.A), !zoomInMenu && VRInput.IsPressed(Hand.Right, VRButtons.B), "Turret: A / B");
+                Zoom(!zoomInMenu && On(VRAction.TurretZoomIn), !zoomInMenu && On(VRAction.TurretZoomOut), "Turret: zoom buttons");
                 return;
             }
 
-            bool secondary = TriggerHeld(Hand.Left);
-            bool up = VRInput.IsPressed(Hand.Right, VRButtons.A), down = !Hands.Ping.TakesB && VRInput.IsPressed(Hand.Right, VRButtons.B);
+            bool secondary = On(VRAction.ShipSecondary);
+            bool up = On(VRAction.ThrustUp), down = On(VRAction.ThrustDown);
             if (seatSticks)
             {
                 seatMove = ShipStick.Move(flyLeft, up, down, feel);
@@ -329,9 +374,9 @@ namespace SpaceEngineersVR.Input
             Set(Intent.Secondary, secondary);
             Set(Intent.Jump, up);
             Set(Intent.Crouch, down);
-            Set(Intent.Damping, DampingFromX());
-            Set(Intent.Lights, VRInput.IsPressed(Hand.Left, VRButtons.StickClick));
-            Set(Intent.LandingGear, VRInput.IsPressed(Hand.Right, VRButtons.StickClick));
+            Set(Intent.Damping, On(VRAction.Dampeners));
+            Set(Intent.Lights, On(VRAction.ShipLights));
+            Set(Intent.LandingGear, On(VRAction.LandingGear));
         }
 
         /// <summary>
@@ -406,31 +451,16 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// Y held for <see cref="UseHoldSeconds"/> in a seat, or looking through a camera block, is the game's USE,
-        /// which leaves the seat or the camera. The game acts on USE being let go, so the frame the hold completes
-        /// hands it a release: USE was down last frame and is up now. The hold is timed from the press and needs a fresh
-        /// press, so Y already down when the seat was entered, or let go and pressed again, starts over.
+        /// Leave seat (Y held, by default) in a seat, or looking through a camera block, is the game's USE, which leaves the seat
+        /// or the camera. The game acts on USE being let go, so the frame the hold completes hands it a release: USE was down
+        /// last frame and is up now. The hold is the binding's, timed from a press made there (ControllerBindings).
         /// </summary>
-        private static void UpdateUseHold(double seconds)
+        private static void UpdateUseHold()
         {
-            bool tracking = !ToolbarWheel.Owns && (IsSeated(context) || cameraView) && VRInput.IsPressed(Hand.Left, VRButtons.Y);
-            if (!tracking)
-            {
-                holdStart = -1d;
-                holdDone = false;
+            if (ToolbarWheel.Owns || !(IsSeated(context) || cameraView) || !ControllerBindings.Started(VRAction.LeaveSeat))
                 return;
-            }
-            if (VRInput.IsNewPressed(Hand.Left, VRButtons.Y))
-            {
-                holdStart = seconds;
-                holdDone = false;
-            }
-            if (holdStart >= 0d && !holdDone && seconds - holdStart >= UseHoldSeconds)
-            {
-                holdDone = true;
-                before |= 1 << (int)Intent.Use;
-                now &= ~(1 << (int)Intent.Use);
-            }
+            before |= 1 << (int)Intent.Use;
+            now &= ~(1 << (int)Intent.Use);
         }
     }
 }

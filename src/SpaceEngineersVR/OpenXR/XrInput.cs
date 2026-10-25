@@ -23,15 +23,15 @@ namespace SpaceEngineersVR.OpenXR
     /// A/B are X/Y; the Steam Frame's left controller has a D-pad and View, so its D-pad down and up are X and Y and View
     /// is Menu. Touch sensors, on the controllers that have them (the Quest family, PICO, Steam Frame): trigger_touch,
     /// thumbstick_touch, thumbrest_touch per hand and touch_a/b/x/y: Touch, and TouchSensors for the ones bound. The Vive
-    /// wand's trackpad touch is the thumbstick_touch (the thumb on the pad, for the hand's pose). A hand whose current
-    /// profile is the Vive wand's has its trackpad and Menu button put in the Quest's layout before they are reported
-    /// (<see cref="WandLayout"/>), so Stick, StickClick, B, A, Y and Menu mean what they do on a Quest.
+    /// wand's trackpad touch is the thumbstick_touch (the thumb on the pad, for the hand's pose). The buttons are reported as
+    /// the controller has them; what each does is the binding table's (ControlsDown, <see cref="Input.Bindings.ControllerBindings"/>).
+    /// A Vive wand's trackpads are made its sticks (<see cref="WandLayout"/>).
     /// </remarks>
     internal sealed unsafe partial class XrInput : IVRInputSource
     {
         // The analog bits press and release at different values, so a trigger resting at the edge does not flicker.
         private const float PressAt = 0.6f, ReleaseAt = 0.4f;
-        private const float MaxHapticSeconds = 10f;
+        internal const float MaxHapticSeconds = 10f;
 
         // ---- Prediction ----
         // The game reads the hands published in headset frame M, builds its frame from them, and the renderer shows that
@@ -85,22 +85,44 @@ namespace SpaceEngineersVR.OpenXR
         private ulong actionSet;
         private ulong gripAction, aimAction, palmAction, triggerAction, squeezeAction, stickAction, stickClickAction;
         private ulong aAction, bAction, xAction, yAction, menuAction, hapticAction;
+        // The Windows Mixed Reality controller's trackpad, bound in its profile only: clicked, its parts are controls for the bindings (TrackpadPart).
+        private ulong padAction, padClickAction;
         private ulong triggerTouchAction, stickTouchAction, thumbrestTouchAction, aTouchAction, bTouchAction, xTouchAction, yTouchAction;
+        // Controls only the bindings read (ControllerControls): a bumper, a thumb on a trackpad, fingers on a grip that clicks.
+        private ulong bumperAction, padTouchAction, squeezeTouchAction;
 
         // Render thread only: the hands as last read, which keeps the last good poses while a controller is lost.
         // working: for the game (predicted); workingNow: at this frame's display time.
         private readonly HandState[] working = new HandState[2];
         private readonly HandState[] workingNow = new HandState[2];
-        private bool failed, hapticsFailed, loggedProfiles, sourcesPending = true;
+        private bool hapticsFailed, loggedProfiles, sourcesPending = true;
+
+        // Render thread: input that failed is tried again after a wait that doubles to RetryMaxSeconds, never given up on.
+        private int failures;
+        private long retryAt;
+        private string lastFailure;
+        private const double RetryMaxSeconds = 30d;
+
+        // Render thread: why the controllers are inactive, as last logged (null while active).
+        private string inactiveWhy;
+
+        // Render thread: per hand, whether its tracked state has been logged yet (it is logged on the first read and each change).
+        private readonly bool[] trackingLogged = new bool[2];
+
+        // Render thread: the controls only the bindings read that the runtime failed to read, each warned of once.
+        private readonly HashSet<string> extraWarned = new HashSet<string>(StringComparer.Ordinal);
 
         // The interaction profile last logged per hand; MaxValue until the first is read, so that one is logged too.
         private readonly ulong[] loggedProfile = { ulong.MaxValue, ulong.MaxValue };
 
         // Render thread only: the hand's current profile is the Vive wand's (set where the profiles are read, LogProfiles), so its
-        // controls are put in the Quest's layout (WandLayout); and the right wand's Menu button timing.
+        // trackpads are made its sticks (WandLayout).
         private ulong viveProfile;
         private readonly bool[] wand = new bool[2];
-        private WandLayout.MenuState wandMenu;
+
+        // Render thread only: the hand's current profile as the bindings name it (ControllerBindings.Key), or null.
+        private readonly string[] profileKey = new string[2];
+
 
         // Shared with the game thread.
         private readonly object gate = new object();
@@ -180,7 +202,7 @@ namespace SpaceEngineersVR.OpenXR
         /// The session is stopping (the headset is off or asleep): no frame reads the controllers until it runs again, so
         /// what they held is let go, and the fake hands can take over (<see cref="VRInput"/> takes the first active source).
         /// </summary>
-        public static void SessionStopping() => current?.Deactivate();
+        public static void SessionStopping() => current?.Deactivate("the session is stopping");
 
         /// <summary>Before the session is destroyed.</summary>
         public static void Destroy()
@@ -216,6 +238,8 @@ namespace SpaceEngineersVR.OpenXR
             xAction = CreateAction("button_x", "X button", XrActionType.BooleanInput, false);
             yAction = CreateAction("button_y", "Y button", XrActionType.BooleanInput, false);
             menuAction = CreateAction("menu", "Menu", XrActionType.BooleanInput, true);
+            padAction = CreateAction("trackpad", "Trackpad", XrActionType.Vector2fInput, true);
+            padClickAction = CreateAction("trackpad_click", "Trackpad click", XrActionType.BooleanInput, true);
             hapticAction = CreateAction("haptic", "Vibration", XrActionType.VibrationOutput, true);
             if (XrRuntime.HasPalmPose)
                 palmAction = CreateAction("palm_pose", "Palm pose", XrActionType.PoseInput, true);
@@ -226,6 +250,9 @@ namespace SpaceEngineersVR.OpenXR
             bTouchAction = CreateAction("touch_b", "Thumb on B", XrActionType.BooleanInput, false);
             xTouchAction = CreateAction("touch_x", "Thumb on X", XrActionType.BooleanInput, false);
             yTouchAction = CreateAction("touch_y", "Thumb on Y", XrActionType.BooleanInput, false);
+            bumperAction = CreateAction("bumper", "Bumper", XrActionType.BooleanInput, true);
+            padTouchAction = CreateAction("trackpad_touch", "Thumb on the trackpad", XrActionType.BooleanInput, true);
+            squeezeTouchAction = CreateAction("squeeze_touch", "Fingers on the grip", XrActionType.BooleanInput, true);
 
             // Bindings have to be suggested before the set is attached, and cannot change after.
             List<string> taken = SuggestBindings();
@@ -373,14 +400,19 @@ namespace SpaceEngineersVR.OpenXR
 
         private void Frame(long displayTime, long poseTime, bool focused)
         {
-            if (failed)
+            if (failures > 0 && System.Diagnostics.Stopwatch.GetTimestamp() < retryAt)
                 return;
             try
             {
                 // Unfocused (the dashboard is up, or the session is winding down): the runtime gives no input, so none is reported.
-                if (!focused || Xr.Check(SyncActions(), "xrSyncActions", XrRuntime.Instance) == XrResult.SessionNotFocused)
+                if (!focused)
                 {
-                    Deactivate();
+                    Deactivate($"the session is not focused ({XrSession.State}): the runtime gives input only to the focused app");
+                    return;
+                }
+                if (Xr.Check(SyncActions(), "xrSyncActions", XrRuntime.Instance) == XrResult.SessionNotFocused)
+                {
+                    Deactivate("xrSyncActions says the session is not focused (another app or the runtime's overlay has the input)");
                     return;
                 }
 
@@ -393,9 +425,16 @@ namespace SpaceEngineersVR.OpenXR
                     publishedNow[0] = workingNow[0];
                     publishedNow[1] = workingNow[1];
                 }
+                if (failures > 0)
+                {
+                    Log.Info($"OpenXR controller input working again after {failures} failed {(failures == 1 ? "try" : "tries")}");
+                    failures = 0;
+                    lastFailure = null;
+                }
                 if (!active)
                 {
                     active = true;
+                    inactiveWhy = null;
                     Log.Info("OpenXR controllers active");
                 }
                 if (!loggedProfiles)
@@ -412,9 +451,15 @@ namespace SpaceEngineersVR.OpenXR
             }
             catch (Exception e)
             {
-                Log.Error(e, "OpenXR controller input failed; controllers off for the rest of the run");
-                failed = true;
-                Deactivate();
+                failures++;
+                double wait = Math.Min(RetryMaxSeconds, Math.Pow(2d, Math.Min(failures - 1, 10)));
+                retryAt = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(wait * System.Diagnostics.Stopwatch.Frequency);
+                if (e.Message != lastFailure)
+                    Log.Error(e, $"OpenXR controller input failed ({failures} in a row); controllers off, trying again in {wait:0} s");
+                else
+                    Log.Warn($"OpenXR controller input failed again ({failures} in a row): {e.Message}; trying again in {wait:0} s");
+                lastFailure = e.Message;
+                Deactivate("controller input failed");
             }
         }
 
@@ -430,15 +475,16 @@ namespace SpaceEngineersVR.OpenXR
             return Xr.xrSyncActions(session, ref info);
         }
 
-        private void Deactivate()
+        /// <summary>No controller input: logged with <paramref name="why"/> whenever it starts or its reason changes.</summary>
+        private void Deactivate(string why)
         {
-            if (active)
-                Log.Info("OpenXR controllers inactive");
+            if (active || why != inactiveWhy)
+                Log.Info("OpenXR controllers inactive: " + why);
+            inactiveWhy = why;
             active = false;
             working[0] = working[1] = default;
             workingNow[0] = workingNow[1] = default;
-            // A Menu button down when the input stopped must not read as a tap or a hold when it is let go after.
-            wandMenu = default;
+
             lock (gate)
             {
                 published[0] = published[1] = default;
@@ -456,8 +502,12 @@ namespace SpaceEngineersVR.OpenXR
 
             LocatePoses(h, poseTime, ref s);
             s.FrameTime = displayTime;
-            if (s.Tracked != wasTracked)
-                Log.Info($"OpenXR {HandNames[h]} controller {(s.Tracked ? "tracked" : "not tracked")}");
+            if (s.Tracked != wasTracked || !trackingLogged[h])
+            {
+                trackingLogged[h] = true;
+                Log.Info($"OpenXR {HandNames[h]} controller {(s.Tracked ? "tracked" : "not tracked")} (grip pose flags 0x{s.GripFlags:X}, aim 0x{s.AimFlags:X}: " +
+                         "1 orientation valid, 2 position valid, 4 and 8 tracked)");
+            }
 
             s.Trigger = GetFloat(triggerAction, hand);
             s.Squeeze = GetFloat(squeezeAction, hand);
@@ -487,18 +537,21 @@ namespace SpaceEngineersVR.OpenXR
                 if (GetBoolean(yAction, 0))
                     buttons |= VRButtons.Y;
             }
-            bool wandMenuPulse = false;
+            bool trackpadClick = ReadExtra(padClickAction, hand, "trackpad click");
+            Vector2 padAt = Vector2.Zero;
+            if (trackpadClick)
+            {
+                XrVector2f pad = ReadExtraVector2(padAction, hand, "trackpad position");
+                padAt = new Vector2(pad.X, pad.Y);
+            }
+            // The buttons stay as the controller has them; what each does is the bindings' (ControllerControls).
+            Vector2 rawStick = s.Stick;
             if (wand[h])
             {
-                // A Vive wand reported the trackpad as the stick and its click, and Menu: they are put in the Quest's layout. Whether a
-                // seat is being driven is the game thread's word, a volatile flag it sets each frame (VRControls.SeatDriven).
-                bool padClick = (buttons & VRButtons.StickClick) != 0, menu = (buttons & VRButtons.Menu) != 0;
-                WandLayout.Output layout = h == (int)Hand.Right
-                    ? WandLayout.Right(ref wandMenu, s.Stick, padClick, menu, VRControls.SeatDriven, displayTime / 1e9)
-                    : WandLayout.Left(s.Stick, padClick, menu);
-                buttons = (buttons & (VRButtons.Trigger | VRButtons.Grip)) | layout.Buttons;
-                s.Stick = layout.Stick;
-                wandMenuPulse = layout.GameMenu;
+                // A Vive wand reports its trackpad as the stick and its click as the stick click: the pad is made the stick the hands
+                // turn and walk with. Whether a seat is being driven is the game thread's word, a volatile flag (VRControls.SeatDriven).
+                bool padClick = (buttons & VRButtons.StickClick) != 0;
+                s.Stick = h == (int)Hand.Right ? WandLayout.Right(s.Stick, padClick, VRControls.SeatDriven) : WandLayout.Left(s.Stick);
             }
             s.Buttons = buttons;
 
@@ -518,6 +571,9 @@ namespace SpaceEngineersVR.OpenXR
             }
             s.TouchSensors = sensors;
             s.Touch = touched;
+            bool bumper = ReadExtra(bumperAction, hand, "bumper"), padTouch = ReadExtra(padTouchAction, hand, "trackpad touch"),
+                gripTouch = ReadExtra(squeezeTouchAction, hand, "grip touch");
+            ControllerControls(h, buttons, rawStick, trackpadClick, padAt, touched, bumper, padTouch, gripTouch, out s.ControlsDown, out s.ControlsTouched);
             working[h] = s;
 
             // The same hand at this frame's display time: the controls as read, the poses located again.
@@ -532,12 +588,6 @@ namespace SpaceEngineersVR.OpenXR
             }
             workingNow[h] = now;
 
-            // The right wand's held Menu is the game menu, which the game reads from the left hand's Menu; the left hand was read first.
-            if (wandMenuPulse)
-            {
-                working[(int)Hand.Left].Buttons |= VRButtons.Menu;
-                workingNow[(int)Hand.Left].Buttons |= VRButtons.Menu;
-            }
         }
 
         /// <summary>
@@ -625,6 +675,47 @@ namespace SpaceEngineersVR.OpenXR
             sensors |= flag;
             if (state.CurrentState != 0)
                 touched |= flag;
+        }
+
+        /// <summary>
+        /// A control only the bindings read (a bumper, a trackpad, a finger on a grip); one the runtime fails to read counts as
+        /// not there, never as a reason to take the controllers down. Each is warned of once.
+        /// </summary>
+        private bool ReadExtra(ulong action, ulong subactionPath, string name)
+        {
+            if (action == 0)
+                return false;
+            var info = new XrActionStateGetInfo { Type = XrStructureType.ActionStateGetInfo, Action = action, SubactionPath = subactionPath };
+            var state = new XrActionStateBoolean { Type = XrStructureType.ActionStateBoolean };
+            int result = Xr.xrGetActionStateBoolean(session, ref info, ref state);
+            if (result < 0)
+            {
+                WarnExtra(name, result);
+                return false;
+            }
+            return state.IsActive != 0 && state.CurrentState != 0;
+        }
+
+        /// <summary>As <see cref="ReadExtra"/>, a position: zero when it cannot be read.</summary>
+        private XrVector2f ReadExtraVector2(ulong action, ulong subactionPath, string name)
+        {
+            if (action == 0)
+                return default;
+            var info = new XrActionStateGetInfo { Type = XrStructureType.ActionStateGetInfo, Action = action, SubactionPath = subactionPath };
+            var state = new XrActionStateVector2f { Type = XrStructureType.ActionStateVector2f };
+            int result = Xr.xrGetActionStateVector2f(session, ref info, ref state);
+            if (result < 0)
+            {
+                WarnExtra(name, result);
+                return default;
+            }
+            return state.IsActive != 0 ? state.CurrentState : default;
+        }
+
+        private void WarnExtra(string name, int result)
+        {
+            if (extraWarned.Add(name))
+                Log.Warn($"OpenXR: the runtime could not read the {name} ({Xr.ResultName(XrRuntime.Instance, result)}); it counts as not there");
         }
 
         private static bool Down(bool wasDown, float value) => wasDown ? value > ReleaseAt : value >= PressAt;
@@ -772,20 +863,82 @@ namespace SpaceEngineersVR.OpenXR
             GameHead.Recentre("the headset's recentre");
         }
 
+        /// <summary>
+        /// The hand's controls as they are on the controller (<see cref="HandState.ControlsDown"/>): the buttons as read, before
+        /// a layout, by the names of the controls they are bound to (a Steam Frame's left D-pad and View, an Index's left
+        /// trackpad pressed firmly), and a clicked trackpad (a Vive wand's, read as its stick, as the part of it clicked; a
+        /// Windows Mixed Reality controller's by its upper and lower half, as its face buttons have always been read). The
+        /// bumper, a thumb on a trackpad and fingers on a grip come from controls only the bindings read.
+        /// </summary>
+        private void ControllerControls(int h, VRButtons raw, Vector2 rawStick, bool padClick, Vector2 padAt, VRTouch touched,
+                                        bool bumper, bool padTouch, bool gripTouch, out uint down, out uint touch)
+        {
+            uint d = 0u, t = 0u;
+            void Put(ControllerControl control, bool isDown, bool isTouched)
+            {
+                uint bit = 1u << (int)control;
+                if (isDown)
+                    d |= bit;
+                if (isDown || isTouched)
+                    t |= bit;
+            }
+            bool left = h == (int)Hand.Left;
+            // The left hand's Menu, X and Y are bound to other controls on these (XrInput.Bindings.cs).
+            bool steamFrame = left && profileKey[h] == Input.Bindings.DefaultBindings.SteamFrameProfile;
+            bool index = left && profileKey[h] == Input.Bindings.DefaultBindings.IndexProfile;
+            Put(ControllerControl.Trigger, (raw & VRButtons.Trigger) != 0, (touched & VRTouch.Trigger) != 0);
+            Put(ControllerControl.Grip, (raw & VRButtons.Grip) != 0, gripTouch);
+            Put(steamFrame ? ControllerControl.View : index ? ControllerControl.TrackpadForce : ControllerControl.Menu, (raw & VRButtons.Menu) != 0, false);
+            Put(ControllerControl.Bumper, bumper, false);
+            if (padTouch)
+                Put(ControllerControl.Trackpad, false, true);
+            Put(steamFrame ? ControllerControl.DpadDown : ControllerControl.ButtonLower, (raw & (left ? VRButtons.X : VRButtons.A)) != 0, (touched & (left ? VRTouch.X : VRTouch.A)) != 0);
+            Put(steamFrame ? ControllerControl.DpadUp : ControllerControl.ButtonUpper, (raw & (left ? VRButtons.Y : VRButtons.B)) != 0, (touched & (left ? VRTouch.Y : VRTouch.B)) != 0);
+            Put(ControllerControl.Thumbrest, false, (touched & VRTouch.Thumbrest) != 0);
+            bool stickClick = (raw & VRButtons.StickClick) != 0, stickTouch = (touched & VRTouch.Stick) != 0;
+            if (wand[h])
+            {
+                // A wand's trackpad is read as the stick (BindHands): it is its trackpad here.
+                Put(ControllerControl.Trackpad, stickClick, stickTouch);
+                if (stickClick)
+                    Put(TrackpadPart(rawStick), true, true);
+            }
+            else
+            {
+                Put(ControllerControl.ThumbstickClick, stickClick, stickTouch);
+                Put(ControllerControl.Thumbstick, false, stickTouch);
+            }
+            if (padClick)
+            {
+                Put(ControllerControl.Trackpad, true, true);
+                Put(padAt.Y >= 0f ? ControllerControl.TrackpadUp : ControllerControl.TrackpadDown, true, true);
+            }
+            down = d;
+            touch = t;
+        }
+
+        /// <summary>The part of a trackpad clicked at <paramref name="at"/> (+Y up): the middle within <see cref="WandLayout.CentreRadius"/>, else the side it is nearest.</summary>
+        internal static ControllerControl TrackpadPart(Vector2 at)
+        {
+            if (at.LengthSquared() <= WandLayout.CentreRadius * WandLayout.CentreRadius)
+                return ControllerControl.TrackpadCentre;
+            if (Math.Abs(at.Y) >= Math.Abs(at.X))
+                return at.Y > 0f ? ControllerControl.TrackpadUp : ControllerControl.TrackpadDown;
+            return at.X > 0f ? ControllerControl.TrackpadRight : ControllerControl.TrackpadLeft;
+        }
+
         /// <summary>The hand is on a Vive wand now, or is not; logged once each time it switches, so a log shows the layout engaged.</summary>
         private void SetWand(int h, bool onWand)
         {
             if (wand[h] == onWand)
                 return;
             wand[h] = onWand;
-            if (h == (int)Hand.Right)
-                wandMenu = default;
+
             if (!onWand)
                 return;
             Log.Info(h == (int)Hand.Right
-                ? "OpenXR right hand is a Vive wand: Quest layout from the wand's controls (pad clicked: left or right turns, up or down jump and crouch " +
-                  "or, in a seat, A and B; centre click is the stick click; Menu tapped is B, held half a second is the game menu)"
-                : "OpenXR left hand is a Vive wand: Quest layout from the wand's controls (pad is the stick and its click the stick click; Menu is Y)");
+                ? "OpenXR right hand is a Vive wand: its trackpad clicked left or right turns, up or down jumps and crouches (not in a seat); its buttons are the bindings'"
+                : "OpenXR left hand is a Vive wand: its trackpad is the stick; its buttons are the bindings'");
         }
     }
 }

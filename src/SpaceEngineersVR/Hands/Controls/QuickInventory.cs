@@ -10,6 +10,7 @@ using Sandbox.Game.Gui;
 using Sandbox.Game.Weapons;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Input.Bindings;
 using VRage.Game;
 using VRage.Game.Entity.UseObject;
 using VRage.Input;
@@ -58,9 +59,9 @@ namespace SpaceEngineersVR.Hands
     /// a paste or the voxel brush) and not with the colour tool in hand (A and B are its brush). The left stick click is the
     /// withdraw. The right stick click is the production with the right grip open, where it is nothing else: not with a hand
     /// weapon that reloads (<see cref="Reload"/>); and the deposit with the right grip held, when that grip is the Use's (the
-    /// ray's, or a grab's on what the hand is on) and not another feature's (the hull, the helmet, an item). A click taken
-    /// here stays out of sprint, the zero-g roll and reload until it is let go (<see cref="TakesLeftClick"/>,
-    /// <see cref="TakesClick"/>). A and B are jump and the jetpack here as everywhere.</para>
+    /// ray's, or a grab's on what the hand is on) and not another feature's (the hull, the helmet, an item). These are the
+    /// bindings' container actions, which shadow sprint, the zero-g roll and reload here (ControllerBindings), except the
+    /// production where the game would refuse it (<see cref="ProductionFree"/>). A and B are jump and the jetpack here as everywhere.</para>
     /// <para>The grip's Use waits: a right grip that goes down at a container is the Use key there, and its Use is held back
     /// for as long as the grip is held (<see cref="HoldsBack"/>: the ray Use in <see cref="VRControls"/> and a grab's in
     /// <see cref="GrabUse"/> ask), so the click can deposit without also opening the inventory. When the grip is let go the
@@ -75,11 +76,6 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The hand points at an inventory block, or rests on one, where the stick clicks act this frame (for the control hint).</summary>
         public static bool Ready { get; private set; }
 
-        /// <summary>The left stick click was pressed for a withdraw and is not sprint or the zero-g roll until it is let go.</summary>
-        public static bool TakesLeftClick => takesLeftClick;
-
-        /// <summary>The right stick click was pressed for a production or a deposit and is not reload until it is let go.</summary>
-        public static bool TakesClick => takesClick;
 
         /// <summary>The right grip went down at a container and its Use waits for the grip to be let go (the ray Use and a grab's ask).</summary>
         public static bool HoldsBack => backing;
@@ -100,7 +96,7 @@ namespace SpaceEngineersVR.Hands
         private static Firing firing;
 
         private static readonly List<string> reported = new List<string>();
-        private static bool hooked, takesLeftClick, takesClick, refreshAsked, backing, backedRay, deposited;
+        private static bool hooked, refreshAsked, backing, backedRay, deposited;
         private static IMyUseObject backedUse;
         private static int errors;
 
@@ -166,17 +162,17 @@ namespace SpaceEngineersVR.Hands
             Grip(grip, gripUse, owner == null, hands);
 
             bool modifier = BuildMode.Modifier; // the left stick click held to build: a paste, the voxel brush
-            bool leftNew = VRInput.IsNewPressed(Hand.Left, VRButtons.StickClick);
-            bool rightNew = VRInput.IsNewPressed(Hand.Right, VRButtons.StickClick);
-            bool take = Ready && !modifier && leftNew;
-            bool dump = Ready && !modifier && !take && gripUse && rightNew;
-            bool produce = Ready && !modifier && !take && !grip && rightNew && ClickIsFree();
-            takesLeftClick = VRInput.IsPressed(Hand.Left, VRButtons.StickClick) && (takesLeftClick || take);
-            takesClick = VRInput.IsPressed(Hand.Right, VRButtons.StickClick) && (takesClick || dump || produce);
+            bool take = Ready && !modifier && ControllerBindings.Started(VRAction.QuickTake);
+            bool dump = Ready && !modifier && !take && gripUse && ControllerBindings.Started(VRAction.QuickDepositAll);
+            bool produce = Ready && !modifier && !take && !dump && ControllerBindings.Started(VRAction.QuickProduction);
             if (dump && backing)
                 deposited = true;
             if (take || dump || produce)
-                Fire(on, take ? Firing.Take : dump ? Firing.Dump : Firing.Produce, aimed, source, take ? Hand.Left : Hand.Right);
+            {
+                Firing what = take ? Firing.Take : dump ? Firing.Dump : Firing.Produce;
+                VRAction by = take ? VRAction.QuickTake : dump ? VRAction.QuickDepositAll : VRAction.QuickProduction;
+                Fire(on, what, aimed, source, ControllerBindings.HandOf(by));
+            }
         }
 
         /// <summary>
@@ -287,7 +283,8 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>The right stick click is nothing else here: not the block's other size (a block in hand), not reload (a hand weapon that reloads).</summary>
-        private static bool ClickIsFree()
+        /// <summary>The container's production would be taken here: not with a block in hand, nor a hand weapon that reloads, whose reload the control stays.</summary>
+        internal static bool ProductionFree()
         {
             if (BuildMode.Active)
                 return false;

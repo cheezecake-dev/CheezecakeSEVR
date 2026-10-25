@@ -8,6 +8,7 @@ using Sandbox.Game.Gui;
 using Sandbox.Game.Screens.Helpers;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Gui;
 using VRage.Input;
 using VRage.Utils;
@@ -228,20 +229,20 @@ namespace SpaceEngineersVR.Input
             bool walking = context == VRContext.OnFoot || context == VRContext.Jetpack;
             bool usable = Mode != ModeOff && VRInput.Active && (seated || walking);
 
-            // Y tapped in a seat: let go before the hold that leaves the seat completes.
+            // The seat's tools wheel (Y tapped, by default: let go before the hold that leaves the seat completes). The cockpit
+            // switch under the fingertip is the one as the press began.
             bool tapped = false;
             if (phase == Phase.Idle && seated && GameplayFocused())
             {
-                if (VRInput.IsNewPressed(Hand.Left, VRButtons.Y))
+                bool down = ControllerBindings.ControlDown(VRAction.SeatToolsWheel);
+                if (down && yDownAt < 0d)
                 {
                     yDownAt = seconds;
                     yDownSwitch = Cockpits.CockpitButtons.HoveredSwitch;
                 }
-                else if (!VRInput.IsPressed(Hand.Left, VRButtons.Y))
-                {
-                    tapped = yDownAt >= 0d && VRInput.IsReleased(Hand.Left, VRButtons.Y) && seconds - yDownAt < VRControls.UseHoldSeconds;
+                tapped = ControllerBindings.Started(VRAction.SeatToolsWheel);
+                if (!down)
                     yDownAt = -1d;
-                }
             }
             else
                 yDownAt = -1d;
@@ -251,7 +252,7 @@ namespace SpaceEngineersVR.Input
                 case Phase.Idle:
                     if (!usable)
                         break;
-                    if (walking && VRInput.IsNewPressed(Hand.Left, VRButtons.Grip) && Hands.GripClaim.Owner(Hand.Left) == null && GameplayFocused())
+                    if (walking && ControllerBindings.Started(VRAction.ToolsWheel) && Hands.GripClaim.Owner(Hand.Left) == null && GameplayFocused())
                         Begin(Gesture.Grip, seconds, leftStick);
                     else if (seated && tapped && yDownSwitch >= 0)
                     {
@@ -260,6 +261,10 @@ namespace SpaceEngineersVR.Input
                         // moved to another switch before the release does nothing, rather than edit the wrong one.
                         if (Cockpits.CockpitButtons.HoveredSwitch == yDownSwitch)
                             Cockpits.CockpitActions.Configure(yDownSwitch);
+                    }
+                    else if (seated && tapped && WristButton.OpenSeatedAtWrist())
+                    {
+                        // Tapped while reading the wrist: the wrist panel, as Y opens it on foot.
                     }
                     else if (seated && tapped)
                         Begin(Gesture.Tap, seconds, leftStick);
@@ -402,24 +407,17 @@ namespace SpaceEngineersVR.Input
                     viewHeld = viewPressed = false;
             }
 
-            // What ends it: either trigger pulled (activates), on foot the grip let go (activates), the right B (closes, on
-            // foot and in a seat) or in a seat Y again (closes). The trigger is the same in the seat and on foot; the thumb
-            // stays on the stick while a trigger is pulled.
-            string by = VRInput.IsNewPressed(Hand.Right, VRButtons.Trigger) ? "right trigger"
-                : VRInput.IsNewPressed(Hand.Left, VRButtons.Trigger) ? "left trigger"
-                : null;
-            bool cancel = VRInput.IsNewPressed(Hand.Right, VRButtons.B);
+            // What ends it (the bindings, by default): either trigger pulled (activates), on foot the grip let go (activates),
+            // the right B or a tap of Y (closes). The trigger is the same in the seat and on foot; the thumb stays on the stick
+            // while a trigger is pulled.
+            string by = ControllerBindings.Started(VRAction.WheelActivate) ? "the wheel's activate" : null;
+            bool cancel = ControllerBindings.Started(VRAction.CloseToolsWheel);
             bool gripLetGo = false;
-            if (gesture == Gesture.Grip)
+            if (gesture == Gesture.Grip && by == null && !ControllerBindings.IsActive(VRAction.ToolsWheel))
             {
-                if (by == null && !VRInput.IsPressed(Hand.Left, VRButtons.Grip))
-                {
-                    by = "grip let go";
-                    gripLetGo = true;
-                }
+                by = "the tools wheel let go";
+                gripLetGo = true;
             }
-            else
-                cancel |= VRInput.IsNewPressed(Hand.Left, VRButtons.Y);
             bool end = cancel || by != null;
 
             // A stick held from before the wheel opened chooses nothing until it has been let go or turned.
@@ -454,7 +452,7 @@ namespace SpaceEngineersVR.Input
 
             if (!end)
             {
-                if (kind == Kind.Slots && phase == Phase.Open && VRInput.IsNewPressed(Hand.Left, VRButtons.StickClick))
+                if (kind == Kind.Slots && phase == Phase.Open && ControllerBindings.Started(VRAction.OpenActionsWheel))
                     SwapToSystem(seconds);
                 return;
             }
@@ -609,15 +607,13 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// The buttons that opened or closed the wheel, still down: they must not reach the game as a shot or a thrust. Both
-        /// triggers and the right B count whichever gesture opened it: one pulled to activate or pressed to cancel is still down
-        /// when the wheel closes, and one held through the wheel would look like a fresh press the frame the hands go back to
-        /// the game (B is the thrust control on foot and a thrust or descent in a seat).
+        /// The controls that opened or closed the wheel, still down. They cannot reach the game (a press belongs to where it
+        /// began: ControllerBindings), but the wheel stays done until they are let go, so the game's own hold on movement after
+        /// a radial menu sees its frames of no input.
         /// </summary>
         private static bool DrivingButtonHeld() =>
-            (gesture == Gesture.Grip ? VRInput.IsPressed(Hand.Left, VRButtons.Grip) : VRInput.IsPressed(Hand.Left, VRButtons.Y))
-            || VRInput.IsPressed(Hand.Right, VRButtons.B)
-            || VRInput.IsPressed(Hand.Left, VRButtons.Trigger) || VRInput.IsPressed(Hand.Right, VRButtons.Trigger);
+            ControllerBindings.ControlDown(gesture == Gesture.Grip ? VRAction.ToolsWheel : VRAction.SeatToolsWheel)
+            || ControllerBindings.ControlDown(VRAction.CloseToolsWheel) || ControllerBindings.ControlDown(VRAction.WheelActivate);
 
         /// <summary>
         /// The game's answer to a question about a control. The frame a game radial opens from the grip, the gameplay

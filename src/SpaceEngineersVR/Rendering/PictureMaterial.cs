@@ -7,7 +7,7 @@ namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
     /// A transparent material of our own for billboards that show one picture as it is: the inside of the helmet
-    /// (<see cref="HelmetInterior"/>) and the datapad's screen (<see cref="Hands.DatapadModel"/>).
+    /// (<see cref="HelmetInterior"/>).
     /// </summary>
     internal static class PictureMaterial
     {

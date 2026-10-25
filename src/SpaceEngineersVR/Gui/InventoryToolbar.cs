@@ -17,6 +17,7 @@ using SpaceEngineersVR.Rendering;
 using VRage;
 using VRage.Game;
 using VRage.Game.Entity;
+using VRage.Input;
 using VRage.ObjectBuilders;
 using VRage.Utils;
 using VRageMath;
@@ -31,7 +32,7 @@ namespace SpaceEngineersVR.Gui
     /// </summary>
     /// <remarks>
     /// <para>What the game does, not a copy of it. The control is the G menu's (MyPerGameSettings.GUI.ToolbarControl, made
-    /// as MyGuiScreenToolbarConfigBase makes it, with MyHud.HudDefinition.Toolbar), so its slots, icons, page labels and its
+    /// as MyGuiScreenToolbarConfigBase makes it, with MyHud.HudDefinition.Toolbar), so its slots, icons, page numbers and its
     /// own clicks are the game's: a click on a slot uses it, a right click (the grip) takes it off the toolbar. The drop is
     /// the inventory's own drag (MyTerminalInventoryController: the laser's trigger held on an item, then moved), whose end,
     /// dragDrop_OnItemDropped, finds the grid under the cursor (MyGuiControlGridDragAndDrop.Drop) and does nothing when that
@@ -41,7 +42,8 @@ namespace SpaceEngineersVR.Gui
     /// as tools and weapons (MyDefinitionManager.GetWeaponDefinitions), and only what it would let you pick: in survival, one
     /// you carry (inventory.ContainItems). Anything else dropped there does nothing. A double click keeps its meaning (the
     /// item to the other inventory).</para>
-    /// <para>Only while the picture is VR's (<see cref="StereoPatches.VRPicture"/>); the flat game's inventory is as it was.
+    /// <para>While the picture is VR's (<see cref="StereoPatches.VRPicture"/>), and without a headset too unless that is off
+    /// (<see cref="VRSettings.InventoryToolbarFlat"/>): the control and the drop are the game's, so the mouse works them.
     /// The control and its hooks go when the inventory page closes (MyTerminalInventoryController.Close).</para>
     /// </remarks>
     internal static class InventoryToolbar
@@ -51,6 +53,9 @@ namespace SpaceEngineersVR.Gui
 
         /// <summary>Between the inventories and the toolbar, in the game's screen units.</summary>
         private const float Gap = 0.01f;
+
+        /// <summary>Between the slots and the row of page numbers above them, in the game's screen units.</summary>
+        private const float PageGap = 0.004f;
 
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(InventoryToolbar));
         private static Harmony pending;
@@ -117,17 +122,22 @@ namespace SpaceEngineersVR.Gui
                 prefix: new HarmonyMethod(typeof(InventoryToolbar), nameof(BeforeClose)));
             harmony.Patch(AccessTools.Method(typeof(MyGuiControlToolbar), "RefreshSelectedItem"),
                 postfix: new HarmonyMethod(typeof(InventoryToolbar), nameof(AfterRefreshSelected)));
+            harmony.Patch(AccessTools.Method(typeof(MyGuiControlToolbar), "RepositionControls")
+                          ?? throw new MissingMethodException(nameof(MyGuiControlToolbar), "RepositionControls"),
+                postfix: new HarmonyMethod(typeof(InventoryToolbar), nameof(AfterReposition)));
+            harmony.Patch(AccessTools.Method(typeof(MyGuiControlToolbar), nameof(MyGuiControlToolbar.HandleInput)),
+                postfix: new HarmonyMethod(typeof(InventoryToolbar), nameof(AfterHandleInput)));
             harmony.Patch(AccessTools.Method(controller, "dragDrop_OnItemDropped"),
                 prefix: new HarmonyMethod(typeof(InventoryToolbar), nameof(BeforeDropped)));
-            Log.Info("Inventory toolbar: hooked (the inventory page shows the toolbar in VR; a tool or gun dropped on a slot goes there)");
+            Log.Info("Inventory toolbar: hooked (the inventory page shows the toolbar; a tool or gun dropped on a slot goes there)");
         }
 
         // ---- The control ----
 
-        /// <summary>MyTerminalInventoryController.Init: the page is built; in VR the toolbar goes along its bottom.</summary>
+        /// <summary>MyTerminalInventoryController.Init: the page is built; the toolbar goes along its bottom.</summary>
         private static void AfterInit(IMyGuiControlsParent controlsParent)
         {
-            if (Off || !guard.On || !StereoPatches.VRPicture || controlsParent == null)
+            if (Off || !guard.On || !(StereoPatches.VRPicture || VRSettings.InventoryToolbarFlat) || controlsParent == null)
                 return;
             try
             {
@@ -140,9 +150,11 @@ namespace SpaceEngineersVR.Gui
                     return;
                 }
                 var made = (MyGuiControlToolbar)Activator.CreateInstance(MyPerGameSettings.GUI.ToolbarControl, MyHud.HudDefinition.Toolbar, false);
-                // The colour and skin swatches and the selected item's name are the HUD's, placed for the HUD; here only the slots and pages.
+                // The colour and skin swatches and the selected item's name are the HUD's, placed for the HUD; here the slots and the page numbers.
                 HideExtras(made);
-                float height = made.Size.Y > 0f ? made.Size.Y : made.ToolbarGrid.Size.Y;
+                float pagesHigh = PlacePages(made);
+                float height = Math.Max(made.Size.Y > 0f ? made.Size.Y : made.ToolbarGrid.Size.Y,
+                                        pagesHigh > 0f ? made.ToolbarGrid.Size.Y + PageGap + pagesHigh : 0f);
                 float bottom = Math.Max(Bottom(left), Bottom(right));
                 float shorter = height + Gap;
                 left.Size = new Vector2(left.Size.X, left.Size.Y - shorter);
@@ -153,9 +165,11 @@ namespace SpaceEngineersVR.Gui
                 controlsParent.Controls.Add(made);
                 bar = made;
                 barParent = controlsParent;
-                placesAt = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
-                Log.Info($"Inventory toolbar: shown on the inventory page, {made.Size.X:0.000} x {height:0.000} at the bottom ({bottom:0.000}); " +
-                         $"the inventories {shorter:0.000} shorter, now {left.Size.Y:0.000} high");
+                // where its slots are in the headset's space; nowhere without one
+                placesAt = StereoPatches.VRPicture ? Stopwatch.GetTimestamp() + Stopwatch.Frequency : 0;
+                Log.Info($"Inventory toolbar: shown on the inventory page, {made.Size.X:0.000} x {height:0.000} at the bottom ({bottom:0.000}), " +
+                         $"slots {made.ToolbarGrid.Size.Y:0.000} high" + (pagesHigh > 0f ? $" with the page numbers {pagesHigh:0.000} high above them" : ", no page numbers") +
+                         $"; the inventories {shorter:0.000} shorter, now {left.Size.Y:0.000} high");
             }
             catch (Exception e)
             {
@@ -168,6 +182,7 @@ namespace SpaceEngineersVR.Gui
         private static float Bottom(MyGuiControlBase control) =>
             MyUtils.GetCoordTopLeftFromAligned(control.Position, control.Size, control.OriginAlign).Y + control.Size.Y;
 
+        /// <summary>The colour and skin swatches and the selected item's name: the HUD's, placed for the HUD above the slots.</summary>
         private static void HideExtras(MyGuiControlToolbar made)
         {
             foreach (string field in new[] { "m_colorVariantPanel", "m_skinVariantPanel", "m_selectedItemLabel" })
@@ -177,11 +192,72 @@ namespace SpaceEngineersVR.Gui
             }
         }
 
+        /// <summary>
+        /// The game's row of page numbers (m_pageLabelList, the page in use lit, made again each time the control shows a toolbar),
+        /// which the game puts under the slots (RepositionControls), where it hangs below the inventories and reads as a second
+        /// toolbar: moved above the slots, into the room the hidden name and swatches leave, along the slots' left edge as the
+        /// game has it. Returns the row's height, 0 with no page numbers (a toolbar of one page).
+        /// </summary>
+        private static float PlacePages(MyGuiControlToolbar made)
+        {
+            if (!(PageLabels?.GetValue(made) is System.Collections.Generic.List<MyGuiControlLabel> pages) || pages.Count == 0)
+                return 0f;
+            // Positions are from the control's middle; the slots' bottom is the control's.
+            float slotsTop = made.Size.Y / 2f - made.ToolbarGrid.Size.Y;
+            float high = 0f;
+            foreach (MyGuiControlLabel page in pages)
+            {
+                page.Position = new Vector2(page.Position.X, slotsTop - PageGap - page.Size.Y / 2f);
+                high = Math.Max(high, page.Size.Y);
+            }
+            return high;
+        }
+
+        private static readonly System.Reflection.FieldInfo PageLabels = AccessTools.Field(typeof(MyGuiControlToolbar), "m_pageLabelList");
+
+        /// <summary>MyGuiControlToolbar.RepositionControls (a toolbar shown, a size changed) puts the page numbers back under the slots; on this toolbar they go above.</summary>
+        private static void AfterReposition(MyGuiControlToolbar __instance)
+        {
+            if (ReferenceEquals(__instance, bar))
+                PlacePages(__instance);
+        }
+
         /// <summary>MyGuiControlToolbar.RefreshSelectedItem shows the swatches again for a block; on this toolbar they stay hidden.</summary>
         private static void AfterRefreshSelected(MyGuiControlToolbar __instance)
         {
             if (ReferenceEquals(__instance, bar))
                 HideExtras(__instance);
+        }
+
+        /// <summary>
+        /// MyGuiControlToolbar.HandleInput: a click on one of this toolbar's page numbers turns to that page
+        /// (MyToolbar.SwitchToPage, as Ctrl and the number do). The game's own labels only show the page; this one is clickable.
+        /// </summary>
+        private static void AfterHandleInput(MyGuiControlToolbar __instance, ref MyGuiControlBase __result)
+        {
+            if (!ReferenceEquals(__instance, bar) || !guard.On || !MyInput.Static.IsNewLeftMousePressed()
+                || !(PageLabels?.GetValue(__instance) is System.Collections.Generic.List<MyGuiControlLabel> pages))
+                return;
+            try
+            {
+                Vector2 cursor = MyGuiManager.MouseCursorPosition;
+                for (int i = 0; i < pages.Count; i++)
+                {
+                    if (!pages[i].Visible || !pages[i].Rectangle.Contains(cursor))
+                        continue;
+                    MyToolbar toolbar = __instance.ShownToolbar ?? MyToolbarComponent.CurrentToolbar;
+                    if (toolbar == null)
+                        return;
+                    toolbar.SwitchToPage(i);
+                    __result = __instance;
+                    Log.Info($"Inventory toolbar: page {i + 1} clicked; the toolbar is on page {toolbar.CurrentPage + 1}");
+                    return;
+                }
+            }
+            catch (Exception e)
+            {
+                guard.Failed(e, "Inventory toolbar: turning the page on a click failed");
+            }
         }
 
         /// <summary>MyTerminalInventoryController.Close: the page goes; the toolbar control with it (its OnRemoving lets go of the game's toolbar).</summary>

@@ -67,11 +67,8 @@ namespace SpaceEngineersVR.Hands
 
         // ---- What it feels like ----
 
-        /// <summary>A hand grabs an item when its grip point is inside the item's box or this close to it, metres.</summary>
-        public const double GrabReach = 0.10;
-
-        /// <summary>The reach tick fires again only after the hand has been this much further away, metres.</summary>
-        private const double ReachHysteresis = 0.03;
+        /// <summary>A hand grabs an item when its grip point is inside the item's box or this close to it, metres (<see cref="GrabTolerance"/>; a hand the tick said is on an item keeps more).</summary>
+        public const double GrabReach = GrabTolerance.Body;
 
         /// <summary>An item held further than this from where the hand holds it (stopped by something, or too heavy to follow) is lost, metres.</summary>
         public const double BreakDistance = 0.6;
@@ -249,7 +246,10 @@ namespace SpaceEngineersVR.Hands
                 MyCharacter character = MySession.Static?.LocalCharacter;
                 if (!MayGrab(character, hand) || !HandWorld.TryGetNow(character, hand, out MatrixD grip, out _, out _))
                     return false;
-                state.Pending = Nearest(Reach.Limit(character, grip.Translation), GrabReach, out _);
+                double reach = GrabTolerance.Reach(GrabReach, state.InReach != null);
+                state.Pending = Nearest(Reach.Limit(character, grip.Translation), reach, out double distance);
+                if (state.Pending != null)
+                    Note($"Items: {Side(hand)} grip takes {Describe(state.Pending)} {distance * 100:0.0} cm from its box (reach {reach * 100:0} cm)");
                 return state.Pending != null;
             }
             catch (Exception e)
@@ -334,7 +334,7 @@ namespace SpaceEngineersVR.Hands
                 state.InReach = null;
                 return;
             }
-            MyFloatingObject near = Nearest(grip.Translation, GrabReach + (state.InReach != null ? ReachHysteresis : 0.0), out _);
+            MyFloatingObject near = Nearest(grip.Translation, GrabTolerance.Reach(GrabReach, state.InReach != null), out _);
             if (near != null && near != state.InReach)
                 Haptics.Pulse(hand, TickAmplitude, TickSeconds);
             state.InReach = near;

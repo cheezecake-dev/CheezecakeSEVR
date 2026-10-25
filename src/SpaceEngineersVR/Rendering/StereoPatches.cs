@@ -40,6 +40,7 @@ namespace SpaceEngineersVR.Rendering
                 prefix: new HarmonyMethod(typeof(StereoPatches), nameof(KeepVRDeviceSettings)));
             harmony.Patch(AccessTools.Method(typeof(MyVideoSettingsManager), nameof(MyVideoSettingsManager.WriteCurrentSettingsToConfig)),
                 postfix: new HarmonyMethod(typeof(StereoPatches), nameof(KeepUserVideoConfig)));
+            MonitorChoice.Hook(harmony);
             TestAidsWithoutVR(harmony);
         }
 
@@ -67,6 +68,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(SceneOnce), SceneOnce.Patch);
             Feature(nameof(ParticlesOnce), ParticlesOnce.Patch);
             Feature(nameof(ParticleDensity), ParticleDensity.Patch);
+            Feature(nameof(MotionExtrapolation) + "Effects", MotionExtrapolation.PatchEffects);
             Feature(nameof(ExposureOnce), ExposureOnce.Patch);
             Feature(nameof(OffCentreAO), OffCentreAO.Patch);
             Feature(nameof(CentredFlares), CentredFlares.Patch);
@@ -74,8 +76,9 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(VisorFilters), VisorFilters.Patch);
             PatchRegistry.Apply(nameof(HelmetInterior), HelmetInterior.Register);
             PatchRegistry.Apply(nameof(VisorWeather), VisorWeather.Register);
-            if (!Hands.Datapad.Shelved)
-                PatchRegistry.Apply(nameof(Hands.DatapadModel) + "Material", Hands.DatapadModel.Register);
+            PatchRegistry.Apply(nameof(ExternalView) + "Material", ExternalView.RegisterMaterial);
+            Feature(nameof(OffscreenPriority), OffscreenPriority.Patch);
+            PatchRegistry.Apply(nameof(HandHints) + "Material", HandHints.Register);
             Feature(nameof(GpuPasses), GpuPasses.Patch);
             Feature(nameof(LensMask), LensMask.Patch);
             Feature(nameof(SoundFocus), SoundFocus.Patch);
@@ -84,6 +87,7 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(GuiLayout), GuiLayout.Patch);
             Feature(nameof(HudCamera), HudCamera.Patch);
             Feature(nameof(HudToolbar), HudToolbar.Patch);
+            Feature(nameof(HudShownAtStart), HudShownAtStart.Patch);
             Feature(nameof(WristStatus), WristStatus.Patch);
             Feature(nameof(SpriteQueueLock), SpriteQueueLock.Patch);
             Feature(nameof(ModelLoadRace), ModelLoadRace.Patch);
@@ -96,6 +100,11 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(PanelCursor), PanelCursor.Patch);
             Feature(nameof(FullView), FullView.Patch);
             Feature(nameof(BloodPulse), BloodPulse.Patch);
+            // Other VR players' heads and hands are drawn in a flat game too, so this goes on with or without a headset.
+            Feature(nameof(Multiplayer.RemotePoses), Multiplayer.RemotePoses.Patch);
+            // The toolbar on the inventory screen is the game's own control, worked with the mouse too, so it is there
+            // without a headset as well (VRSettings.InventoryToolbarFlat).
+            Feature(nameof(Gui.InventoryToolbar), Gui.InventoryToolbar.Patch);
         }
 
         /// <summary>
@@ -129,8 +138,8 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(ThirdPersonGate), ThirdPersonGate.Patch);
             Feature(nameof(InputPatches), InputPatches.Patch);
             Feature(nameof(Laser), Laser.Patch);
+            Feature(nameof(HandCrosshair), HandCrosshair.Patch);
             Feature(nameof(DoubleClickTolerance), DoubleClickTolerance.Patch);
-            Feature(nameof(Gui.InventoryToolbar), Gui.InventoryToolbar.Patch);
             Feature(nameof(CursorClip), CursorClip.Patch);
             Feature(nameof(HandIK), HandIK.Patch);
             Feature(nameof(HandResidual), HandResidual.Patch);
@@ -159,12 +168,7 @@ namespace SpaceEngineersVR.Rendering
             if (!Hands.Holsters.Shelved)
                 Feature(nameof(Hands.Holsters), Hands.Holsters.Patch);
             Feature(nameof(WristButton), WristButton.Patch);
-            // Shelved until it is reworked (Hands.Datapad.Shelved).
-            if (!Hands.Datapad.Shelved)
-            {
-                Feature(nameof(Hands.Datapad), Hands.Datapad.Patch);
-                Feature(nameof(Hands.DatapadModel), Hands.DatapadModel.Patch);
-            }
+            Feature(nameof(HandHints), HandHints.Patch);
             Feature(nameof(VROptionsEntry), VROptionsEntry.Patch);
             Feature(nameof(VRKeyboardHook), VRKeyboardHook.Patch);
             Feature(nameof(Input.VRPrompts), Input.VRPrompts.Patch);
@@ -177,8 +181,8 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>
         /// The picture is VR's: the eyes, the mirror window, the GUI on its panel at <see cref="GuiLayout.Size"/>, the cursor
         /// through the panel, the HUD's projection and the blood overlay. Off until a headset is first found, so a PC with
-        /// an OpenXR runtime and no headset shows the game as it is; after that it goes off again while the headset is away
-        /// (<see cref="FollowHeadset"/>), but that is off for now (<see cref="FlatWhenAway"/>). Read from any thread.
+        /// an OpenXR runtime and no headset shows the game as it is; after that it goes off again while the headset is gone
+        /// (<see cref="FollowHeadset"/>). Read from any thread.
         /// </summary>
         internal static bool VRPicture => vrPicture;
 
@@ -211,8 +215,8 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// The picture went back to the game's because the headset is away (<see cref="FollowHeadset"/>); VR's again when its
-        /// session has the focus. Never true while <see cref="FlatWhenAway"/> is off. Read from any thread.
+        /// The picture went back to the game's because the headset is gone (<see cref="FollowHeadset"/>); VR's again when its
+        /// session has the focus. Read from any thread.
         /// </summary>
         internal static bool PlayingFlat => playingFlat;
 
@@ -227,6 +231,12 @@ namespace SpaceEngineersVR.Rendering
         /// </summary>
         private static readonly bool FlatWhenAway = false;
 
+        /// <summary>
+        /// The picture is the game's in the VR mirror window (<see cref="GoFlat"/> with the session gone while
+        /// <see cref="FlatWhenAway"/> is off): the window keeps the mirror's settings, and the player's own stay in the config.
+        /// </summary>
+        private static volatile bool mirrorKept;
+
         /// <summary>When the headset was first seen away in this stretch (Stopwatch ticks); 0 while it is in use.</summary>
         private static long awaySince;
 
@@ -236,19 +246,7 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The play features are on, or were tried (<see cref="PatchPlay"/>).</summary>
         private static bool playPatched;
 
-        private static bool HeadsetFound
-        {
-            get
-            {
-                bool found = HeadsetWatcher.HasHeadset;
-                if (!found)
-                    VRWithoutHeadset(ref found);
-                return found;
-            }
-        }
-
-        /// <summary>A test build's switch for VR without a headset (src/SpaceEngineersVR.TestAids/); never set in a player's build.</summary>
-        static partial void VRWithoutHeadset(ref bool on);
+        private static bool HeadsetFound => HeadsetWatcher.HasHeadset;
 
         /// <summary>
         /// Game thread, every frame (<see cref="Plugin.Update"/>): the first time the headset is found, later in the run than
@@ -274,6 +272,12 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
+        /// The headset has a session, whatever its state. Without one (lost with the headset unplugged or its runtime closed,
+        /// refused, never started) the eyes have nowhere to go.
+        /// </summary>
+        private static bool HeadsetConnected => XrSession.Exists;
+
+        /// <summary>
         /// The headset is in use: its session is shown (Visible, or Focused). Below that (Idle, Synchronized, Stopping), or
         /// without a session (lost, refused, never started), it is away. The runtime's dashboard leaves it Visible.
         /// </summary>
@@ -282,23 +286,20 @@ namespace SpaceEngineersVR.Rendering
             get
             {
                 XrSessionState state = XrSession.State;
-                bool inUse = XrSession.Exists && (state == XrSessionState.Visible || state == XrSessionState.Focused);
-                if (!inUse)
-                    VRWithoutHeadset(ref inUse);
-                return inUse;
+                return XrSession.Exists && (state == XrSessionState.Visible || state == XrSessionState.Focused);
             }
         }
 
         /// <summary>
         /// Game thread, every frame (<see cref="Plugin.Update"/>), once the headset has been found: the picture goes back to
-        /// the game's when the headset has been away for <see cref="AwaySeconds"/> (it died, sleeps, was taken off or
-        /// unplugged, or its runtime closed), so the game goes on on the monitor with the keyboard and mouse; it turns to
-        /// VR's again when the session has the focus, a new one after a loss included. While <see cref="FlatWhenAway"/> is off,
-        /// as it is for now, nothing here runs and the picture stays VR's.
+        /// the game's when the headset has been gone for <see cref="AwaySeconds"/>, so the game goes on on the monitor with
+        /// the keyboard and mouse; it turns to VR's again when the session has the focus, a new one after a loss included.
+        /// Gone is without a session (unplugged, its runtime closed), and the picture fits the mirror window, which stays.
+        /// With <see cref="FlatWhenAway"/> on, gone is also away (asleep, taken off), and the window goes back to the player's.
         /// </summary>
         internal static void FollowHeadset()
         {
-            if (!playPatched || PatchRegistry.VROff || !FlatWhenAway)
+            if (!playPatched || PatchRegistry.VROff)
                 return;
             if (playingFlat)
             {
@@ -306,7 +307,7 @@ namespace SpaceEngineersVR.Rendering
                     ReturnToVR();
                 return;
             }
-            if (!vrPicture || HeadsetInUse)
+            if (!vrPicture || (FlatWhenAway ? HeadsetInUse : HeadsetConnected))
             {
                 awaySince = 0;
                 return;
@@ -319,8 +320,8 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// The picture back to the game's own, as with no headset at startup: the player's own resolution and window mode,
-        /// the GUI at the window's size (UpdateScreenSize; open screens rebuild their controls), the game's cursor, the
+        /// The picture back to the game's own, as with no headset at startup: the player's own resolution and window mode (or,
+        /// with <see cref="FlatWhenAway"/> off, the mirror window as it is), the GUI at the window's size (UpdateScreenSize; open screens rebuild their controls), the game's cursor, the
         /// screen resources at the window's size (<see cref="EyeRenderer.ToWindowResolution"/>). The session, if there is
         /// one, is kept, and the render thread keeps its frame loop going without layers until it has the focus again.
         /// </summary>
@@ -328,11 +329,13 @@ namespace SpaceEngineersVR.Rendering
         {
             awaySince = 0;
             playingFlat = true;
+            mirrorKept = !FlatWhenAway;
             XrSessionState state = XrSession.State;
             string why = XrSession.Exists ? $"session {state}" : "no session";
-            MyRenderDeviceSettings? user = userVideo;
-            Log.Info($"Headset away for {AwaySeconds:0} s ({why}): playing flat, " +
-                     (user.HasValue ? $"the player's {user.Value.BackBufferWidth}x{user.Value.BackBufferHeight} {user.Value.WindowMode}" : "the window as it is") +
+            MyRenderDeviceSettings? user = mirrorKept ? null : userVideo;
+            MyViewport window = MySandboxGame.ScreenViewport;
+            Log.Info($"Headset {(mirrorKept ? "gone" : "away")} for {AwaySeconds:0} s ({why}): playing flat, " +
+                     (user.HasValue ? $"the player's {user.Value.BackBufferWidth}x{user.Value.BackBufferHeight} {user.Value.WindowMode}" : $"the game's picture in the {(int)window.Width}x{(int)window.Height} window") +
                      ", until the headset session has the focus again");
             SetPicture(false);
             if (user.HasValue)
@@ -349,13 +352,14 @@ namespace SpaceEngineersVR.Rendering
             EyeRenderer.ToWindowResolution();
             MyViewport viewport = MySandboxGame.ScreenViewport;
             MySandboxGame.UpdateScreenSize((int)viewport.Width, (int)viewport.Height, viewport);
-            Notify("Headset away: playing flat");
+            Notify(mirrorKept ? "Headset lost: playing in the window" : "Headset away: playing flat");
         }
 
         /// <summary>The headset session has the focus again: the picture turns to VR's the way it does when the headset is first found.</summary>
         private static void ReturnToVR()
         {
             playingFlat = false;
+            mirrorKept = false;
             SetPicture(true);
             SwitchPicture("headset back");
             Notify("Headset back: VR");
@@ -461,11 +465,12 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>
         /// Every later change of device settings (options screen, the game re-applying the config after start-up)
         /// goes through Apply. Without this the game switches back to the player's fullscreen mode and drops stereo. While
-        /// the picture is the game's (<see cref="PlayingFlat"/>) they are the player's own.
+        /// the picture is the game's (<see cref="PlayingFlat"/>) they are the player's own, unless the mirror window stays
+        /// (<see cref="mirrorKept"/>).
         /// </summary>
         private static void KeepVRDeviceSettings(ref MyRenderDeviceSettings settings)
         {
-            if (!userVideo.HasValue || !vrPicture)
+            if (!userVideo.HasValue || (!vrPicture && !mirrorKept))
                 return;
 
             MyRenderDeviceSettings requested = settings;
@@ -538,11 +543,12 @@ namespace SpaceEngineersVR.Rendering
         /// The game writes its live device settings back to the config whenever it saves video options. Put the
         /// player's own resolution, window mode and VSync back so the VR mirror window and the headset's VSync off never
         /// replace them, and nothing of the plugin's stays in SpaceEngineers.cfg after it is removed. While the picture is the
-        /// game's (<see cref="PlayingFlat"/>) the live settings are the player's, and stay as the game wrote them.
+        /// game's (<see cref="PlayingFlat"/>) the live settings are the player's, and stay as the game wrote them, unless the
+        /// window is still the mirror (<see cref="mirrorKept"/>).
         /// </summary>
         private static void KeepUserVideoConfig()
         {
-            if (!userVideo.HasValue || !vrPicture)
+            if (!userVideo.HasValue || (!vrPicture && !mirrorKept))
                 return;
 
             MyRenderDeviceSettings user = userVideo.Value;

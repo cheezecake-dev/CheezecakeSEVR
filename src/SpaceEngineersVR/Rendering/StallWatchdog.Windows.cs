@@ -16,7 +16,7 @@ namespace SpaceEngineersVR.Rendering
     /// <para>
     /// The render thread stamps the time at the start and end of each frame, the main thread at the start and end of each
     /// tick (<see cref="RenderProgress"/>, <see cref="MainProgress"/>: one timestamp read and one store). A background thread
-    /// (<c>SEVR stall watchdog</c>) looks at the stamps four times a second. A thread with no stamp for 2 s is stuck: the
+    /// (<c>SEVR stall watchdog</c>) looks at the stamps four times a second. A thread with no stamp for 2 s (RenderDebug StallMs) is stuck: the
     /// watchdog suspends it for the few microseconds it takes to read its stack, resumes it, and only then builds the text and
     /// logs ("Perf stall: render thread stuck 2.3 s, stack: ..."). It does that again at 10 s and 30 s (and every 30 s after),
     /// logging the stack when it differs from the last one logged (at most <see cref="MaxStackLines"/> stack lines per stall
@@ -42,7 +42,10 @@ namespace SpaceEngineersVR.Rendering
         public static bool Off = true;
 
         private const int PollMs = 250;
-        private const double StuckMs = 2000.0;
+        /// <summary>A thread with no stamp for this long is stuck, ms; RenderDebug StallMs=n sets it (the main thread's 1 s ticks need less than the default).</summary>
+        public static double StuckMs = DefaultStuckMs;
+
+        public const double DefaultStuckMs = 2000.0;
         private const int FrameLimit = 25;
         private const int CaptureTimeoutMs = 3000;
         private const int MaxStackLines = 6;
@@ -50,7 +53,7 @@ namespace SpaceEngineersVR.Rendering
 
         private static readonly double TicksToMs = 1000.0 / Stopwatch.Frequency;
 
-        /// <summary>When the stack is read: after this many ms stuck, at the first three tries; then every 30 s.</summary>
+        /// <summary>When the stack is read: after this many ms stuck (or <see cref="StuckMs"/> when that is longer), at the first three tries; then every 30 s.</summary>
         private static readonly double[] StackAtMs = { 2000.0, 10000.0, 30000.0 };
 
         private static readonly Watched render = new Watched("render thread");
@@ -110,6 +113,7 @@ namespace SpaceEngineersVR.Rendering
             public int HandleTid;
             public bool Reported;           // a stall of 2 s or more has been logged for the current gap
             public int Stage;               // the next try at reading the stack
+            public double LastReadMs;       // how long stuck the stack was last read, ms (0: not yet in this stall)
             public int StackLines;
             public string LastStack;
             public long BaseTicks;          // the last time the thread was seen moving: when, what the process had read and
@@ -145,7 +149,11 @@ namespace SpaceEngineersVR.Rendering
                 long now = Stopwatch.GetTimestamp();
                 double lateMs = (now - before) * TicksToMs - PollMs;
                 if (Off)
+                {
+                    // Forget the last stamps, so time spent switched off is not reported as a hold when it is switched back on.
+                    render.Seen = main.Seen = 0;
                     continue;
+                }
                 try
                 {
                     Poll(now, lateMs);
@@ -194,6 +202,7 @@ namespace SpaceEngineersVR.Rendering
                     Moved(w, gapMs, io);
                 w.Reported = false;
                 w.Stage = 0;
+                w.LastReadMs = 0.0;
                 w.StackLines = 0;
                 w.LastStack = null;
             }
@@ -207,13 +216,22 @@ namespace SpaceEngineersVR.Rendering
                 w.BaseCpu = w.LastCpu = ThreadCpu(w);
                 return;
             }
-            double due = w.Stage < StackAtMs.Length ? StackAtMs[w.Stage] : 30000.0 * (w.Stage - 1);
-            if (ageMs >= due)
-            {
+            if (ageMs < StuckMs)
+                return;
+            // Under 2 s, a threshold set lower (StallMs) reads the stack once per StuckMs, so a stall of half a second to two is
+            // caught in the act, and more than once, without a read at every look lengthening the stall it measures.
+            bool staged = ageMs >= Due(w.Stage);
+            bool early = !staged && ageMs < StackAtMs[0] && (w.LastReadMs <= 0.0 || ageMs - w.LastReadMs >= StuckMs);
+            if (!staged && !early)
+                return;
+            while (Due(w.Stage) <= ageMs)
                 w.Stage++;
-                Report(w);
-            }
+            w.LastReadMs = ageMs;
+            Report(w);
         }
+
+        /// <summary>How long stuck the stack is read at the given try: <see cref="StackAtMs"/>, then every 30 s, never before <see cref="StuckMs"/>.</summary>
+        private static double Due(int stage) => Math.Max(StuckMs, stage < StackAtMs.Length ? StackAtMs[stage] : 30000.0 * (stage - 1));
 
         /// <summary>A thread that was stuck for a while is running again: how long, and what the process did meanwhile.</summary>
         private static void Moved(Watched w, double gapMs, IoCounters io)

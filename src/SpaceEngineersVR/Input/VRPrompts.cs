@@ -7,6 +7,7 @@ using Sandbox.Game.Gui;
 using Sandbox.Game.Localization;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Gui;
+using SpaceEngineersVR.Input.Bindings;
 using VRage;
 using VRage.Input;
 using VRage.Utils;
@@ -123,36 +124,45 @@ namespace SpaceEngineersVR.Input
             bool seated = VRControls.IsSeated(where);
 
             // Left-handed with a gun or tool on foot or the jetpack, the triggers follow the hand holding it (Hands.ItemSpots).
+            // Each button's name is its action's binding in use (ActionNames).
             bool swapped = walking && Hands.ItemSpots.TriggersSwapped;
+            bool turret = where == VRContext.Turret;
             if (control == MyControlsSpace.PRIMARY_TOOL_ACTION)
-                return swapped ? "Left trigger" : "Right trigger";
+                return ActionNames.Name(walking ? VRAction.PrimaryAction : ship ? VRAction.ShipFire : VRAction.TurretFire, swapped);
             if (control == MyControlsSpace.SECONDARY_TOOL_ACTION)
-                return where == VRContext.Turret ? null : swapped ? "Right trigger" : "Left trigger";
+                return turret ? null : ActionNames.Name(walking ? VRAction.SecondaryAction : VRAction.ShipSecondary, swapped);
             if (control == MyControlsSpace.USE)
-                return seated ? "Hold Y" : "Right grip";
+                return ActionNames.Describe(seated ? VRAction.LeaveSeat : VRAction.Use);
             if (control == MyControlsSpace.JUMP)
-                return where == VRContext.Turret ? null : "A";
+                return turret ? null : ActionNames.Name(ship ? VRAction.ThrustUp : VRAction.Jump);
             if (control == MyControlsSpace.CROUCH)
-                return ship ? "B" : walking ? "Right stick down" : null;
+                return ship ? ActionNames.Name(VRAction.ThrustDown) : walking ? "Right stick down" : null;
             if (control == MyControlsSpace.THRUSTS)
-                return walking ? "B" : null;
+                return walking ? ActionNames.Describe(VRAction.ToggleJetpack) : null;
             if (control == MyControlsSpace.DAMPING)
-                return where == VRContext.Turret ? null : "X";
+                return turret ? null : ActionNames.Name(VRAction.Dampeners);
             // With a block in hand the left stick click is building's (Hands.BuildMode.Modifier), not sprint or zero g's roll.
             if (control == MyControlsSpace.SPRINT)
-                return where == VRContext.OnFoot && !Hands.BuildMode.Active ? $"{Hands.Reload.SprintHandIn(where)} stick click" : null;
+                return where == VRContext.OnFoot && !Hands.BuildMode.Active ? ActionNames.Name(VRAction.Sprint, Hands.Reload.SprintHandIn(where) == Hand.Right) : null;
             if (control == MyControlsSpace.MAIN_MENU)
-                return "Menu";
+                return ActionNames.Name(VRAction.GameMenu);
             if (control == MyControlsSpace.RELOAD)
-                return walking ? $"{Hands.Reload.ButtonHandIn(where)} stick click" : null;
+                return walking ? ActionNames.Name(VRAction.Reload, Hands.Reload.ButtonHandIn(where) == Hand.Left) : null;
             if (control == MyControlsSpace.LANDING_GEAR)
-                return ship ? "Right stick click" : null;
+                return ship ? ActionNames.Name(VRAction.LandingGear) : null;
             // On the jetpack the roll is zero g's only (VRControls.UpdateZeroG).
             bool zeroGRoll = where == VRContext.Jetpack && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff && !Hands.BuildMode.Active;
+            string zeroG = zeroGRoll ? ActionNames.Name(VRAction.ZeroGTurn) : null;
+            if (zeroG != null)
+            {
+                // A press is tapped to lock the roll on or held for it; a binding made a hold or a tap is only that.
+                PressKind kind = ActionNames.Find(VRAction.ZeroGTurn).Kind;
+                zeroG = (kind == PressKind.Hold ? "Hold " : kind == PressKind.Tap ? "Tap " : "Tap or hold ") + zeroG;
+            }
             if (control == MyControlsSpace.ROLL_LEFT)
-                return ship ? "Left grip" : zeroGRoll ? "Left stick click + right stick left" : null;
+                return ship ? "Left grip" : zeroG != null ? zeroG + ", right stick left" : null;
             if (control == MyControlsSpace.ROLL_RIGHT)
-                return ship ? "Right grip" : zeroGRoll ? "Left stick click + right stick right" : null;
+                return ship ? "Right grip" : zeroG != null ? zeroG + ", right stick right" : null;
             if (control == MyControlsSpace.FORWARD || control == MyControlsSpace.BACKWARD
                 || control == MyControlsSpace.STRAFE_LEFT || control == MyControlsSpace.STRAFE_RIGHT)
                 return walking || ship ? "Left stick" : null;
@@ -160,25 +170,33 @@ namespace SpaceEngineersVR.Input
                 || control == MyControlsSpace.ROTATION_UP || control == MyControlsSpace.ROTATION_DOWN)
                 return "Right stick";
             if (control == MyControlsSpace.HEADLIGHTS && ship)
-                return "Left stick click";
+                return ActionNames.Name(VRAction.ShipLights);
             if (IsToolbar(control))
-                return walking ? "Hold left grip" : seated ? "Tap Y" : null;
+                return walking ? Then("Hold ", ActionNames.Name(VRAction.ToolsWheel), null) : seated ? ActionNames.Describe(VRAction.SeatToolsWheel) : null;
             if (control == MyControlsSpace.SYSTEM_RADIAL_MENU)
-                return walking ? "Left grip, then left stick click" : seated ? "Tap Y, then left stick click" : null;
+            {
+                string wheel = walking ? ActionNames.Name(VRAction.ToolsWheel) : seated ? ActionNames.Describe(VRAction.SeatToolsWheel) : null;
+                return Then(null, wheel, ActionNames.Name(VRAction.OpenActionsWheel));
+            }
             if (control == MyControlsGUI.CANCEL)
-                return "B";
+                return ActionNames.Name(VRAction.MenuBack);
 
             // The rest the hands reach through the wrist panel, on foot and on the jetpack.
-            if (walking && WristButton.Enabled)
+            string panel = ActionNames.Name(VRAction.WristPanel);
+            if (walking && WristButton.Enabled && panel != null)
             {
                 foreach (QuickActionsScreen.QuickAction action in QuickActionsScreen.Actions)
                 {
                     if (action.Control == control)
-                        return "Y > " + action.Label;
+                        return panel + " > " + action.Label;
                 }
             }
             return null;
         }
+
+        /// <summary>"<paramref name="before"/><paramref name="first"/>", then ", then <paramref name="second"/>" when there is one; null without the first.</summary>
+        private static string Then(string before, string first, string second) =>
+            first == null ? null : before + first + (second != null ? ", then " + second : string.Empty);
 
         private static bool IsToolbar(MyStringId control) =>
             control == MyControlsSpace.TOOLBAR_RADIAL_MENU || control == MyControlsSpace.TOOLBAR_UP || control == MyControlsSpace.TOOLBAR_DOWN

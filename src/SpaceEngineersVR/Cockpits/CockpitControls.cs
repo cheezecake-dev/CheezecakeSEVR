@@ -21,7 +21,7 @@ using VRageMath;
 
 namespace SpaceEngineersVR.Cockpits
 {
-    internal static class CockpitControls
+    internal static partial class CockpitControls
     {
         internal const string ClaimName="ColbyCockpit";
         // His RotationSpeed and default ShipRollSensitivity, passed to ApplyFlight as his Main did.
@@ -84,10 +84,24 @@ namespace SpaceEngineersVR.Cockpits
         internal static bool HandBusy(Hand hand) => Held(hand) || CockpitTouch.Attached(hand);
         private static bool Available => seat!=null && Eligible(seat) && CockpitRender.Ready && !menuOpen && viewOk &&
             VRInput.Get(Hand.Left).Tracked && VRInput.Get(Hand.Right).Tracked;
+        /// <summary>A wheel's or handlebar's grip takes hold with the wrist this near where holding it puts the wrist, metres.</summary>
         internal const float CaptureRadius=.14f;
+        /// <summary>
+        /// A stick takes hold with the hand's palm this near its grip, metres, whichever way the hand is turned: a hand closing
+        /// anywhere round the handle, or just short of it, has it. His measure (the wrist within CaptureRadius of where holding
+        /// the stick puts it, which is wider for a hand already turned as on the stick) takes hold too.
+        /// </summary>
+        internal const float StickReach=.10f;
+        /// <summary>How far along a stick's grip, each way from where the hand holds it, the handle counts, metres.</summary>
+        internal const float StickGripHalfLength=.06f;
         internal static bool NearGrip(Hand hand) => Available && NearDistance(hand==Hand.Left,GripDistance(hand));
+        /// <summary>The hand's palm is closed on a stick (well inside its reach): the grip is the stick's, ahead of a switch the fingertip happens to rest on.</summary>
+        internal static bool OnStick(Hand hand) => Available && !IsSteering && GripDistance(hand)<StickReach/2;
+        /// <summary>How far the hand's palm is from its stick's grip, metres (on the scale of <see cref="StickReach"/>); float.MaxValue with no stick.</summary>
+        internal static float StickGap(Hand hand) => Available && !IsSteering ? GripDistance(hand) : float.MaxValue;
+        private static float Reach => IsSteering ? CaptureRadius:StickReach;
         private static bool NearDistance(bool isLeft,float distance) => IsSteering ?
-            (isLeft ? leftHover:rightHover).Contains(distance,CaptureRadius):distance<CaptureRadius;
+            (isLeft ? leftHover:rightHover).Contains(distance,CaptureRadius):distance<StickReach;
         private static float GripDistance(Hand hand)
         {
             bool isLeft=hand==Hand.Left;
@@ -95,8 +109,20 @@ namespace SpaceEngineersVR.Cockpits
             if(Rig==null || stick==null && !IsSteering) return float.MaxValue;
             var controller=HandLocal(hand);
             var attached=CockpitHand.WristForPalm(seat.Pilot,hand,StickPalm(isLeft));
-            if(IsSteering && !CockpitStickMath.GripAligned(CockpitHand.GripWrist(controller),attached)) return float.MaxValue;
+            // A stick: the nearer of the palm's distance from its grip and his wrist measure, on the palm's scale.
+            if(!IsSteering) return Math.Min(StickDistance(stick,isLeft ? leftVisual:rightVisual,CockpitHand.Palm(controller)),GripDistance(controller,attached)*StickReach/CaptureRadius);
+            if(!CockpitStickMath.GripAligned(CockpitHand.GripWrist(controller),attached)) return float.MaxValue;
             return GripDistance(controller,attached);
+        }
+        /// <summary>How far <paramref name="palm"/> (the seat's space) is from the stick's grip as drawn: its line through the hand's hold, a hand's width each way.</summary>
+        internal static float StickDistance(CockpitRig.Stick stick,Matrix visual,Vector3 palm)
+        {
+            Vector3 contact=Vector3.Transform(stick.Contact,visual);
+            Vector3 line=Vector3.TransformNormal(stick.GripShaft,visual);
+            if(!contact.IsValid() || !palm.IsValid() || line.LengthSquared()<1e-8f) return float.MaxValue;
+            line.Normalize();
+            float along=MathHelper.Clamp(Vector3.Dot(palm-contact,line),-StickGripHalfLength,StickGripHalfLength);
+            return Vector3.Distance(palm,contact+line*along);
         }
         internal static float GripDistance(Matrix controller,Matrix attachedWrist) =>
             Vector3.Distance(CockpitHand.GripWrist(controller).Translation,attachedWrist.Translation);
@@ -307,24 +333,30 @@ namespace SpaceEngineersVR.Cockpits
             Vector3 lp=CockpitHand.Palm(l),rp=CockpitHand.Palm(r);
             float leftDistance=available ? GripDistance(Hand.Left):float.MaxValue;
             float rightDistance=available ? GripDistance(Hand.Right):float.MaxValue;
-            if(leftHover.Sample(available,leftDistance,CaptureRadius,leftDown || left.Consumed || CockpitTouch.Owns(Hand.Left)))
+            if(leftHover.Sample(available,leftDistance,Reach,leftDown || left.Consumed || CockpitTouch.Owns(Hand.Left)))
                 CockpitFeedback.Hover(Hand.Left);
-            if(rightHover.Sample(available,rightDistance,CaptureRadius,rightDown || right.Consumed || CockpitTouch.OwnsRight))
+            if(rightHover.Sample(available,rightDistance,Reach,rightDown || right.Consumed || CockpitTouch.OwnsRight))
                 CockpitFeedback.Hover(Hand.Right);
             bool leftNear=available && NearDistance(true,leftDistance);
             bool rightNear=available && NearDistance(false,rightDistance);
+            // A grip squeezed on a stick that something else took (a switch under the fingertip, a screen): said, so a stick that will not take can be traced.
+            foreach(var hand in new[] { Hand.Left,Hand.Right })
+                if((hand==Hand.Left ? leftNear:rightNear) && VRInput.IsNewPressed(hand,VRButtons.Grip) && GripClaim.Owner(hand)!=ClaimName)
+                    Log.Info($"ColbyCockpit: {(hand==Hand.Left ? "left" : "right")} {(IsSteering ? "grip" : "stick")} squeezed {(hand==Hand.Left ? leftDistance:rightDistance)*100f:0.0} cm from it, but the grip went to {GripClaim.Owner(hand) ?? "nothing"}");
             double seconds=clock.Elapsed.TotalSeconds;
             if (left.Update(available && !CockpitTouch.Owns(Hand.Left),leftDown,leftNear,true,VRSettings.ColbyTapHoldSticks && !Adjusting,seconds))
             {
                 grabLeft=DateTime.UtcNow; leftDetent.Sample(false,Vector3.Zero,grabLeft);
                 leftStartOffset=placement.Left;
                 leftNeutral=l; leftAngles=Vector3.Zero; CockpitHand.Vibrate(Hand.Left,0,0.055f,110,0.5f);
+                Log.Info($"ColbyCockpit: left {(IsSteering ? "grip" : "stick")} taken {leftDistance*100f:0.0} cm from it (reach {Reach*100f:0} cm)");
             }
             if (right.Update(available && !CockpitTouch.OwnsRight,rightDown,rightNear,true,VRSettings.ColbyTapHoldSticks && !Adjusting,seconds))
             {
                 grabRight=DateTime.UtcNow; rightDetent.Sample(false,Vector3.Zero,grabRight);
                 rightStartOffset=placement.Right;
                 rightNeutral=r; rightAngles=Vector3.Zero; CockpitHand.Vibrate(Hand.Right,0,0.055f,110,0.5f);
+                Log.Info($"ColbyCockpit: right {(IsSteering ? "grip" : "stick")} taken {rightDistance*100f:0.0} cm from it (reach {Reach*100f:0} cm)");
             }
             if (left.Held!=leftWas || right.Held!=rightWas)
                 Log.Info($"ColbyCockpit: left {(IsSteering ? "grip" : "stick")} {(left.Held ? "held" : "free")}, right {(IsSteering ? "grip" : "stick")} {(right.Held ? "held" : "free")}");

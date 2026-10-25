@@ -9,8 +9,7 @@ namespace SpaceEngineersVR.Common
 {
     /// <summary>
     /// The text of a hidden setting that keeps a few numbers for each of several keys (a controller profile, a kind of
-    /// cockpit): "key:n,n,n;key:n,n,n", the numbers in the invariant culture. Used by <see cref="Tracking.GripFit"/> and the
-    /// datapad's seat spots (<see cref="Hands.Datapad"/>).
+    /// cockpit): "key:n,n,n;key:n,n,n", the numbers in the invariant culture. Used by <see cref="Tracking.GripFit"/>.
     /// </summary>
     internal static class NumberTable
     {

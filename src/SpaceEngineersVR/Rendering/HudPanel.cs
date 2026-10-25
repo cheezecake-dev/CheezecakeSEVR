@@ -17,8 +17,6 @@ namespace SpaceEngineersVR.Rendering
     /// (<see cref="HudVisor"/>); while a menu is open it stays where it was put when the menu
     /// opened (<see cref="WorldMenu"/>, <see cref="VRSettings.MenuDistance"/>, <see cref="VRSettings.MenuWidthDegrees"/>).
     /// With the helmet view on and the helmet open the headset has no head-locked panel at all (<see cref="HelmetHud"/>).
-    /// On the datapad, while the game's datapad model is drawn, the panel is the picture on the model's screen in the scene
-    /// (<see cref="Hands.DatapadModel"/>), and neither the headset nor the window has it over the eyes.
     /// </summary>
     internal static class HudPanel
     {
@@ -126,11 +124,11 @@ namespace SpaceEngineersVR.Rendering
                 // open, for the window, and no layer at all).
                 XrSession.Panel? layer = null;
                 bool headset = XrSession.InFrame && XrSession.ShouldRender;
-                bool visor = HudVisor.Show(shown, headset && !locked && !helmetOpen);
-                // The datapad's own model shows the panel on its screen, in the scene the eyes are drawn with
-                // (Hands.DatapadModel): then neither the headset nor the window has the panel over the eyes.
-                bool onModel = eyesDrawn && locked && WorldMenu.OnPad && Hands.DatapadModel.TakePicture(shown);
-                if (headset && !helmetOpen && !onModel)
+                // No headset session (the headset asleep or not started): the window shows the HUD as the headset would, on
+                // the visor, in plain play; menus and the open helmet keep the window's flat panel.
+                bool windowVisor = !headset && !XrSession.Running && eyesDrawn && !locked && !helmetOpen && MirrorLayers.Available;
+                bool visor = HudVisor.Show(shown, (headset || windowVisor) && !locked && !helmetOpen, toHeadset: headset);
+                if (headset && !helmetOpen)
                 {
                     SharpDX.Direct3D11.Texture2D image = XrSession.AcquirePanelImage(size.X, size.Y);
                     try
@@ -161,7 +159,7 @@ namespace SpaceEngineersVR.Rendering
 
                 // With a headset over the eyes the window shows what the headset does: the panel as its layer has it, the beam and
                 // the HUD on the visor, and none of them where the headset has none. Otherwise the whole HUD on the flat panel.
-                bool mirror = headset && eyesDrawn && MirrorLayers.Ready;
+                bool mirror = (headset || windowVisor && visor) && eyesDrawn && MirrorLayers.Ready;
                 if (!mirror)
                     HudVisor.Finish(shown);
                 object window = EyeRenderer.Window;
@@ -173,11 +171,13 @@ namespace SpaceEngineersVR.Rendering
                     {
                         areas[i] = EyeRenderer.Eyes[i].Window;
                         inAreas[i] = areas[i].Width > 0f ? InWindow(EyeRenderer.Eyes[i], inHead, halfWidth, halfHeight) : default;
-                        if (!mirror && inAreas[i].Width > 0f && !onModel)
+                        if (!mirror && inAreas[i].Width > 0f)
                             BlendWithin(window, shown, inAreas[i], areas[i], whole);
                     }
                     if (mirror && layer.HasValue)
                         MirrorLayers.Show(shown, size, inHead, halfWidth, halfHeight, locked);
+                    else if (mirror && !headset)
+                        MirrorLayers.Show(shown, size, inHead, halfWidth, halfHeight, false, beam: false);
                 }
                 else
                 {

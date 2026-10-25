@@ -156,8 +156,12 @@ namespace SpaceEngineersVR.Rendering
             Vector2I window = EyeRenderer.WindowSize;
             if (window.X <= 0 || window.Y <= 0)
                 return false;
-            Vector2I eye = EyeRenderer.EyeResolution;
+            // At the eyes' 100%: the eye images may be larger, with room for dynamic resolution, which a black backdrop does not need.
+            Vector2I eye = EyeRenderer.RecommendedResolution;
             bool toHeadset = XrSession.InFrame && XrSession.ShouldRender;
+            bool corner = eye != EyeRenderer.EyeResolution;
+            if (toHeadset && corner)
+                XrSession.SetEyeRect(eye.X, eye.Y);
 
             MyViewport[] windows = Windows(toHeadset, window, eye);
             Matrix inverseHead = toHeadset ? Matrix.Invert(EyeRenderer.ToMatrix(XrSession.Head)) : Matrix.Identity;
@@ -198,7 +202,10 @@ namespace SpaceEngineersVR.Rendering
                         SharpDX.Direct3D11.Texture2D image = XrSession.AcquireImage(i);
                         try
                         {
-                            EyeRenderer.CopyToImage(target, image);
+                            if (corner)
+                                EyeRenderer.CopyToImageCorner(target, image);
+                            else
+                                EyeRenderer.CopyToImage(target, image);
                         }
                         finally
                         {

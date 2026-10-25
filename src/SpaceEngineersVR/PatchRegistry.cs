@@ -66,6 +66,22 @@ namespace SpaceEngineersVR
 
         private static Harmony Harmony => Bootstrap.Harmony;
 
+        private static Harmony apart;
+        private static bool finished;
+
+        /// <summary>
+        /// The Harmony instance of the features that are the plugin's own and not VR's (<see cref="ApplyApart"/>): the scenarios it
+        /// adds to the game and the Bug Swarm. Not the one <see cref="Finish"/> takes every patch off when VR is off.
+        /// </summary>
+        private static Harmony Apart
+        {
+            get
+            {
+                lock (applied)
+                    return apart ?? (apart = new Harmony("SpaceEngineersVR.Features"));
+            }
+        }
+
         /// <summary>
         /// Patches one method of a feature through <see cref="Apply"/>. <paramref name="prefix"/> and <paramref name="postfix"/> name
         /// static methods on <paramref name="owner"/> (the feature's class, which holds the patch methods); a null
@@ -88,16 +104,34 @@ namespace SpaceEngineersVR
         /// caller. A core feature failing switches VR off; after that nothing more is tried.
         /// </summary>
         /// <returns>It applied.</returns>
-        public static bool Apply(string name, Action patch, string failure = null)
+        public static bool Apply(string name, Action patch, string failure = null) => Run(name, patch, failure, Harmony, apart: false);
+
+        /// <summary>
+        /// <see cref="Apply"/> for a feature that is the plugin's own and does not need VR: a scenario it lists in New Game, the
+        /// Bug Swarm. <paramref name="patch"/> is given the instance to patch with. It is never core, and it goes on, and its
+        /// patches stay, when VR is off for the run. A failure is recorded and logged as any other, and the main menu's notice
+        /// names it, whenever it comes (a game update that breaks it still lets the game start and play without the feature).
+        /// </summary>
+        /// <returns>It applied.</returns>
+        public static bool ApplyApart(string name, Action<Harmony> patch, string failure = null)
+        {
+            Harmony on = Apart;
+            bool ok = Run(name, () => patch(on), failure, on, apart: true);
+            if (finished)
+                Summarise($" (after {name})");
+            return ok;
+        }
+
+        private static bool Run(string name, Action patch, string failure, Harmony on, bool apart)
         {
             bool top = path == null;
-            if (VROff && top)
+            if (VROff && top && !apart)
                 return false;
             string outer = path;
             path = top ? name : outer + "/" + name;
-            bool core = top && Core.Contains(name);
+            bool core = top && !apart && Core.Contains(name);
             long t0 = Stopwatch.GetTimestamp();
-            Dictionary<MethodBase, int[]> before = Snapshot();
+            Dictionary<MethodBase, int[]> before = Snapshot(on);
             bookkeeping += Stopwatch.GetTimestamp() - t0;
             try
             {
@@ -111,7 +145,7 @@ namespace SpaceEngineersVR
             catch (Exception e)
             {
                 t0 = Stopwatch.GetTimestamp();
-                int undone = Undo(before);
+                int undone = Undo(before, on);
                 bookkeeping += Stopwatch.GetTimestamp() - t0;
                 failed.Add(path);
                 string what = (core ? "Core feature " : top ? "Feature " : "Part ") + path;
@@ -151,9 +185,8 @@ namespace SpaceEngineersVR
         /// </summary>
         public static void Finish(MethodBase running)
         {
-            string time = $"{(double)bookkeeping / Stopwatch.Frequency * 1000.0:0} ms";
-            Log.Info($"Patches: {applied.Count} applied, failed: [{string.Join(", ", failed)}]" +
-                     (VROff ? $"; VR is off for this run ({coreFailed} is core)" : "") + $" (registry bookkeeping {time})");
+            finished = true;
+            Summarise("");
             if (VROff)
             {
                 foreach (MethodBase method in Harmony.GetPatchedMethods().ToList())
@@ -163,14 +196,33 @@ namespace SpaceEngineersVR
                 }
                 unpatchLater = running != null;
                 Log.Info("VR is off: the game runs flat; patches taken off" + (unpatchLater ? " (those on the running " + running.Name + " on the first frame)" : ""));
+            }
+            Announce();
+        }
+
+        /// <summary>The summary line; after <see cref="Finish"/>, a feature that came later adds its own and has the notice set again.</summary>
+        private static void Summarise(string after)
+        {
+            string time = $"{(double)bookkeeping / Stopwatch.Frequency * 1000.0:0} ms";
+            Log.Info($"Patches: {applied.Count} applied, failed: [{string.Join(", ", failed)}]" +
+                     (VROff ? $"; VR is off for this run ({coreFailed} is core)" : "") + $" (registry bookkeeping {time}){after}");
+            if (after.Length > 0)
+                Announce();
+        }
+
+        /// <summary>Sets the main menu's notice from what has failed: VR off, some features off, or nothing to say.</summary>
+        private static void Announce()
+        {
+            if (VROff)
+            {
                 notice = "VR is off for this run. This version of Space Engineers changed something the plugin needs, so the game " +
                          "runs as usual on the monitor. An update to the plugin will follow.\n\nNot working: " + Names();
                 noticeIsError = true;
             }
             else if (failed.Count > 0)
             {
-                notice = "Some VR features are off. This version of Space Engineers changed something they need; the rest of VR " +
-                         "works. An update to the plugin will follow.\n\nOff: " + Names();
+                notice = "Some features of the plugin are off. This version of Space Engineers changed something they need; the rest " +
+                         "of the plugin works. An update to the plugin will follow.\n\nOff: " + Names();
             }
         }
 
@@ -225,20 +277,20 @@ namespace SpaceEngineersVR
         }
 
         /// <summary>How many patches of ours each patched method has, per kind, in Harmony's order (a new one goes on the end).</summary>
-        private static Dictionary<MethodBase, int[]> Snapshot()
+        private static Dictionary<MethodBase, int[]> Snapshot(Harmony on)
         {
             var counts = new Dictionary<MethodBase, int[]>();
             foreach (MethodBase method in Harmony.GetAllPatchedMethods())
             {
                 Patches info = Harmony.GetPatchInfo(method);
-                if (info != null && info.Owners.Contains(Harmony.Id))
-                    counts[method] = Kinds(info).Select(list => list.Count(patch => patch.owner == Harmony.Id)).ToArray();
+                if (info != null && info.Owners.Contains(on.Id))
+                    counts[method] = Kinds(info).Select(list => list.Count(patch => patch.owner == on.Id)).ToArray();
             }
             return counts;
         }
 
         /// <summary>Takes off our patches that are not in <paramref name="before"/>: the ones made since it was taken.</summary>
-        private static int Undo(Dictionary<MethodBase, int[]> before)
+        private static int Undo(Dictionary<MethodBase, int[]> before, Harmony on)
         {
             int undone = 0;
             foreach (MethodBase method in Harmony.GetAllPatchedMethods().ToList())
@@ -250,12 +302,12 @@ namespace SpaceEngineersVR
                 ReadOnlyCollection<Patch>[] kinds = Kinds(info);
                 var added = new List<MethodInfo>();
                 for (int kind = 0; kind < kinds.Length; kind++)
-                    added.AddRange(kinds[kind].Where(patch => patch.owner == Harmony.Id).Skip(had?[kind] ?? 0).Select(patch => patch.PatchMethod));
+                    added.AddRange(kinds[kind].Where(patch => patch.owner == on.Id).Skip(had?[kind] ?? 0).Select(patch => patch.PatchMethod));
                 foreach (MethodInfo patch in added.Distinct())
                 {
                     try
                     {
-                        Harmony.Unpatch(method, patch);
+                        on.Unpatch(method, patch);
                         undone++;
                     }
                     catch (Exception e)

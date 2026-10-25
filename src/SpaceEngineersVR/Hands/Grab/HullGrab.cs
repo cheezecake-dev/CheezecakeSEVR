@@ -45,11 +45,11 @@ namespace SpaceEngineersVR.Hands
 
         public const int Priority = 40;
 
-        /// <summary>How near the grip's middle has to be to a grid's or an asteroid's collision surface, metres, for a press to take hold.</summary>
-        public const float HullReach = 0.08f;
+        /// <summary>How near the grip's middle has to be to a grid's or an asteroid's collision surface, metres, for a press to take hold (<see cref="GrabTolerance"/>).</summary>
+        public const float HullReach = GrabTolerance.Surface;
 
-        /// <summary>How near the grip's middle has to be to a ladder block's cell, metres.</summary>
-        public const float LadderReach = 0.15f;
+        /// <summary>How near the grip's middle has to be to a ladder block's cell, metres (<see cref="GrabTolerance"/>).</summary>
+        public const float LadderReach = (float)GrabTolerance.Body;
 
         /// <summary>Gravity (natural and artificial, m/s²) under which a hull can be grabbed; above <see cref="GravityLetGo"/> a hold lets go. In gravity, walking rules.</summary>
         public const float ZeroGravity = 0.25f, GravityLetGo = 0.5f;

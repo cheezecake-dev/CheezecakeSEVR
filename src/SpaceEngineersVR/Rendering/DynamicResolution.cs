@@ -11,7 +11,8 @@ namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
     /// Dynamic render resolution. While the GPU takes longer than the headset's frame (less headroom), the eyes are drawn
-    /// smaller, down to <see cref="Floor"/> of the runtime's size each way, and back up when there is time. The runtime
+    /// smaller, down to <see cref="Floor"/> of the runtime's recommended size each way, and back up when there is time, up to
+    /// <see cref="Ceiling"/> of it on a GPU with time to spare (the eye images are made that much larger). The runtime
     /// scales the drawn part of each eye image up (the projection layer's image rectangle,
     /// <see cref="XrSession.SetEyeRect"/>), so a smaller frame is softer, not smaller in view.
     /// </summary>
@@ -38,10 +39,49 @@ namespace SpaceEngineersVR.Rendering
     {
         public const float Floor = 0.7f, Step = 0.05f;
 
+        /// <summary>The most the eyes are drawn at, of the runtime's recommended size each way, while the GPU has time to spare.</summary>
+        public const float Ceiling = 1.25f;
+
+        /// <summary>
+        /// An eye image side, as a session is made: with dynamic resolution on, room for <see cref="Ceiling"/> (the recommended
+        /// side scaled up, a multiple of 8, within the runtime's largest); off, the recommended side. The images keep that size
+        /// for the session, so dynamic resolution turned on during one goes no higher than 100% until the next.
+        /// </summary>
+        public static int Headroom(int recommended, int largest)
+        {
+            if (!On)
+                return recommended;
+            int side = (int)Math.Round(recommended * Ceiling / 8.0) * 8;
+            return largest > 0 ? Math.Max(recommended, Math.Min(side, largest)) : side;
+        }
+
+        /// <summary>The highest scale the eye images hold: <see cref="Ceiling"/>, or less where the runtime's largest image is smaller.</summary>
+        private static float Highest
+        {
+            get
+            {
+                Vector2I full = EyeRenderer.RecommendedResolution, image = EyeRenderer.EyeResolution;
+                if (full.X <= 0 || full.Y <= 0)
+                    return 1f;
+                float most = Math.Min((float)image.X / full.X, (float)image.Y / full.Y);
+                return Math.Max(1f, Math.Min(Ceiling, (float)(Math.Floor(most / Step + 1e-3) * Step)));
+            }
+        }
+
         /// <summary>Fractions of the frame period: down over <see cref="DownHeadroom"/> (2 s) or <see cref="PanicHeadroom"/> (0.5 s), up under <see cref="UpHeadroom"/> one step up (10 s).</summary>
         private const double DownHeadroom = 0.92, PanicHeadroom = 1.0, UpHeadroom = 0.75;
 
         private const double SettleSeconds = 1.0, PanicSeconds = 0.5, DownSeconds = 2.0, UpSeconds = 10.0;
+
+        /// <summary>
+        /// No decision for this long after a session starts: its first frames wait on the runtime's own start (xrWaitFrame up
+        /// to 200 ms, GPU frames of 200 ms as the screens are first drawn), which said nothing about the scene's cost but
+        /// stepped the scale to its floor and held it there for a minute (2026-10-20 run, a 3060 then at 3.2 ms of 13.9).
+        /// </summary>
+        private const double StartSeconds = 10.0;
+
+        /// <summary>The most steps one decision up takes, while the GPU has that much time to spare.</summary>
+        private const int MostStepsUp = 3;
 
         /// <summary>No step up for this long after a step down (back to the scale just left), or after a step up, s.</summary>
         private const double UpHoldAfterDown = 60.0, UpHoldAfterUp = 20.0;
@@ -107,33 +147,43 @@ namespace SpaceEngineersVR.Rendering
 
         private static double Seconds(long from, long to) => (to - from) / (double)Stopwatch.Frequency;
 
-        /// <summary>Eye images of <paramref name="full"/> size drawn at <see cref="Scale"/>: multiples of 8, the full size at 100%.</summary>
-        public static Vector2I Size(Vector2I full)
+        /// <summary>The <paramref name="full"/> (100%) size at <see cref="Scale"/>, within <paramref name="image"/>: multiples of 8, the full size at 100%.</summary>
+        public static Vector2I Size(Vector2I full, Vector2I image)
         {
             float s = scale;
-            if (s >= 0.999f)
-                return full;
+            if (Math.Abs(s - 1f) < 0.001f)
+                return new Vector2I(Math.Min(full.X, image.X), Math.Min(full.Y, image.Y));
             int w = Math.Max(8, (int)Math.Round(full.X * s / 8.0) * 8);
             int h = Math.Max(8, (int)Math.Round(full.Y * s / 8.0) * 8);
-            return new Vector2I(Math.Min(w, full.X), Math.Min(h, full.Y));
+            return new Vector2I(Math.Min(w, image.X), Math.Min(h, image.Y));
         }
 
         /// <summary>The scale wanted now: the held one, the controller's with a headset, otherwise 100%.</summary>
         private static float Wanted()
         {
             if (FixedScale.HasValue)
-                return FixedScale.Value;
-            return On && XrSession.Exists ? wanted : 1f;
+                return Math.Min(FixedScale.Value, Highest);
+            return On && XrSession.Exists ? Math.Min(wanted, Highest) : 1f;
         }
 
         /// <summary>Why the next <see cref="Apply"/> remakes the screen resources whatever the scale; null when it need not.</summary>
         private static string remake;
 
         /// <summary>
-        /// Render thread: the next <see cref="Apply"/> remakes the screen resources even at the same scale, because the eye
-        /// size changed (a session started or ended). A session is started in that remake (<see cref="EyeRenderer"/>).
+        /// Render thread, or the game thread as the picture turns to VR's (<see cref="StereoPatches"/>): the next
+        /// <see cref="Apply"/> remakes the screen resources even at the same scale, because the eye size changed (a session
+        /// started or ended). A session is started in that remake (<see cref="EyeRenderer"/>). From the game thread the
+        /// windows' reset can race a render-thread sample; that is harmless, as a window's first sample restarts its sums.
         /// </summary>
-        public static void Remake(string why) => remake = why;
+        public static void Remake(string why)
+        {
+            remake = why;
+            shortestPeriod = 0; // a new session: its own rate
+            startedAt = Stopwatch.GetTimestamp();
+            ResetWindows();
+        }
+
+        private static long startedAt;
 
         /// <summary>
         /// Render thread, before a frame's eyes are drawn: remakes the screen resources at the wanted scale when it
@@ -202,9 +252,12 @@ namespace SpaceEngineersVR.Rendering
                 ResetWindows();
                 return;
             }
+            periodMs = NativePeriod(periodMs);
             long now = Stopwatch.GetTimestamp();
             if (changedAt != 0 && Seconds(changedAt, now) < SettleSeconds)
                 return; // frames drawn before the change, and the change's own hitch
+            if (startedAt != 0 && Seconds(startedAt, now) < StartSeconds)
+                return; // the session's own start
             panic.Add(gpuMs, cpuMs, now);
             down.Add(gpuMs, cpuMs, now);
             up.Add(gpuMs, cpuMs, now);
@@ -228,19 +281,50 @@ namespace SpaceEngineersVR.Rendering
             if (elapsed < UpSeconds)
                 return;
             bool held = changedAt != 0 && Seconds(changedAt, now) < (changedDown ? UpHoldAfterDown : UpHoldAfterUp);
-            if (!held && wanted < 1f - 0.001f)
+            float highest = Highest;
+            if (!held && wanted < highest - 0.001f)
             {
-                float next = Math.Min(1f, wanted + Step);
-                double ratio = next / wanted;
-                double gpu = up.GpuMean, predicted = gpu * ratio * ratio, target = periodMs * UpHeadroom;
-                if (predicted < target)
+                // As many steps (up to MostStepsUp) as the GPU has time for: a frame far under its period climbs in one
+                // decision, not one step each UpHoldAfterUp.
+                double gpu = up.GpuMean, target = periodMs * UpHeadroom, predicted = 0;
+                float next = wanted;
+                for (int k = 1; k <= MostStepsUp; k++)
                 {
-                    reason = string.Format(CultureInfo.InvariantCulture, "GPU {0:0.0} ms over {1:0.0} s, {2:0.0} expected one step up, against {3:0.0}",
-                        gpu, elapsed, predicted, target);
+                    float s = Math.Min(highest, wanted + k * Step);
+                    double ratio = s / wanted, p = gpu * ratio * ratio;
+                    if (p >= target)
+                        break;
+                    next = s;
+                    predicted = p;
+                    if (s >= highest - 0.001f)
+                        break;
+                }
+                if (next > wanted + 0.001f)
+                {
+                    reason = string.Format(CultureInfo.InvariantCulture, "GPU {0:0.0} ms over {1:0.0} s, {2:0.0} expected at {3:0}%, against {4:0.0}",
+                        gpu, elapsed, predicted, next * 100f, target);
                     wanted = next;
                 }
             }
             up.Count = 0;
+        }
+
+        /// <summary>The shortest frame period the runtime has reported this session, ms; 0 before the first.</summary>
+        private static double shortestPeriod;
+
+        /// <summary>
+        /// The headset's own frame period, not the one the runtime reports while it throttles: SteamVR's motion smoothing halves
+        /// the rate when frames are missed and then reports twice the period, which against the GPU time looks like time to
+        /// spare, so the scale would climb and hold the game at half rate. The rate asked of the headset where the runtime takes
+        /// one (<see cref="XrSession.RefreshRate"/>), otherwise the shortest period this session has reported.
+        /// </summary>
+        private static double NativePeriod(double periodMs)
+        {
+            if (XrSession.RefreshRate > 1f)
+                return Math.Min(periodMs, 1000.0 / XrSession.RefreshRate);
+            if (shortestPeriod <= 0 || periodMs < shortestPeriod)
+                shortestPeriod = periodMs;
+            return shortestPeriod;
         }
 
         /// <summary>Steps <see cref="wanted"/> down when <paramref name="w"/>'s GPU mean is over <paramref name="target"/> and the GPU is the bottleneck.</summary>

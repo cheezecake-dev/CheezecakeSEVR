@@ -16,9 +16,11 @@ namespace SpaceEngineersVR.OpenXR
         private const string PicoUltraExtension = "XR_BD_ultra_controller_interaction";
         private const string ReverbExtension = "XR_EXT_hp_mixed_reality_controller";
         private const string SteamFrameExtension = "XR_VALVE_frame_controller_interaction";
+        private const string CosmosExtension = "XR_HTC_vive_cosmos_controller_interaction";
+        private const string Focus3Extension = "XR_HTC_vive_focus3_controller_interaction";
 
         private static readonly string[] ProfileExtensions =
-            { PicoExtension, PicoUltraExtension, ReverbExtension, SteamFrameExtension };
+            { PicoExtension, PicoUltraExtension, ReverbExtension, SteamFrameExtension, CosmosExtension, Focus3Extension };
 
         /// <summary>Those of <see cref="ProfileExtensions"/> enabled on the instance.</summary>
         private static readonly HashSet<string> enabledProfileExtensions = new HashSet<string>();
@@ -90,7 +92,30 @@ namespace SpaceEngineersVR.OpenXR
             BindTouchLayout(reverb, reverbExtra, menuBothHands: true, touchSensors: false, thumbrest: false);
             Offer(taken, unoffered, "/interaction_profiles/hp/mixed_reality_controller", ReverbExtension, reverb, reverbExtra);
 
-            // Index has A and B on both hands (the left ones act as X and Y) and no menu button apps can use.
+            // HTC Vive Cosmos: the Quest's buttons and Menu on the left; the grip is a click, and the bumpers are for the bindings.
+            var cosmos = new List<XrActionSuggestedBinding>();
+            var cosmosExtra = new List<XrActionSuggestedBinding>();
+            BindTouchLayout(cosmos, cosmosExtra, menuBothHands: false, touchSensors: false, thumbrest: false, squeeze: "squeeze/click");
+            for (int h = 0; h < 2; h++)
+                Bind(cosmosExtra, bumperAction, "/user/hand/" + HandNames[h] + "/input/shoulder/click");
+            Offer(taken, unoffered, "/interaction_profiles/htc/vive_cosmos_controller", CosmosExtension, cosmos, cosmosExtra);
+
+            // HTC Vive Focus 3: the Quest's buttons and Menu on the left, a grip click, and sensors on the trigger, stick and thumbrest.
+            var focus3 = new List<XrActionSuggestedBinding>();
+            var focus3Extra = new List<XrActionSuggestedBinding>();
+            BindTouchLayout(focus3, focus3Extra, menuBothHands: false, touchSensors: false, thumbrest: false, squeeze: "squeeze/click");
+            for (int h = 0; h < 2; h++)
+            {
+                string hand = "/user/hand/" + HandNames[h];
+                Bind(focus3Extra, triggerTouchAction, hand + "/input/trigger/touch");
+                Bind(focus3Extra, stickTouchAction, hand + "/input/thumbstick/touch");
+                Bind(focus3Extra, thumbrestTouchAction, hand + "/input/thumbrest/touch");
+                Bind(focus3Extra, squeezeTouchAction, hand + "/input/squeeze/touch");
+            }
+            Offer(taken, unoffered, "/interaction_profiles/htc/vive_focus3_controller", Focus3Extension, focus3, focus3Extra);
+
+            // Index has A and B on both hands (the left ones act as X and Y) and no menu button apps can use: the left trackpad
+            // pressed firmly (its force, which the runtime turns into a press) is Menu.
             var index = new List<XrActionSuggestedBinding>();
             var indexExtra = new List<XrActionSuggestedBinding>();
             BindHands(index, indexExtra, "trigger/value", "squeeze/value", "thumbstick", "thumbstick/click");
@@ -98,6 +123,18 @@ namespace SpaceEngineersVR.OpenXR
             Bind(index, bAction, "/user/hand/right/input/b/click");
             Bind(index, xAction, "/user/hand/left/input/a/click");
             Bind(index, yAction, "/user/hand/left/input/b/click");
+            Bind(index, menuAction, "/user/hand/left/input/trackpad/force");
+            for (int h = 0; h < 2; h++)
+            {
+                string hand = "/user/hand/" + HandNames[h];
+                Bind(indexExtra, triggerTouchAction, hand + "/input/trigger/touch");
+                Bind(indexExtra, stickTouchAction, hand + "/input/thumbstick/touch");
+                Bind(indexExtra, padTouchAction, hand + "/input/trackpad/touch");
+            }
+            Bind(indexExtra, aTouchAction, "/user/hand/right/input/a/touch");
+            Bind(indexExtra, bTouchAction, "/user/hand/right/input/b/touch");
+            Bind(indexExtra, xTouchAction, "/user/hand/left/input/a/touch");
+            Bind(indexExtra, yTouchAction, "/user/hand/left/input/b/touch");
             Offer(taken, unoffered, "/interaction_profiles/valve/index_controller", null, index, indexExtra);
 
             // Steam Frame: a gamepad split in two. Where the Quest's left controller has X, Y and Menu, the Frame's has a D-pad
@@ -114,7 +151,7 @@ namespace SpaceEngineersVR.OpenXR
             Bind(frame, menuAction, "/user/hand/left/input/view/click");
             Bind(frame, aAction, "/user/hand/right/input/a/click");
             Bind(frame, bAction, "/user/hand/right/input/b/click");
-            // The thumb's sensors: on any button of the left's D-pad or the right's four, the thumb is on the controller's face.
+            // The thumb's sensors, each on its own button: the D-pad's down and up (X and Y), the right's A and B.
             for (int h = 0; h < 2; h++)
             {
                 string hand = "/user/hand/" + HandNames[h];
@@ -122,17 +159,13 @@ namespace SpaceEngineersVR.OpenXR
                 Bind(frameExtra, stickTouchAction, hand + "/input/thumbstick/touch");
             }
             Bind(frameExtra, xTouchAction, "/user/hand/left/input/dpad_down/touch");
-            Bind(frameExtra, xTouchAction, "/user/hand/left/input/dpad_left/touch");
             Bind(frameExtra, yTouchAction, "/user/hand/left/input/dpad_up/touch");
-            Bind(frameExtra, yTouchAction, "/user/hand/left/input/dpad_right/touch");
             Bind(frameExtra, aTouchAction, "/user/hand/right/input/a/touch");
-            Bind(frameExtra, aTouchAction, "/user/hand/right/input/x/touch");
             Bind(frameExtra, bTouchAction, "/user/hand/right/input/b/touch");
-            Bind(frameExtra, bTouchAction, "/user/hand/right/input/y/touch");
             Offer(taken, unoffered, "/interaction_profiles/valve/frame_controller_valve", SteamFrameExtension, frame, frameExtra);
 
-            // Vive wands: the trackpad and its click stand in for the thumbstick and its click, the grip buttons are clicks. The wand
-            // has no A, B, X or Y, so those come from the trackpad and the Menu buttons in ReadHand (WandLayout). The trackpad's touch
+            // Vive wands: the trackpad and its click stand in for the thumbstick and its click, the grip buttons are clicks. What the
+            // wand's buttons do is the binding table's; the trackpad is made the stick in ReadHand (WandLayout). The trackpad's touch
             // sensor is the thumb on the controller, for the hand's pose.
             var vive = new List<XrActionSuggestedBinding>();
             var viveExtra = new List<XrActionSuggestedBinding>();
@@ -146,6 +179,14 @@ namespace SpaceEngineersVR.OpenXR
             var windowsMixedRealityExtra = new List<XrActionSuggestedBinding>();
             BindHands(windowsMixedReality, windowsMixedRealityExtra, "trigger/value", "squeeze/click", "thumbstick", "thumbstick/click");
             BindMenuBothHands(windowsMixedReality);
+            // It has a trackpad where the Quest's controller has its face buttons: its clicked parts are bound like buttons (DefaultBindings).
+            for (int h = 0; h < 2; h++)
+            {
+                string hand = "/user/hand/" + HandNames[h];
+                Bind(windowsMixedReality, padAction, hand + "/input/trackpad");
+                Bind(windowsMixedReality, padClickAction, hand + "/input/trackpad/click");
+                Bind(windowsMixedRealityExtra, padTouchAction, hand + "/input/trackpad/touch");
+            }
             Offer(taken, unoffered, "/interaction_profiles/microsoft/motion_controller", null, windowsMixedReality, windowsMixedRealityExtra);
 
             // The fallback every runtime has: one select button (as the trigger), a menu button, the poses.
@@ -165,9 +206,10 @@ namespace SpaceEngineersVR.OpenXR
         /// left, A and B on the right, Menu on the left (on both with <paramref name="menuBothHands"/>). The touch sensors go
         /// in <paramref name="extra"/>, all but the thumbrest's without <paramref name="thumbrest"/>.
         /// </summary>
-        private void BindTouchLayout(List<XrActionSuggestedBinding> bindings, List<XrActionSuggestedBinding> extra, bool menuBothHands, bool touchSensors, bool thumbrest)
+        private void BindTouchLayout(List<XrActionSuggestedBinding> bindings, List<XrActionSuggestedBinding> extra, bool menuBothHands, bool touchSensors, bool thumbrest,
+                                     string squeeze = "squeeze/value")
         {
-            BindHands(bindings, extra, "trigger/value", "squeeze/value", "thumbstick", "thumbstick/click");
+            BindHands(bindings, extra, "trigger/value", squeeze, "thumbstick", "thumbstick/click");
             Bind(bindings, xAction, "/user/hand/left/input/x/click");
             Bind(bindings, yAction, "/user/hand/left/input/y/click");
             if (menuBothHands)

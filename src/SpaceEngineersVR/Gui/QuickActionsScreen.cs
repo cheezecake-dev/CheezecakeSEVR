@@ -48,10 +48,6 @@ namespace SpaceEngineersVR.Gui
     /// it straight onto that page (<see cref="OpenExternalViewPage"/>).
     /// </para>
     /// <para>
-    /// Beside it, on foot and in a seat, is the Datapad tile (<see cref="DatapadTile"/>): the panel closes and the datapad
-    /// comes out where it was, in the same hand (<see cref="Hands.Datapad"/>).
-    /// </para>
-    /// <para>
     /// In a seat the actions are the seat's instead (<see cref="ShipActions"/>, <see cref="PilotActions"/>): the ship's switches
     /// the game gives a seated player and VR has no button for, each the game's own control as its key presses it, with the
     /// grid's state read as the HUD reads it, greyed where the game would refuse it from this seat (a passenger seat, a cockpit
@@ -240,22 +236,6 @@ namespace SpaceEngineersVR.Gui
             "The external view screen: on or off, its camera round you or your ship, and its size.", ExternalViewPage.PageIcon,
             null, state: () => ExternalView.On, canUse: () => ExternalView.Usable);
 
-        /// <summary>The game's own datapad item's picture, once the definitions have given it; null until then.</summary>
-        private static string datapadIcon;
-
-        /// <summary>
-        /// The tile that takes the datapad out (<see cref="Hands.Datapad"/>): the game's datapad item's picture (the terminal's
-        /// glyph until the definitions are loaded), and under its name a chat line that came in while it was away.
-        /// </summary>
-        private static QuickAction DatapadTile()
-        {
-            if (datapadIcon == null)
-                datapadIcon = GuiTextures.DefinitionIcon<Sandbox.Definitions.MyDatapadDefinition>();
-            return new QuickAction("Datapad", "Takes out your datapad, in this hand: chat, your GPS list and the terminal.",
-                datapadIcon ?? TerminalIcon, Hands.Datapad.Open, stateText: () => Hands.Datapad.Unread ? "New message" : null,
-                canUse: () => Hands.Datapad.CanOpen, whiteIcon: datapadIcon == null, closesPanel: true);
-        }
-
         // ---- In a seat ----
 
         /// <summary>The seat the player is in: a cockpit, a passenger seat, a cryo chamber or a remote control; null on foot and in a turret.</summary>
@@ -375,13 +355,14 @@ namespace SpaceEngineersVR.Gui
         internal static readonly QuickAction[] PilotActions =
         {
             // MyGuiScreenGamePlay.cs:667 HELMET -> the seat's SwitchHelmet -> the pilot's helmet.
-            new QuickAction("Helmet", MyControlsSpace.HELMET, "J", "Puts your helmet on or takes it off.", Hud + "PlayerHelmetOn.png",
-                () => Seat?.Pilot?.OxygenComponent?.HelmetEnabled, Hud + "PlayerHelmetOff.png", canUse: () => Seat?.Pilot != null),
-            Actions[1],
+            // The screens first, as on foot: what a seated player most often reaches for.
             Actions[0],
+            Actions[1],
             // MyGuiScreenGamePlay.cs:910 BUILD_SCREEN: the game opens no G menu from a cryo chamber.
             new QuickAction("G menu", MyControlsSpace.BUILD_SCREEN, "G", "Opens the G menu: blocks, items and the toolbar.", Hud + "MultiBlockBuilding.png",
                 canUse: () => Seat != null && !(Seat is MyCryoChamber)),
+            new QuickAction("Helmet", MyControlsSpace.HELMET, "J", "Puts your helmet on or takes it off.", Hud + "PlayerHelmetOn.png",
+                () => Seat?.Pilot?.OxygenComponent?.HelmetEnabled, Hud + "PlayerHelmetOff.png", canUse: () => Seat?.Pilot != null),
         };
 
         /// <summary>
@@ -395,17 +376,15 @@ namespace SpaceEngineersVR.Gui
         /// <summary>The seated page's groups in order, their names, and their buttons as they are to be shown now.</summary>
         private static QuickAction[][] SeatedGroups(out string[] names)
         {
-            names = new[] { "Ship", "Pilot" };
+            names = new[] { "Pilot", "Ship" };
             var pilot = new System.Collections.Generic.List<QuickAction>(PilotActions);
             if (VRSettings.ThirdPerson)
                 pilot.Add(Camera);
             pilot.Add(ExternalViewTile);
-            if (!Hands.Datapad.Shelved)
-                pilot.Add(DatapadTile());
             // ColbyJack1134's seat panel, as a page: only in a seat his rig owns.
             if (Cockpits.SeatPage.Available)
                 pilot.Add(Cockpits.SeatPage.Tile);
-            return new[] { ShipActions, pilot.ToArray() };
+            return new[] { pilot.ToArray(), ShipActions };
         }
 
         /// <summary>The seated page's buttons across: two rows for the ship's seven, two for the pilot's.</summary>
@@ -437,18 +416,30 @@ namespace SpaceEngineersVR.Gui
             {
                 Name = "Quick actions",
                 Icon = icon ?? TerminalIcon,
-                Run = OpenSeated,
+                Run = () => OpenSeated(),
                 StateText = () => "Lights, power, park",
             });
+            // The G menu straight from here too, beside the game's own Inventory entry: one stick click and a choice from the
+            // seat's tools wheel.
+            if (!(seat is MyCryoChamber))
+                top.Add(new ActionsWheel.Entry
+                {
+                    Name = "G menu",
+                    Icon = Hud + "MultiBlockBuilding.png",
+                    Run = () => WristButton.Press(MyControlsSpace.BUILD_SCREEN, "G menu"),
+                });
         }
 
-        /// <summary>Game thread: opens the panel in a seat (the actions wheel's way in), on its seated page.</summary>
-        internal static void OpenSeated()
+        /// <summary>Game thread: opens the panel in a seat (the actions wheel's way in, or Y tapped at the wrist), on its seated page.</summary>
+        internal static QuickActionsScreen OpenSeated() => OpenSeated("actions wheel");
+
+        internal static QuickActionsScreen OpenSeated(string how)
         {
             var screen = new QuickActionsScreen();
             MyGuiSandbox.AddScreen(screen);
             MyShipController seat = Seat;
-            Log.Info($"Wrist panel: opened in a seat ({seat?.GetType().Name ?? "none"} '{seat?.DisplayNameText}'), {screen.TileCount} tiles");
+            Log.Info($"Wrist panel: opened in a seat ({how}; {seat?.GetType().Name ?? "none"} '{seat?.DisplayNameText}'), {screen.TileCount} tiles");
+            return screen;
         }
 
         public const int Columns = 3;
@@ -460,6 +451,12 @@ namespace SpaceEngineersVR.Gui
 
             /// <summary>ColbyJack1134's seat panel's keys (<see cref="Cockpits.SeatPage"/>), in a seat his rig owns.</summary>
             Seat,
+
+            /// <summary>What each button does, in each situation (<see cref="AddControlsPage"/>).</summary>
+            Controls,
+
+            /// <summary>Other plugins' and mods' tiles (<see cref="AddOnTiles"/>), one of the pages <see cref="addOnPages"/> holds.</summary>
+            AddOns,
         }
 
         /// <summary>Debug: the plain panel as it was, a flat background and text-only buttons (<see cref="Rendering.RenderDebug"/> QuickMenuNative=0).</summary>
@@ -488,7 +485,8 @@ namespace SpaceEngineersVR.Gui
         private const float PlainMarginX = 0.05f, PlainBottomMargin = 0.05f, PlainTitleHeight = 0.16f, PlainGap = 0.03f;
         private const float PlainTitleScale = 1.6f, PlainButtonTextScale = 1.9f;
 
-        private static readonly MyGuiControlButton.StyleDefinition TileStyle = new MyGuiControlButton.StyleDefinition
+        /// <summary>The game's rectangular button, drawn for the wrist panel's tiles and the flight settings' buttons (<see cref="Cockpits.FlightSettingsScreen"/>).</summary>
+        internal static readonly MyGuiControlButton.StyleDefinition TileStyle = new MyGuiControlButton.StyleDefinition
         {
             NormalTexture = MyGuiConstants.TEXTURE_RECTANGLE_BUTTON_BORDER,
             HighlightTexture = MyGuiConstants.TEXTURE_RECTANGLE_BUTTON_FOCUS_BORDER,
@@ -555,11 +553,16 @@ namespace SpaceEngineersVR.Gui
                 foreach (QuickAction action in Cockpits.SeatPage.Build(null))
                     if (!icons.Contains(action.Icon))
                         icons.Add(action.Icon);
+                foreach (QuickAction action in MenuRow)
+                    if (!icons.Contains(action.Icon))
+                        icons.Add(action.Icon);
+                if (!icons.Contains(AddOnsTile.Icon))
+                    icons.Add(AddOnsTile.Icon);
+                foreach (var situation in Situations)
+                    if (!icons.Contains(situation.Icon))
+                        icons.Add(situation.Icon);
                 if (!icons.Contains(Cockpits.SeatPage.Tile.Icon))
                     icons.Add(Cockpits.SeatPage.Tile.Icon);
-                string padIcon = Hands.Datapad.Shelved ? null : DatapadTile().Icon;
-                if (padIcon != null && !icons.Contains(padIcon))
-                    icons.Add(padIcon);
                 MyRenderProxy.PreloadTextures(icons, TextureType.GUI);
             }
             RecreateControls(constructor: true);
@@ -594,8 +597,13 @@ namespace SpaceEngineersVR.Gui
                 return;
             }
 
-            bool viewPage = page == Page.ExternalView, seatPage = page == Page.Seat;
-            AddCaption(viewPage ? "External View" : seatPage ? "Seat" : "Quick Actions", null, new Vector2(0f, TitleHeight / 2f - MyGuiConstants.SCREEN_CAPTION_DELTA_Y - 0.005f), CaptionScale);
+            bool viewPage = page == Page.ExternalView, seatPage = page == Page.Seat, controlsPage = page == Page.Controls;
+            bool addOnsPage = page == Page.AddOns;
+            bool actionsPage = !viewPage && !seatPage && !controlsPage && !addOnsPage;
+            TileCount = 0;
+            // The actions page has the menus row where the others have their caption.
+            if (!actionsPage)
+                AddCaption(viewPage ? "External View" : seatPage ? "Cockpit" : addOnsPage ? AddOnsTitle : "Controls", null, new Vector2(0f, TitleHeight / 2f - MyGuiConstants.SCREEN_CAPTION_DELTA_Y - 0.005f), CaptionScale);
 
             float left = -size.X / 2f, top = -size.Y / 2f, inner = size.X - 2f * MarginX;
             var lines = new MyGuiControlSeparatorList();
@@ -609,8 +617,15 @@ namespace SpaceEngineersVR.Gui
             lines.AddHorizontal(new Vector2(left + MarginX, -top - FootHeight), inner, Line);
             Controls.Add(lines);
 
-            seatedLayout = !viewPage && !seatPage && Seat != null;
-            if (seatedLayout)
+            seatedLayout = actionsPage && Seat != null;
+            if (actionsPage)
+                AddMenuRow(size);
+            if (controlsPage)
+            {
+                hint = ControlsHint;
+                AddControlsPage(size, lines);
+            }
+            else if (seatedLayout)
             {
                 hint = Hint;
                 AddSeated(size, lines);
@@ -628,17 +643,19 @@ namespace SpaceEngineersVR.Gui
                     tiles = Cockpits.SeatPage.Build(() => switchTo = Page.Actions);
                     hint = SeatHint;
                 }
+                else if (addOnsPage)
+                {
+                    tiles = AddOnTiles();
+                    hint = AddOnsHint;
+                }
                 else
                 {
-                    tiles = new QuickAction[Actions.Length + (Hands.Datapad.Shelved ? 1 : 2)];
+                    tiles = new QuickAction[Actions.Length + 1];
                     Actions.CopyTo(tiles, 0);
                     tiles[Actions.Length] = ExternalViewTile;
-                    if (!Hands.Datapad.Shelved)
-                        tiles[Actions.Length + 1] = DatapadTile();
                     hint = Hint;
                 }
                 Vector2[] centres = Layout(size, tiles.Length, plain, out Vector2 cell);
-                TileCount = 0;
                 for (int i = 0; i < tiles.Length; i++)
                 {
                     if (tiles[i] != null)
@@ -672,7 +689,6 @@ namespace SpaceEngineersVR.Gui
             float bottom = size.Y / 2f - FootHeight - Gap;
             var cell = new Vector2((width - (SeatedColumns - 1) * Gap) / SeatedColumns,
                                    (bottom - y - groups.Length * GroupHeight - (rows - 1) * Gap) / rows);
-            TileCount = 0;
             for (int g = 0; g < groups.Length; g++)
             {
                 if (g > 0)
@@ -701,7 +717,7 @@ namespace SpaceEngineersVR.Gui
 
         private const string Hint = "Point at an action and pull the trigger";
         private const string PageHint = "Point at a control and pull the trigger; grip the screen to move it";
-        private const string SeatHint = "Point at a control and pull the trigger: each press moves the seat a step";
+        private const string SeatHint = "Point at a control and pull the trigger; each arrow press moves the seat a step";
 
         /// <summary>
         /// A page change asked for by a button is made here, outside the controls' own input pass; the actions are laid out
@@ -714,7 +730,13 @@ namespace SpaceEngineersVR.Gui
                 page = switchTo.Value;
                 switchTo = null;
                 Guard("page", () => RecreateControls(false));
-                Log.Info($"Wrist panel: {(page == Page.ExternalView ? "External view page" : page == Page.Seat ? "Seat page" : "back to the actions")}{(seatedLayout ? " (seated)" : string.Empty)}, {TileCount} tiles");
+                Log.Info($"Wrist panel: {(page == Page.ExternalView ? "External view page" : page == Page.Seat ? "Cockpit page" : page == Page.Controls ? "Controls page (" + ControlGuide.Title(controlsShown) + ")" : page == Page.AddOns ? AddOnsLogLine() : "back to the actions")}{(seatedLayout ? " (seated)" : string.Empty)}, {TileCount} tiles");
+            }
+            else if (!plain && page == Page.Controls && controlsStamp != ControlsStampNow())
+            {
+                // A plugin or mod registered or removed an action (or a binding moved) with the page up: its rows are made again.
+                Guard("controls", () => RecreateControls(false));
+                Log.Info("Wrist panel: Controls page made again (the registered actions or the bindings changed)");
             }
             else if (!plain && page == Page.Seat && !Cockpits.SeatPage.Available)
             {
@@ -815,6 +837,17 @@ namespace SpaceEngineersVR.Gui
             if (action == ExternalViewTile)
             {
                 switchTo = Page.ExternalView;
+                return;
+            }
+            if (action == AddOnsTile)
+            {
+                OpenAddOns();
+                return;
+            }
+            if (action == ControlsTile)
+            {
+                controlsShown = PlayerSituation();
+                switchTo = Page.Controls;
                 return;
             }
             if (action == Cockpits.SeatPage.Tile)

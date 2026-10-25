@@ -57,7 +57,7 @@ namespace SpaceEngineersVR.Rendering
             if (!(across > 0.1))
                 return TextureWidth;
             double half = Math.Tan(MathHelper.ToRadians(VRSettings.MenuWidthDegrees) / 2.0);
-            double wanted = EyeRenderer.EyeResolution.X / across * 2.0 * half;
+            double wanted = EyeRenderer.RecommendedResolution.X / across * 2.0 * half;
             int width = (int)Math.Round(wanted / 32.0) * 32;
             return MathHelper.Clamp(width, SmallWidth, LargestWidth);
         }

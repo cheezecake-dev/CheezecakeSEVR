@@ -22,7 +22,8 @@ namespace SpaceEngineersVR.Rendering
                     ShowStandingInWindow(window, windowSize, ForcedView.Pose, ForcedView.Width);
                 return;
             }
-            if (!Showing)
+            // In a headset the dash screen is in the eyes' own picture (PrepareScreen), which the window shows.
+            if (!Showing || worldPrepared)
                 return;
             for (int i = 0; i < 2; i++)
             {
@@ -67,9 +68,8 @@ namespace SpaceEngineersVR.Rendering
         }
 
         /// <summary>
-        /// The headset: copies the picture into the screen's swapchain and places the screen on the dash, to be submitted
-        /// with this frame (<see cref="TakeLayer"/>). The screen is put where the head is the first time it is shown, and
-        /// stays there in the tracking space, which the game keeps in the cockpit.
+        /// The headset, after the pass: the forced view's picture into the screen layer's swapchain, to be submitted with this
+        /// frame (<see cref="TakeLayer"/>); the dash screen's into its texture in the world (<see cref="PrepareScreen"/>).
         /// </summary>
         /// <param name="head">The head in the tracking space.</param>
         public static void ShowInHeadset(in Matrix head)
@@ -94,47 +94,12 @@ namespace SpaceEngineersVR.Rendering
                 }
                 return;
             }
+            // The dash screen stands in the world (PrepareScreen, AddToEye): its new picture goes into its texture.
             if (!Showing)
-            {
-                placed = false;
-                lock (screenGate)
-                    shown = false;
-                return;
-            }
-            if (!XrSession.InFrame || !XrSession.ShouldRender)
                 return;
             try
             {
-                Matrix? moved;
-                lock (screenGate)
-                {
-                    if (placeAgain)
-                        placed = false;
-                    placeAgain = false;
-                    moved = movedTo;
-                    movedTo = null;
-                }
-                if (!placed)
-                {
-                    anchor = Heading(head);
-                    bool kept = TryKeptPlace(anchor, out dash);
-                    if (!kept)
-                        dash = Place(head);
-                    placed = true;
-                    Vector3 at = dash.Translation;
-                    Log.Info($"External view: screen placed {(kept ? "where it was moved by hand" : "on the dash")} at ({at.X:0.00}, {at.Y:0.00}, {at.Z:0.00}) in the tracking space");
-                }
-                else if (moved.HasValue)
-                {
-                    dash = moved.Value;
-                }
-                lock (screenGate)
-                {
-                    shownPose = dash;
-                    shownAnchor = anchor;
-                    shown = true;
-                }
-                Submit(dash, VRSettings.ExternalViewSize);
+                CopyWorldPicture();
             }
             catch (Exception e)
             {

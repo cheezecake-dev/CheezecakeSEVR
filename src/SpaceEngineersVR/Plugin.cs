@@ -27,15 +27,19 @@ namespace SpaceEngineersVR
         public Plugin()
         {
             Bootstrap.Initialize(Environment.GetCommandLineArgs(), beforeGame: false, "a plugin loader");
+            // Before the game scans for its scenarios, which it does once, as it starts.
+            Scenarios.ScenarioRegistry.Hook();
         }
 
         /// <summary>
         /// Pulsar calls this after the constructor with each asset's name and the full path it put the asset at
         /// (Pulsar Legacy/Loader/PluginInstance.cs LoadAssets). The loader was already loaded before the game started;
-        /// this records whether it was the file Pulsar delivered.
+        /// this records whether it was the file Pulsar delivered. The scenarios that come with the plugin are a folder asset
+        /// (<see cref="Scenarios.ScenarioRegistry"/>).
         /// </summary>
         public void LoadAssets(IReadOnlyDictionary<string, string> assets)
         {
+            Scenarios.ScenarioRegistry.Delivered(assets);
             if (!assets.TryGetValue(LoaderAsset, out string assetPath))
             {
                 Log.Warn($"Pulsar delivered no '{LoaderAsset}' asset");
@@ -54,6 +58,7 @@ namespace SpaceEngineersVR
         public void Init(object gameInstance)
         {
             Log.Info("Plugin.Init");
+            Scenarios.ScenarioRegistry.Report();
         }
 
         /// <summary>
@@ -77,6 +82,7 @@ namespace SpaceEngineersVR
                 Rendering.DesktopWindow.Update();
                 PatchRegistry.Update();
                 Api.SevrApi.Update();
+                Api.ApiRuntime.Update();
             }
             catch (Exception e)
             {

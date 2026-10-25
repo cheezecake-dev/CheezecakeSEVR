@@ -86,8 +86,8 @@ namespace SpaceEngineersVR.Hands
 
         private const int MaxTraceLogs = 400;
 
-        /// <summary>The palm is on a use object when it is inside its detector box or this close to it, metres.</summary>
-        public const double UseRadius = 0.15;
+        /// <summary>The palm is on a use object when it is inside its detector box or this close to it, metres (<see cref="GrabTolerance"/>).</summary>
+        public const double UseRadius = GrabTolerance.Body;
 
         /// <summary>A held door is used after the hand has moved this far from where it took hold, metres.</summary>
         public const double DoorPull = 0.12;

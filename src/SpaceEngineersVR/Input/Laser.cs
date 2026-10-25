@@ -6,6 +6,7 @@ using Sandbox;
 using Sandbox.Game.World;
 using Sandbox.Graphics;
 using Sandbox.Graphics.GUI;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Rendering;
 using SpaceEngineersVR.Tracking;
 using VRage.Game;
@@ -199,8 +200,7 @@ namespace SpaceEngineersVR.Input
             float seconds = lastFrame == 0 ? 0f : Math.Min((now - lastFrame) / (float)Stopwatch.Frequency, 0.1f);
             lastFrame = now;
 
-            // While the datapad is held, the hand not holding it points.
-            Hand hand = Hands.Datapad.LaserHand(VRSettings.DominantHand);
+            Hand hand = VRSettings.DominantHand;
             HandState state = VRInput.Get(hand);
             bool cursorShown = MySandboxGame.Static != null && MySandboxGame.Static.IsCursorVisible;
 
@@ -227,30 +227,6 @@ namespace SpaceEngineersVR.Input
                 }
                 return;
             }
-
-            // A fingertip at the held datapad has the cursor instead of the ray (PanelTouch).
-            if (cursorShown && !Off && PanelTouch.Frame(Gui, out Vector2 touched, out bool touchLeft, out int touchWheel))
-            {
-                leftHeld = rightHeld = mouseWins = pressHeld = false;
-                scrollCarry = 0f;
-                ref MyMouseState touchState = ref Actual(input);
-                if (touchLeft)
-                    touchState.LeftButton = true;
-                if (!gameFocused && VRInput.Active)
-                    touchState.ScrollWheelValue = Previous(input).ScrollWheelValue + touchWheel;
-                else
-                    touchState.ScrollWheelValue += touchWheel;
-                lock (gate)
-                {
-                    holds = true;
-                    cursor = touched;
-                    lineOn = PanelTouch.TryGetBeam(out lineFrom, out lineTo);
-                    lineTip = lineFrom;
-                }
-                return;
-            }
-            if (!cursorShown)
-                PanelTouch.Reset();
 
             // Where the ray meets the panel.
             LaserRay.Hit hit = default;
@@ -293,12 +269,12 @@ namespace SpaceEngineersVR.Input
                 InventoryPull.Cancel();
             else
             {
-                if (!mouseWins && hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Grip) && !Hands.Datapad.OwnsGrip(hand)
+                if (!mouseWins && hit.Inside && VRInput.IsNewPressed(hand, VRButtons.Grip)
                     && HudPanel.TryGetPlacement(out Matrix pullPanel, out _, out _))
                     InventoryPull.TryBegin(hand, GridAt(hit.Pixel), state.Grip.Translation, pullPanel);
                 InventoryPull.Step(hand, VRInput.IsPressed(hand, VRButtons.Grip), state.Grip.Translation);
             }
-            bool gripIsButton = !Hands.Datapad.OwnsGrip(hand) && !InventoryPull.OwnsGrip(hand);
+            bool gripIsButton = !InventoryPull.OwnsGrip(hand);
             bool handPressed = ready && hit.Inside && (VRInput.IsNewPressed(hand, VRButtons.Trigger)
                                                        || (VRInput.IsNewPressed(hand, VRButtons.Grip) && gripIsButton));
             if (!cursorShown)
@@ -359,7 +335,7 @@ namespace SpaceEngineersVR.Input
 
             // A (X with the left hand pointing) on an item in a grid: the grid's double click. In the inventory it moves the item
             // to the other side, the whole stack, or 10, 100, 1000 with the other hand's grip and trigger (VRControls.WantsAmount).
-            if (nowHolds && hit.Inside && !leftHeld && VRInput.IsNewPressed(hand, hand == Hand.Right ? VRButtons.A : VRButtons.X))
+            if (nowHolds && hit.Inside && !leftHeld && ControllerBindings.Started(VRAction.MenuMoveItem, hand == Hand.Left))
                 ItemButton(hit.Pixel);
 
             // The wheel: the thumbstick's up and down. A notch at a time, or, for a screen that scrolls in proportion, a few

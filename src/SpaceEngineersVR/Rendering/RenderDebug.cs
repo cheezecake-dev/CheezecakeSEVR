@@ -17,6 +17,7 @@ namespace SpaceEngineersVR.Rendering
     /// runtime puts it, the views drawn and submitted alike, as a headset with canted displays does (the compositor turns the
     /// picture back, so a correct frame still looks right); EyeOffset=0 turns off <see cref="EyeOffset"/>,
     /// SharedBillboards=1 lets the eyes share <see cref="OnceBillboards"/>, HudCamera=0 turns off <see cref="HudCamera"/>,
+    /// ModHud=0 leaves mods' HUD billboards where the mod put them, just ahead of the camera (<see cref="ModHudBillboards"/>),
     /// HudVisor=0 puts the whole HUD back on the flat panel (<see cref="HudVisor"/>), HudVisorCylinder=0 draws its pieces on flat quads
     /// even when the runtime offers cylinder layers, HudVisorZones=1 puts them in zones, a layer each, instead of on the one display,
     /// PanelCursor=0 turns off <see cref="PanelCursor"/>, WorldMenu=0 makes menus head-locked like the HUD (<see cref="WorldMenu"/>),
@@ -53,6 +54,7 @@ namespace SpaceEngineersVR.Rendering
     /// HelmetWalls=0 lets the head lean the helmet and the eye into walls again, HelmetWallsMm=n makes the helmet that walls stop n mm round its middle (50 to 250,
     /// 190 by default) (<see cref="Tracking.HelmetWalls"/>).
     /// HelmetHud=0 keeps the HUD in the headset with the helmet open (<see cref="HelmetHud"/>).
+    /// HandCrosshair=0 draws the game's crosshair in the middle of the HUD on foot, as before (<see cref="HandCrosshair"/>).
     /// HelmetAir=0 turns off the depressurize hiss as the helmet opens and the repressurize hiss as it closes (<see cref="HelmetAir"/>; on with the helmet view).
     /// HelmetAirOpen=n and HelmetAirClose=n choose the game's sound cue for each, from the list: 0 none, 1 BlockAirVentDepressurize (the default for opening:
     /// the air vent drawing air out, looped, 2 s or so), 2 BlockAirVentExhale (the default for closing: the vent blowing air in, looped), 3 ArcEventAirVent (the
@@ -85,10 +87,7 @@ namespace SpaceEngineersVR.Rendering
     /// GpuPasses=1 puts the per-pass GPU timestamps back, for the Perf line's GPU time by pass (<see cref="PerfMeter.PassMarks"/>; off by default: with them the game ended in NVIDIA's driver).
     /// ChaseCamera=0 gives the game's own third-person ship camera (<see cref="Tracking.ChaseCamera"/>).
     /// WristPanel=0 turns off the wrist button and the wrist panel (<see cref="WristButton"/>).
-    /// Datapad=0 greys out the wrist panel's Datapad tile and puts the datapad away (<see cref="Hands.Datapad"/>).
-    /// DatapadModel=0 shows the datapad as the flat panel instead of the game's datapad model (<see cref="Hands.DatapadModel"/>).
-    /// DatapadSheet=N puts the datapad's picture on sheet N of the model, as the "Datapad model" log line numbers them (-1, the default, chooses).
-    /// DatapadTurn=N turns the datapad's picture N quarter turns on the model's screen.
+    /// HandHints=0 turns off the button labels beside the hands; HandHintsAlways=1 shows them without the hand being looked at, for a shot (<see cref="HandHints"/>).
     /// WristStatus=0 gives the HUD its status bars and suit icons back and takes the screen off the gauntlet (<see cref="WristStatus"/>).
     /// WristStatusBright=N scales the gauntlet screen's brightness to N percent (100 as built, and at most), to judge it in the headset.
     /// WristStatusAll=1 draws the gauntlet screen's parts that show only at times (radiation panel, medicine, cryo and bottle marks) all the time, to check their place.
@@ -106,7 +105,8 @@ namespace SpaceEngineersVR.Rendering
     /// HandStop=0 turns off the drawn hand stopping on solid things, of every kind (<see cref="Hands.HandStop"/>).
     /// TouchTrace=1 logs, every frame a fingertip is on a screen's glass or near it (or the drawn hand is stopped), the tip's distance
     /// to the glass (as the touch reads it, at the headset frame's display time, and drawn), Down/Up, the hand stop's state and the
-    /// seated head's offset, held and pilot's head (<see cref="Hands.ScreenTouch.Trace"/>).
+    /// seated head's offset, held and pilot's head (<see cref="Hands.ScreenTouch.Trace"/>); and, up to four times a second a hand, where the fingertip and palm are against the
+    /// helmet's shape the hands stop on, or why they are not tried (<see cref="Hands.HelmetStop"/>).
     /// HeldTrace=1 logs, every game frame a tool is held on foot, each placement of the tool (the early one in the weapon's update
     /// and the one as the arms are solved): placed or why not, the hand snapshot read, the grip, aim and palm poses against
     /// each other, the weapon written and read back, and the arm target taken from it (<see cref="Hands.HeldTrace"/>).
@@ -116,7 +116,7 @@ namespace SpaceEngineersVR.Rendering
     /// GrabUseTrace=1 logs each grab-to-use grip's line of reach from the shoulder: clear, or the block in the way.
     /// HeadGestures=0 turns off the helmet grip and the temple tap for the lamp (<see cref="Hands.HeadGestures"/>).
     /// HelmetHands=0 lets the drawn hands through the helmet's shell again (they stop on it while the helmet view is drawn), HelmetHandsMm=n
-    /// puts the surface they stop on n mm further out of the fitted shape (negative: in; 0 as built) (<see cref="Hands.HelmetStop"/>).
+    /// puts the surface they stop on n mm further out of the fitted shape (negative: in; 42 as built, on the helmet view's glass) (<see cref="Hands.HelmetStop"/>).
     /// ToolGrasp=0 holds a tool by the game's wrist spot instead of the middle of the hand, as before (<see cref="Hands.HeldItem.WristGrasp"/>).
     /// TwoHand=0 turns off holding the tool in both hands; the other grip opens the toolbar wheel as before (<see cref="Hands.TwoHand"/>).
     /// TwoHandStay=0 lets go of the tool's second grip when the hand pulls 15 cm off it, TwoHandStay=1 keeps it while the grip is held,
@@ -156,9 +156,8 @@ namespace SpaceEngineersVR.Rendering
     /// ZeroGHeadThrust=0 flies the jetpack in zero g level with the body again, the left stick turned by the head's yaw only, instead of where the head looks, its pitch with it (<see cref="Input.VRControls.HeadThrustOff"/>).
     /// MagBootsSmoothing=0 gives the view on magnetic boots the body's up again, which the game turns toward the surface in 2.3 deg steps, instead of a smoothed up
     /// (<see cref="Tracking.MagBootsSmoothing"/>; its 10 s "Magnetic boots" log line measures both either way); MagBootsSmoothingMs=n smooths over n ms (20 to 2000) instead of 200.
-    /// MenuHoldRecentre=0 makes the left Menu button what it was before the hold: the game menu or Back from the press, and no recentre (<see cref="Input.VRControls.MenuHoldOff"/>).
-    /// SharedShadows=1 fits one set of sun shadow cascades for both eyes (<see cref="SharedShadows"/>; off until checked in game);
-    /// SharedSpotShadows=1 draws the spot light shadow maps once, in the first eye, ProbeOnce=1 steps the environment probe once a frame (<see cref="SceneOnce"/>; both off until checked in game);
+    /// SharedShadows=0 has each eye fit its own sun shadow cascades instead of one set for both (<see cref="SharedShadows"/>);
+    /// SharedSpotShadows=0 draws the spot light shadow maps in every pass instead of once in the first eye, ProbeOnce=0 steps the environment probe in every pass instead of once a frame (<see cref="SceneOnce"/>);
     /// ParticlesEachPass=1 steps the GPU particles in every pass again, as the renderer does, instead of once a frame in the first eye (<see cref="ParticlesOnce"/>);
     /// ExposureEachPass=1 adapts the auto exposure in every pass again, as the renderer does, instead of once a frame to both eyes (<see cref="ExposureOnce"/>);
     /// AOCentred=1 has the ambient occlusion take each eye's view as centred again, as the renderer does, instead of rebuilding positions for its off-centre field of view (<see cref="OffCentreAO"/>);
@@ -168,7 +167,7 @@ namespace SpaceEngineersVR.Rendering
     /// instead of moved on by how much older the game frame is than usual (<see cref="Rendering.MotionExtrapolation"/>); LaserRide=0 gives the lasers
     /// in the world again, so they are not moved on with the view and the cockpit (<see cref="Rendering.MotionExtrapolation.AddLine"/>); ToolPartsRide=0 leaves
     /// the held tool's parts (the drill's spike, the grinder's disc) where the game frame put them again, so they slide against the tool while the body moves
-    /// (<see cref="Rendering.MotionExtrapolation.PartsOff"/>); ColbyCockpitRide=0 leaves ColbyJack1134's cockpit pieces where the game frame put them
+    /// (<see cref="Rendering.MotionExtrapolation.PartsOff"/>); ToolEffectsRide=0 leaves the held tool's flames, sparks and dust where the game frame put them (<see cref="Rendering.MotionExtrapolation.EffectsOff"/>); ColbyCockpitRide=0 leaves ColbyJack1134's cockpit pieces where the game frame put them
     /// again, so they fall behind the ship and the view while it moves (<see cref="Rendering.MotionExtrapolation.CockpitRideOff"/>); DesktopIpd=0 (mm) sets how far
     /// apart the desktop eyes are, in place of the IPD setting (0 draws both from one point, so the two halves of the window should match).
     /// FocusMute=1 gives the game's own mute when its window is in the background back, even in the headset (<see cref="SoundFocus"/>; by default the sound stays on in VR).
@@ -185,7 +184,7 @@ namespace SpaceEngineersVR.Rendering
     /// back where the cockpit has them (the quick menu Seat page's Move sticks and Reset sticks).
     /// GrabItems=0 turns off grabbing loose items, GrabItemsTrace=1 logs how a held item follows the hand and how a released one flies
     /// (<see cref="Hands.ItemGrab"/>); HullGrab=0 and LadderGrab=0 turn off grabbing hulls and ladders (<see cref="Hands.HullGrab"/>).
-    /// StallStacks=1 turns on the stall watchdog, which logs the stack of a game thread that stalls (<see cref="StallWatchdog"/>).
+    /// StallStacks=1 turns on the stall watchdog, which logs the stack of a game thread that stalls (<see cref="StallWatchdog"/>); StallMs=n (ms, default 2000) is how long a thread must stall first.
     /// Removing a name restores it.
     /// </summary>
     internal static partial class RenderDebug
@@ -262,9 +261,9 @@ namespace SpaceEngineersVR.Rendering
             RightFirst = false;
             DesktopIpd = null;
             EyeCant = 0;
-            SharedShadows.Off = true;
-            SceneOnce.SpotShadowsEachEye = true;
-            SceneOnce.ProbeEachPass = true;
+            SharedShadows.Off = false;
+            SceneOnce.SpotShadowsEachEye = false;
+            SceneOnce.ProbeEachPass = false;
             ParticlesOnce.EachPass = false;
             CentredFlares.PerEye = false;
             ExposureOnce.EachPass = false;
@@ -274,10 +273,12 @@ namespace SpaceEngineersVR.Rendering
             Rendering.MotionExtrapolation.On = true;
             Rendering.MotionExtrapolation.RideOff = false;
             Rendering.MotionExtrapolation.PartsOff = false;
+            Rendering.MotionExtrapolation.EffectsOff = false;
             Rendering.MotionExtrapolation.CockpitRideOff = false;
             EyeOffset.Off = false;
             OnceBillboards.Shared = false;
             HudCamera.Off = false;
+            ModHudBillboards.Off = false;
             HudVisor.Off = false;
             HudVisor.NoCylinder = false;
             HudVisor.Zones = false;
@@ -310,6 +311,7 @@ namespace SpaceEngineersVR.Rendering
             Tracking.HelmetWalls.Off = false;
             Tracking.HelmetWalls.RadiusMm = Tracking.HelmetWalls.DefaultRadiusMm;
             HelmetHud.Off = false;
+            HandCrosshair.Off = false;
             HelmetAir.Reset();
             VisorGlass.Off = false;
             HelmetInterior.Off = false;
@@ -332,12 +334,9 @@ namespace SpaceEngineersVR.Rendering
             PerfMeter.Off = false;
             PerfMeter.PassMarks = false;
             StallWatchdog.Off = true;
+            StallWatchdog.StuckMs = StallWatchdog.DefaultStuckMs;
             Tracking.ChaseCamera.Off = false;
             WristButton.Off = false;
-            Hands.Datapad.Off = false;
-            Hands.DatapadModel.Off = false;
-            Hands.DatapadModel.SheetChoice = -1;
-            Hands.DatapadModel.Turns = 0;
             WristStatus.Off = false;
             WristStatus.Brightness = 1f;
             WristStatus.ShowAll = false;
@@ -408,7 +407,7 @@ namespace SpaceEngineersVR.Rendering
             Tracking.BodyFollow.NeckLimit = Tracking.BodyFollow.DefaultNeckLimit;
             Tracking.MagBootsSmoothing.Off = false;
             Tracking.MagBootsSmoothing.SmoothSeconds = Tracking.MagBootsSmoothing.DefaultSmoothSeconds;
-            Input.VRControls.MenuHoldOff = false;
+
             VRSettings.ColbyCockpitOverride = null;
             Cockpits.CockpitHand.Convert = true;
             Cockpits.CockpitHand.Nudge = VRageMath.Vector3.Zero;
@@ -642,12 +641,7 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"ExitUprightTrace={Tracking.ExitUpright.Trace}");
                         continue;
                     }
-                    if (pair[0].Equals("MenuHoldRecentre", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Input.VRControls.MenuHoldOff = setting == 0;
-                        applied.Add($"MenuHoldRecentre={!Input.VRControls.MenuHoldOff}");
-                        continue;
-                    }
+
                     if (pair[0].Equals("SharedBillboards", StringComparison.OrdinalIgnoreCase))
                     {
                         OnceBillboards.Shared = setting != 0;
@@ -658,6 +652,12 @@ namespace SpaceEngineersVR.Rendering
                     {
                         HudCamera.Off = setting == 0;
                         applied.Add($"HudCamera={!HudCamera.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ModHud", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ModHudBillboards.Off = setting == 0;
+                        applied.Add($"ModHud={!ModHudBillboards.Off}");
                         continue;
                     }
                     if (pair[0].Equals("HudVisor", StringComparison.OrdinalIgnoreCase))
@@ -858,6 +858,12 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"HelmetHud={!HelmetHud.Off}");
                         continue;
                     }
+                    if (pair[0].Equals("HandCrosshair", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HandCrosshair.Off = setting == 0;
+                        applied.Add($"HandCrosshair={!HandCrosshair.Off}");
+                        continue;
+                    }
                     if (pair[0].Equals("HelmetAir", StringComparison.OrdinalIgnoreCase))
                     {
                         HelmetAir.Off = setting == 0;
@@ -948,6 +954,12 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"GpuPasses={PerfMeter.PassMarks}");
                         continue;
                     }
+                    if (pair[0].Equals("StallMs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        StallWatchdog.StuckMs = Math.Max(250, setting);
+                        applied.Add($"StallMs={StallWatchdog.StuckMs:0}");
+                        continue;
+                    }
                     if (pair[0].Equals("StallStacks", StringComparison.OrdinalIgnoreCase))
                     {
                         StallWatchdog.Off = setting == 0;
@@ -960,34 +972,22 @@ namespace SpaceEngineersVR.Rendering
                         applied.Add($"ChaseCamera={!Tracking.ChaseCamera.Off}");
                         continue;
                     }
+                    if (pair[0].Equals("HandHints", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HandHints.Off = setting == 0;
+                        applied.Add($"HandHints={!HandHints.Off}");
+                        continue;
+                    }
+                    if (pair[0].Equals("HandHintsAlways", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HandHints.ShowUnlooked = setting != 0;
+                        applied.Add($"HandHintsAlways={HandHints.ShowUnlooked}");
+                        continue;
+                    }
                     if (pair[0].Equals("WristPanel", StringComparison.OrdinalIgnoreCase))
                     {
                         WristButton.Off = setting == 0;
                         applied.Add($"WristPanel={!WristButton.Off}");
-                        continue;
-                    }
-                    if (pair[0].Equals("Datapad", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Hands.Datapad.Off = setting == 0;
-                        applied.Add($"Datapad={!Hands.Datapad.Off}");
-                        continue;
-                    }
-                    if (pair[0].Equals("DatapadModel", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Hands.DatapadModel.Off = setting == 0;
-                        applied.Add($"DatapadModel={!Hands.DatapadModel.Off}");
-                        continue;
-                    }
-                    if (pair[0].Equals("DatapadSheet", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Hands.DatapadModel.SheetChoice = Math.Max(-1, setting);
-                        applied.Add($"DatapadSheet={Hands.DatapadModel.SheetChoice}");
-                        continue;
-                    }
-                    if (pair[0].Equals("DatapadTurn", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Hands.DatapadModel.Turns = setting;
-                        applied.Add($"DatapadTurn={setting}");
                         continue;
                     }
                     if (pair[0].Equals("WristStatus", StringComparison.OrdinalIgnoreCase))
@@ -1342,6 +1342,12 @@ namespace SpaceEngineersVR.Rendering
                     {
                         Rendering.MotionExtrapolation.PartsOff = setting == 0;
                         applied.Add($"ToolPartsRide={setting != 0}");
+                        continue;
+                    }
+                    if (pair[0].Equals("ToolEffectsRide", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Rendering.MotionExtrapolation.EffectsOff = setting == 0;
+                        applied.Add($"ToolEffectsRide={setting != 0}");
                         continue;
                     }
                     if (pair[0].Equals("ColbyCockpitRide", StringComparison.OrdinalIgnoreCase))

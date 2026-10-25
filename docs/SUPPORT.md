@@ -1,6 +1,6 @@
 # Support guide: Cheezecake's SE VR
 
-For players who need help, and for anyone answering them. It describes version 0.5.0 (the plugin list shows 0.5.0.0).
+For players who need help, and for anyone answering them. It describes version 0.6.0 (the plugin list shows 0.6.0.0).
 Every section stands alone, so a section can be quoted without the rest. Facts here come from the plugin's source and
 the other documents in this repository: [README.md](../README.md), [LINUX.md](LINUX.md) and [MOD_API.md](MOD_API.md).
 
@@ -33,7 +33,9 @@ What it does not do:
 - It does not patch other mods or plugins. Mods get an [API](#conflicts-and-the-mod-api) instead.
 - It has been played on one setup only (a Meta Quest 3 over Meta Link with an NVIDIA RTX 3060). Other headsets should
   work but are untested.
-- Multiplayer has not been tested. Your arms and where you hold your tool are only shown on your own PC.
+- Multiplayer has not been tested between two PCs yet. In a game hosted by a player who has the plugin, other players
+  with the plugin, in VR or flat, see your head and hands move. Players without it see your character as the game animates
+  it. Your shots go where your hand points.
 
 ## Requirements
 
@@ -56,7 +58,7 @@ Headsets:
 - Tested: Meta Quest 3 over Meta Link (cable), NVIDIA RTX 3060.
 - Should work, untested: Air Link, Virtual Desktop, SteamVR headsets.
 - Controller bindings are offered, but untested, for Valve Index, HTC Vive, Windows Mixed Reality, HP Reverb G2, Steam
-  Frame, PICO 4, PICO 4 Ultra and PICO Neo3. Quest 3, 3S and Quest Pro controllers use the Touch bindings, the ones tested.
+  Frame, HTC Vive Cosmos, HTC Vive Focus 3, PICO 4, PICO 4 Ultra and PICO Neo3. Quest 3, 3S and Quest Pro controllers use the Touch bindings, the ones tested.
 
 Not supported: Space Engineers 2; Proton on Linux (use native Pulsar).
 
@@ -76,7 +78,7 @@ Install on Windows:
 Install on Linux: see [Linux](#linux).
 
 Update: Pulsar updates the plugin from the PluginHub and compiles the new version once. The plugin list shows the
-version (0.5.0 shows as 0.5.0.0) and the log's first line shows it too (`SpaceEngineersVR 0.5.0.0 starting via ...`).
+version (0.6.0 shows as 0.6.0.0) and the log's first line shows it too (`SpaceEngineersVR 0.6.0.0 starting via ...`).
 Your settings file is kept. On Linux, run `tools/linux/setup.sh` again after a linux-compat update, because an update
 replaces the DXVK files.
 
@@ -146,7 +148,8 @@ A value outside a setting's range is moved to the nearest end of the range.
 
 ## Settings reference
 
-All settings are in the game's **Options > VR** screen, on five tabs: Display, Comfort, Controls, Hands and Interface.
+All settings are in the game's **Options > VR** screen, on five tabs: Display, Comfort, Controls, Hands and Interface. A
+sixth, Controller, is the bindings page ([Controller bindings](#controller-bindings)).
 Each setting's tooltip says what it does. Every way out of the screen (OK, Back, Escape, the close button) keeps your
 changes and saves the file.
 
@@ -208,7 +211,6 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 | Frost on the visor | `visorFrost` | true/false | true | Frost grows in from the closed visor's rim where the game's temperature is Freeze or Extreme freeze, and melts in the warm. Needs Helmet view. |
 | Breath on the visor | `visorBreath` | true/false | true | Each breath mists the inside of the closed visor in the cold or when breathing hard. Needs Helmet view. |
 | Weather on the visor | `visorWeather` | true/false | true | Rain, snow and dust storms land on the closed visor outdoors; a roof or closed cockpit keeps them off. Needs Helmet view. |
-| Visor mists up indoors | `visorMisting` | true/false | true | Coming from freezing cold into warm air mists the closed visor; it clears in a few seconds. Needs Helmet view. |
 | Wipe the visor | `visorWipe` | true/false | true | A fingertip drawn across the outside of the visor wipes it. Off: the visor clears only by itself. Needs Helmet view. |
 | Helmet air | `helmetAirVolume` | 0 to 3 (screen: 0 to 300%) | 1.5 | Loudness of the air as the helmet opens and closes, as a share of the game's air vent sound; 0 is silent. Needs Helmet view. |
 | Breathing in the helmet | `helmetBreathing` | Off / Quiet / Normal | Normal | The breathing you hear with the helmet closed. Normal is the game's own volume. Off still lets you hear yourself choke when the suit is out of air. |
@@ -227,7 +229,7 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 |---|---|---|---|---|
 | Refresh rate | `refreshRate` | Runtime default | Runtime default | The headset's display rate. Runtime default leaves it as the headset has it; the other choices are the rates the headset offers, listed once VR is running. A headset whose runtime has no refresh-rate control ignores this. Takes effect at once. |
 | Dynamic resolution | `dynamicResolution` | true/false | true | Draws the eyes at a lower resolution, down to 70% each way, while the GPU cannot keep up; back up when it can. A frame the GPU misses is shown again, which can feel like judder. |
-| Sound through the headset (restart) | `headsetAudio` | true/false | true | The game's sound plays through the headset's own audio device when the runtime names one. Off: the system default output. On Linux with WiVRn the sound moves to WiVRn's PipeWire output (needs pw-dump and pw-metadata). |
+| Sound through the headset (restart) | `headsetAudio` | true/false | true | The game's sound plays through the headset's own audio device when the runtime names one, and on the system default output while the game is played in the window because the headset is gone. Off: the system default output. On Linux with WiVRn the sound moves to WiVRn's PipeWire output (needs pw-dump and pw-metadata). |
 | Fallback IPD | `ipd` | 0.04 to 0.09 metres (screen: 40 to 90 mm) | 0.064 | Distance between the eyes, used only when no headset gives the real one. |
 
 **Display > Headset (from ColbyJack1134's SpaceEngineersVR)**
@@ -256,6 +258,7 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 |---|---|---|---|---|
 | Desktop view | `desktopView` | true/false | true | The game window on the monitor mirrors the headset. Off: the window is hidden (on Linux it stays, black) and costs no GPU time; a hidden window takes no keyboard or mouse. |
 | Mirror width (restart) | `mirrorWidth` | 640 to 3840 px | 1920 | Width of the game window on your monitor. Takes effect at the next start. |
+| Keep the game on its monitor | `keepMonitor` | true/false | true | With more than one monitor, the game opens on the monitor it was last set to, even when Windows lists the monitors in another order since. Off: the game takes the monitor at the place in that list it saved. Takes effect at the next start. |
 | Mirror height (restart) | `mirrorHeight` | 360 to 2160 px | 1080 | Height of the game window on your monitor. Takes effect at the next start. |
 
 **Display > Desktop window (from ColbyJack1134's SpaceEngineersVR)**
@@ -357,6 +360,7 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 | Label | Config key | Values | Default | What it does |
 |---|---|---|---|---|
 | Two-handed tools | `twoHandedTools` | true/false | true | Close your other hand's grip on the front of the tool or gun to hold it with both hands. Off: one hand only. |
+| Laser on hand tools | `toolLaser` | true/false | true | A welder, grinder or hand drill in your hand shows a thin laser from its tip as far as it reaches, with a dot where it meets something it can work on. Off: no laser. |
 | Two-hand grip stays on | `twoHandGripStays` | true/false | true | Once the other hand has taken the front grip, the astronaut's hand stays on it while you hold the grip button, however far your real hand moves (aim eases away beyond 15 cm). |
 | Reload by hand | `physicalReload` | true/false | true | Reload hand weapons with your hands: click the gun hand's stick, take a fresh magazine from your hip and push it in. Off: the click reloads on the game's timer. |
 | Tool and weapon kickback | `kickback` | Off / Light / Full | Full | One-handed rifles, launchers, grinders and hand drills kick. Light: half as hard. Off: no kick. Two hands keep it steady. |
@@ -385,6 +389,7 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 |---|---|---|---|---|
 | Status on the wrist | `wristStatus` | true/false | true | A screen on your left gauntlet shows suit and body status (bars, icons, inventory fill). The HUD leaves those parts out. Off: no screen, and the HUD shows them as the game does. |
 | Toolbar on the HUD | `showToolbarOnFoot` | true/false | false | Keeps the HUD's bottom toolbar on foot and on the jetpack. Off: left out there; seats, camera views, the G menu and the terminal still show it. |
+| Inventory toolbar without a headset | `inventoryToolbarFlat` | true/false | true | Without a headset, the inventory screen shows the toolbar along its bottom, worked with the mouse, as it does in VR. Off: the game's own inventory screen when there is no headset. |
 | Control hints | `controlHints` | true/false | true | Short first-time reminders on the HUD (menus, tools wheel, wrist panel, moving inventory items). |
 | External view | `externalView` | true/false | false | A small screen on the dash shows your ship from behind, or one of its cameras. Costs a third scene pass. Its size and half-rate options are under Display. |
 
@@ -399,6 +404,8 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 | HUD text backing | `hudTextBacking` | 0 to 0.9 (screen: 0 to 90%) | 0 | Darkens behind the HUD text on the visor so it reads against a bright sky; 0 draws none. Needs HUD on the visor. |
 | HUD colour | `hudColour` | Game's colours / Green / Amber / Cyan | Game's colours | Filters the HUD on the visor to a helmet display's Green, Amber or Cyan. Needs HUD on the visor. |
 | HUD opacity | `hudOpacity` | 0.1 to 1 (screen: 10 to 100%) | 1 | How strongly the HUD on the visor shows; lower fades it. Needs HUD on the visor. |
+| Suit power failing | `suitPowerFailing` | true/false | true | As the suit battery runs low, the HUD flickers and dims, and at zero goes dark with the wrist screen; the suit lamp sputters. Off: the HUD and lamp are only as the game draws them. |
+| Low stat warnings at the HUD's edge | `lowStatWarnings` | true/false | true | A small flashing icon at the HUD's edge for health, food, energy, oxygen and hydrogen at the game's own critical mark, never sooner. |
 
 **Interface > Menus**
 
@@ -421,6 +428,7 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 | Label | Config key | Values | Default | What it does |
 |---|---|---|---|---|
 | VR button names | `vrButtonNames` | true/false | true | Game prompts name the controller buttons (for example [Right grip]) instead of keys. Off: the keyboard's names. |
+| Button labels by the hands | `handHints` | Off / Until learned / Always | Until learned | Look at a hand and a label beside it names what each of its buttons does in what you are doing now. Until learned: a button's line fades each time you use it and is gone after three uses; **Show the labels again**, under the group, brings them back. Always: every line, every time. The wrist panel's Controls page lists them all either way. |
 
 **Interface > Wheels**
 
@@ -445,18 +453,17 @@ They are stored per controller type in the `gripFit` key. **Reset hand fit** for
 | Ship model: doors | `shipModelDoors` | true/false | true | The ship model shows doors, airlocks and hangar doors in green. Also on the Model overlays page. |
 | Ship model: weapons | `shipModelWeapons` | true/false | true | The ship model outlines guns and turrets in red. Also on the Model overlays page. |
 
-**Interface > Interface**
-
-| Label | Config key | Values | Default | What it does |
-|---|---|---|---|---|
-| Suit power failing | `suitPowerFailing` | true/false | true | As the suit battery runs low, the HUD flickers and dims, and at zero goes dark with the wrist screen; the suit lamp sputters. Off: the HUD and lamp are only as the game draws them. |
-| Low stat warnings at the HUD's edge | `lowStatWarnings` | true/false | true | A small flashing icon at the HUD's edge for health, food, energy, oxygen and hydrogen at the game's own critical mark, never sooner. |
 ## Controller bindings
 
 Button names are the Quest (Touch) controller's: A and B are on the right controller, X, Y and Menu on the left. Every
 other controller is mapped onto that layout, so the tables in this section apply to all of them.
 
-There is no button remapping screen. What you can change:
+**Options > VR > Controller** is the bindings page: the controller in your hands, drawn, and every action with the
+controls it is bound to. **Add binding** waits for every control to be let go, takes the next one you press, and asks how
+it is used: press, tap, hold (with its time) or, where the controller senses a resting finger, touch. A binding can be
+taken away, and an action put back to its defaults. A binding that cannot work as set shows red, its tooltip saying why.
+OK, **Undo changes** and **Defaults** keep, take back or reset the bindings with the other settings. Your bindings are
+saved per controller in `controllerBindings`; the tables below are the defaults. Other settings that change the controls:
 - **Left-handed** (Options > VR > Controls > Controllers) swaps the main hand, see below.
 - **Hold X to ping** and **Wrist panel** (Options > VR) turn the matching button use off.
 - **Stick deadzone**, **Snap turn**, **Smooth turn** and **Ship stick sensitivity** change how sticks feel.
@@ -468,7 +475,7 @@ example "Press [Right grip] to open" (**VR button names**).
 | | On foot / jetpack | Seat: cockpit, rover, remote control | Turret, searchlight | Build mode (block in hand) |
 |---|---|---|---|---|
 | Left stick | walk / fly, the way your head faces | forward, back, strafe (rover: throttle, steer); not in a cockpit with its own sticks (see Cockpit sticks) | - | as on foot / jetpack |
-| Left stick click | sprint; jetpack in zero g, held: the right stick pitches and rolls you. Pointing at a container, or right hand on one: withdraw for the Build Planner (no sprint or roll) | lights | - | held: the right hand, right stick, A and B work the block (see Building); no sprint, no zero-g roll |
+| Left stick click | sprint; on the jetpack (in zero g or gravity), held: the right stick pitches and rolls you; tapped: it keeps pitching and rolling you until the next click. Pointing at a container, or right hand on one: withdraw for the Build Planner (no sprint or roll) | lights | - | held: the right hand, right stick, A and B work the block (see Building); no sprint, no zero-g roll |
 | Right stick left / right | snap turn (or smooth turn) | yaw; not in a cockpit with its own sticks | turn | snap turn; with the left stick click held, a push turns the block 90 deg |
 | Right stick up / down | on foot: up jumps, down crouches; jetpack: up / down | pitch; not in a cockpit with its own sticks | pitch | as on foot / jetpack; with the left stick click held, a push moves the block farther (up) or nearer (down) |
 | Right stick click | reload, with a hand weapon. Pointing at a container, or right hand on one: put the Build Planner in production; with the right grip held: deposit all | landing gear | - | large / small block |
@@ -479,7 +486,7 @@ example "Press [Right grip] to open" (**VR button names**).
 | A | jump; jetpack: up | up | zoom in, held | jump; jetpack: up. With the left stick click held: the block's next stage |
 | B | jetpack on / off | down | zoom out, held | jetpack on / off. With the left stick click held: the previous stage |
 | X | tap: dampeners on / off; hold: ping what you point at (see Ping) | tap: dampeners on / off; hold: ping where you look | - | tap: symmetry on / off; hold: next symmetry plane (creative) |
-| Y | wrist panel | tap: tools wheel; hold half a second: leave the seat | hold half a second: leave | wrist panel (the block menu is on its tile) |
+| Y | wrist panel | tap: tools wheel (wrist turned up and read: wrist panel); hold half a second: leave the seat | hold half a second: leave | wrist panel (the block menu is on its tile) |
 | Menu | tap: game menu; hold: recentre | as on foot | as on foot | as on foot |
 
 With **Left-handed** on, the left hand points the menu laser and holds tools and guns, and the right hand takes the front
@@ -543,23 +550,26 @@ Paths are given as input names below `/user/hand/left` and `/user/hand/right`.
 | `/interaction_profiles/bytedance/pico_neo3_controller` (PICO Neo3) | `XR_BD_controller_interaction` | `trigger/value` | `squeeze/value` | `thumbstick` | `thumbstick/click` | `a/click`, `b/click` | `x/click`, `y/click` | `menu/click` on both hands |
 | `/interaction_profiles/bytedance/pico_ultra_controller_bd` (PICO 4 Ultra) | `XR_BD_ultra_controller_interaction` | `trigger/value` | `squeeze/value` | `thumbstick` | `thumbstick/click` | `a/click`, `b/click` | `x/click`, `y/click` | left `menu/click` |
 | `/interaction_profiles/hp/mixed_reality_controller` (HP Reverb G2) | `XR_EXT_hp_mixed_reality_controller` | `trigger/value` | `squeeze/value` | `thumbstick` | `thumbstick/click` | `a/click`, `b/click` | `x/click`, `y/click` | `menu/click` on both hands |
-| `/interaction_profiles/valve/index_controller` (Valve Index) | none | `trigger/value` | `squeeze/value` | `thumbstick` | `thumbstick/click` | right `a/click`, `b/click` | left `a/click` is X, left `b/click` is Y | none: Index has no Menu button the game can use |
+| `/interaction_profiles/htc/vive_cosmos_controller` (HTC Vive Cosmos) | `XR_HTC_vive_cosmos_controller_interaction` | `trigger/value` | `squeeze/click` | `thumbstick` | `thumbstick/click` | `a/click`, `b/click` | `x/click`, `y/click` | left `menu/click` |
+| `/interaction_profiles/htc/vive_focus3_controller` (HTC Vive Focus 3) | `XR_HTC_vive_focus3_controller_interaction` | `trigger/value` | `squeeze/click` | `thumbstick` | `thumbstick/click` | `a/click`, `b/click` | `x/click`, `y/click` | left `menu/click` |
+| `/interaction_profiles/valve/index_controller` (Valve Index) | none | `trigger/value` | `squeeze/value` | `thumbstick` | `thumbstick/click` | right `a/click`, `b/click` | left `a/click` is X, left `b/click` is Y | left `trackpad/force`: the left trackpad pressed firmly |
 | `/interaction_profiles/valve/frame_controller_valve` (Steam Frame) | `XR_VALVE_frame_controller_interaction` | `trigger/value` | `squeeze/value` | `thumbstick` | `thumbstick/click` | right `a/click`, `b/click` | left `dpad_down/click` is X, left `dpad_up/click` is Y | left `view/click` |
 | `/interaction_profiles/htc/vive_controller` (HTC Vive wands) | none | `trigger/value` | `squeeze/click` | `trackpad` | `trackpad/click` | none: made from the trackpad and Menu, see below | none | `menu/click` on both hands |
-| `/interaction_profiles/microsoft/motion_controller` (Windows Mixed Reality) | none | `trigger/value` | `squeeze/click` | `thumbstick` | `thumbstick/click` | none | none | `menu/click` on both hands |
+| `/interaction_profiles/microsoft/motion_controller` (Windows Mixed Reality) | none | `trigger/value` | `squeeze/click` | `thumbstick` | `thumbstick/click` | right `trackpad/click`: the lower half is A, the upper B | left `trackpad/click`: the lower half is X, the upper Y | `menu/click` on both hands |
 | `/interaction_profiles/khr/simple_controller` (fallback every runtime has) | none | `select/click` | none | none | none | none | none | `menu/click` on both hands |
 
 Notes:
-- On the Touch, PICO, Reverb and Index rows, a control the controller does not have gets no binding. A Windows Mixed
-  Reality controller and the simple controller have no A, B, X or Y, so those buttons do nothing on them. The simple
-  controller has no grip and no stick.
-- Steam Frame: the right controller's X and Y, its Menu, both bumpers and the D-pad's left and right do nothing. PICO and
-  HP Reverb G2 controllers have the Quest's buttons in the same places.
+- On the Touch, PICO, Reverb, Cosmos, Focus 3 and Index rows, a control the controller does not have gets no binding. A
+  Windows Mixed Reality controller's trackpad, clicked, gives its A, B, X and Y. The simple controller has no A, B, X or Y,
+  no grip and no stick.
+- Steam Frame: the right controller's X and Y, its Menu, both bumpers and the D-pad's left and right do nothing. PICO,
+  HTC Vive Cosmos, HTC Vive Focus 3 and HP Reverb G2 controllers have the Quest's buttons in the same places. The Cosmos's
+  bumpers (`shoulder/click`) are bound for the bindings page and do nothing by default.
 - Quest 3, 3S and Quest Pro controllers use the `oculus/touch_controller` bindings.
 - The simple controller is what a Quest gives when it is tracking your hands and not your controllers. The log then says
   `OpenXR hands: the Quest is tracking hands, not controllers (controllers asleep or hand tracking on): pick up the controllers`.
-- Touch sensors (a finger resting on a control) are bound as extras on the Touch, PICO, Steam Frame and Vive (trackpad
-  touch) profiles, and not on the Reverb G2, Index, Mixed Reality or simple profiles. They inform the hand
+- Touch sensors (a finger resting on a control) are bound as extras on the Touch, PICO, Focus 3, Index, Steam Frame, Vive
+  and Mixed Reality (trackpad touch) profiles, and not on the Reverb G2, Cosmos or simple profiles. They inform the hand
   pose, not a button.
 - A binding the runtime refuses costs only that control. The log says `The runtime did not take the bindings for <profile>`
   or `OpenXR binding <path> left out`.
@@ -574,17 +584,23 @@ are made from them. The triggers and grips are as on the Quest. Each row is one 
 |---|---|---|
 | Left trackpad, touched | left stick | walk / fly, tools wheel slots |
 | Left trackpad, clicked | left stick click | |
-| Left Menu | Y | wrist panel; in a seat tap: tools wheel, hold half a second: leave the seat |
+| Left Menu, tap | Y | wrist panel; in a seat: tools wheel |
+| Left Menu, held | B (on foot) / Y held (in a seat) | jetpack on / off (held a third of a second); in a seat, held half a second: leave the seat |
 | Right trackpad, touched | nothing | a resting thumb never turns you |
 | Right trackpad, clicked at the left or right | right stick left / right | turn (in a seat: yaw) |
-| Right trackpad, clicked at the top or bottom | right stick up / down | on foot jump / crouch, jetpack up / down. In a seat: A (up) and B (down), the thrust up and down |
-| Right trackpad, clicked in the middle | right stick click | reload, landing gear, production, block size |
-| Right Menu, tap | B | jetpack on / off, down thrust in a seat, back in menus |
+| Right trackpad, clicked at the top or bottom | right stick up / down, and A (top) / B (bottom) held | on foot jump / crouch, jetpack up / down. In a seat the thrust up and down, at a turret zoom in and out, as the spectator up and down, with the colour tool the medium and large brush |
+| Right trackpad, clicked in the middle | right stick click | reload, landing gear, production, block size; in an inventory, moves an item to the other side. With the left trackpad held while building: the next block stage |
+| Right Menu, tap | X tapped, B | dampeners on / off (on foot, on the jetpack and in a seat), back in menus; with the left trackpad held while building, the previous block stage |
 | Right Menu, held half a second | Menu, tapped | the game menu |
+| Right Menu held, then the right trigger | X held | aim a ping while the trigger is held, let go to ping; pull the left trigger as well (the right Menu still held) to mark a GPS instead |
+| Left trackpad held while building, then the left trigger | X while building | tap: symmetry on / off; hold half a second: the next symmetry plane |
 
-- There is no X on a wand: the dampeners are on the wrist panel and the actions wheel.
+- There is no X button: its jobs are the rows above. Press the right Menu just before the trigger: held on its own for
+  half a second it opens the game menu.
 - Recentre with SteamVR's own reset. The plugin follows it.
-- In a seat the right pad's up and down are thrust, so in a cockpit pitch comes from tilting its right stick.
+- In a seat the right pad's up and down are thrust, so in a cockpit pitch comes from tilting its right stick (see
+  [Cockpit sticks](#controls-by-context-default-right-handed)).
+- In menus and the tools wheel, the right pad clicked up or down is the stick, and a tap of the right Menu button is B.
 - The Vive layout has not been tried on real wands yet.
 
 ## Using it in play
@@ -611,17 +627,18 @@ Tools wheel (your toolbar):
 - Click the left stick while it is open for the **actions wheel**: dampeners, lights, helmet, HUD, broadcasting, the
   game's Menu, View and Blueprint pages, Ping and Mark GPS, and a ship model.
 
-Wrist: on foot, press **Y** for the wrist panel (Inventory, Terminal, G menu, Lights, Helmet, Heal, Dampeners, Relative,
-Broadcast, Symmetry, Colour, External view). Press its buttons with the laser. In a seat, tap Y for the tools wheel, click
-the left stick, then pick **Quick actions** for the ship's switches. Turn your left forearm up to read the status screen
-(health, energy, oxygen, hydrogen, inventory fill).
+Wrist: on foot, press **Y** for the wrist panel: along its top **Game menu**, **Controls** (what every button does),
+**VR settings** and **HUD**; under them Inventory, Terminal, G menu, Lights, Helmet, Heal, Dampeners, Relative, Broadcast,
+Symmetry, Colour and External view. Press its buttons with the laser. In a seat, turn your wrist up to read it and tap Y
+(a tap anywhere else is the tools wheel), or pick the actions wheel's **Quick actions** for the same panel with the ship's
+switches. Turn your left forearm up to read the status screen (health, energy, oxygen, hydrogen, inventory fill).
 
 Helmet:
 - Grip the right side of your helmet with either hand to open or close it; the left side switches the suit lamp. Tap the
   side of your head with a fingertip for the lamp too.
 - Grip the front of the helmet and draw your hand down to lower the sun visor; push up to raise it. It only comes down with
   the helmet closed.
-- Draw a fingertip across the front of the closed visor to wipe frost, water, snow, dust and mist.
+- Draw a fingertip across the front of the closed visor to wipe frost, water, snow and dust.
 
 Hands and tools:
 - Close your other hand on the front of a tool or gun for a two-handed hold. A rifle, grinder or drill in one hand kicks.
@@ -648,7 +665,7 @@ What happens, in order, and what each failure looks like. Lines are from `SpaceE
 every start (the previous run is kept as `SpaceEngineersVR.prev.log`).
 
 1. Pulsar compiles the plugin and starts the game. The plugin's first hook runs before the game's own startup. The log
-   begins `SpaceEngineersVR 0.5.0.0 starting via <host> (before the game started)`, then `Plugin assembly: ...` and `Args: ...`.
+   begins `SpaceEngineersVR 0.6.0.0 starting via <host> (before the game started)`, then `Plugin assembly: ...` and `Args: ...`.
    - Failure: `SpaceEngineersVR could not set up before the game; continuing without VR`, or `VR setup failed; continuing without VR`.
      The game runs flat. Attach the log.
    - If the plugin loaded too late, the log has a line beginning `Loaded after the render device was created` and nothing
@@ -703,8 +720,14 @@ every start (the previous run is kept as `SpaceEngineersVR.prev.log`).
     - Failure: `OpenXR controller input could not be set up; continuing without controllers`.
 14. Sound moves to the headset (unless **Sound through the headset** is off): `Sound: ...` lines.
 
-If the headset is lost during play: `Headset lost (<reason>); playing in the window until it reconnects`. The game goes on
-in the window, and VR comes back when the headset reconnects.
+If the headset is lost during play: `Headset lost (<reason>); playing in the window until it reconnects`. Two seconds
+later, if it has not come back, `Headset gone for 2 s (no session): playing flat, the game's picture in the 1920x1080 window, until the headset session has the focus again`: the window keeps its size, and shows the game's own picture fitted to it,
+with the menus laid out for it and the game's mouse cursor. The HUD says "Headset lost: playing in the window". The
+sound moves to the Windows default output: `Sound: to the Windows default output (no headset is connected); the game makes
+its audio again`. (Link's headset audio device stays in Windows while the headset is disconnected, so without this the
+sound went on into it and nothing was heard.) As in the game without the plugin, its own audio option to mute when the
+window loses focus silences it while the window is in the background: click the window. When the headset reconnects, `The picture turns to
+VR's (headset back)`, VR comes back by itself, and so does the sound: `Sound: back to <device> (headset back)`.
 
 ## Runtimes, headsets and performance
 
@@ -845,7 +868,7 @@ Files there:
 Line format: `HH:mm:ss.fff [INFO] [thread] message`, with `[WARN]` and `[ERROR]` for problems. An `[ERROR]` line is followed by the exception.
 
 What to look for: search the log for `[WARN]` and `[ERROR]`. The first line shows the version:
-`SpaceEngineersVR 0.5.0.0 starting via ...`. Other lines worth knowing:
+`SpaceEngineersVR 0.6.0.0 starting via ...`. Other lines worth knowing:
 - `Headset: <name>, eye <W>x<H>, GPU LUID ...`: the headset was found.
 - `OpenXR left hand interaction profile: ...`: which controller layout the runtime chose.
 - `OpenXR session <state> -> <state>`: the session's states; Focused means the headset shows the game.
@@ -879,7 +902,7 @@ Each entry is symptom, cause, fix. Quoted text is what the log or screen says.
 | Message | Cause | Fix |
 |---|---|---|
 | `VR is off for this run. This version of Space Engineers changed something the plugin needs, so the game runs as usual on the monitor. An update to the plugin will follow.` (then `Not working: ...`) | A game update changed code a core feature hooks. The log has `Core feature <name> could not be patched and is off`. | Play flat, check for a plugin update, and report it with the log. |
-| `Some VR features are off. This version of Space Engineers changed something they need; the rest of VR works. An update to the plugin will follow.` (then `Off: ...`) | Optional features failed to hook after a game update. The log has `Feature <name> could not be patched and is off`. | VR works without them. Report it with the log. |
+| `Some features of the plugin are off. This version of Space Engineers changed something they need; the rest of the plugin works. An update to the plugin will follow.` (then `Off: ...`) | Optional features failed to hook after a game update: a VR feature, or the scenarios the plugin lists in New Game (`ScenarioRegistry`) or the Bug Swarm (`BugSwarm`). The log has `Feature <name> could not be patched and is off`, or the feature's own line saying what it cost. | The rest works without them. Report it with the log. |
 | `The VR view failed, so the world is hidden for now; the menus still work. Close this message to try the view again. The game's menu can save and leave. Details are in SpaceEngineersVR.log.` | The eye drawing threw an error. The log has `<context> failed; the eyes are off and the menus stay up in VR, until the message about it is closed`. | Close the message to try again (twice at most). Save and leave from the game's menu if it keeps happening. |
 | `The VR view failed again, so the world stays hidden until the game is restarted; the menus still work. Save and leave from the game's menu.` | It failed a third time. | Save, leave, restart the game; attach the log. |
 
@@ -890,7 +913,7 @@ Each entry is symptom, cause, fix. Quoted text is what the log or screen says.
 | `<feature>: 3 exceptions in N s, the last <type>: <message>; switched off, back in 30 s` | A feature threw repeatedly and the plugin turned it off to protect the game. After the next failures it is off for 120 s, then for the rest of the session: `switched off for the rest of the session`. | It comes back by itself. If it does not, restart the game. Attach the log. |
 | `Headset frame failed; VR display stops` | The headset frame threw an error. | Restart the game; attach the log. |
 | `Drawing the GUI failed` | The menus could not be drawn into the headset. | Restart; attach the log. |
-| `Headset lost (<reason>); playing in the window until it reconnects` | The runtime lost the session (headset asleep, cable out, WiVRn server stopped). | Reconnect it. VR comes back by itself. |
+| `Headset lost (<reason>); playing in the window until it reconnects` | The runtime lost the session (headset asleep, cable out, WiVRn server stopped). | Reconnect it. VR comes back by itself. Meanwhile the window shows the game's own picture at its size. |
 | `OpenXR floor lost (xrLocateSpace ..., flags ...); height cannot be corrected until it is back` | The headset lost its floor. | Redo the headset's boundary or play area setup. |
 | `OpenXR STAGE space could not be set up; the floor is not known` | No play area. | Set up the play area or boundary in the headset; then calibrate height. |
 
@@ -902,13 +925,14 @@ Each entry is symptom, cause, fix. Quoted text is what the log or screen says.
 | `The runtime has no <format> swapchain; using <format>, the headset image will look washed out` | The runtime offers no sRGB swapchain. | Report it with the headset and runtime. |
 | `The runtime refused a mutable-format swapchain (<result>); asking without it ...` | The runtime does not take mutable formats. | Report it with the runtime. |
 | Judder or a soft picture | The GPU cannot keep up. | See [performance settings](#runtimes-headsets-and-performance): lower the headset's render resolution or refresh rate, keep **Dynamic resolution** on, turn off **External view** and **Headset layers in the desktop window**. |
+| The game opens on the wrong monitor, or minimized | The game saves its monitor as a place in Windows' list of monitors, and that list can change order. Exclusive fullscreen also minimizes the game whenever another window takes the focus. | With **Keep the game on its monitor** on, choose the monitor once in the game's Options > Graphics: it is kept by name from then on (`Monitor: ...` in the log). For a game that stays up when you click elsewhere, use the game's **Fullscreen window** mode. |
 | The desktop window is black at the corners | **Lens mask** skips the corners the lenses never show. | Normal. Turn **Lens mask** off to see them. |
 | The desktop window is black (Linux) | **Desktop view** is off. | Turn **Desktop view** on. |
 | The desktop window takes no keyboard or mouse | **Desktop view** is off, or the window is hidden. | Turn **Desktop view** on, or play by the controllers. |
 | The picture is too dark | Visor tint, the sun visor or the HUD colour filter. | Options > VR > Display > Helmet: **Visor tint** to 0, lift the sun visor, or turn **Helmet view** off. |
-| Frost, mist or drops on the visor | The weather and temperature effects. | Wipe it with a fingertip, or turn the effect off under Display > Helmet. |
+| Frost or drops on the visor | The weather and temperature effects. | Wipe it with a fingertip, or turn the effect off under Display > Helmet. |
 | The view fades to black when I lean | The wall, canopy and dashboard fade. | Normal. It stops when you lean back. |
-| Mod HUDs (Text HUD API, Rich HUD Framework) are too close to read | Those frameworks do not use the plugin's mod API yet. | Known issue. The rest of the HUD is unaffected. |
+| A mod's HUD is too close to read | The plugin moves a mod's HUD onto the VR HUD when the mod draws it within 45 cm of the camera, as Text HUD API and Rich HUD Framework do. A mod that draws its HUD another way is not moved (WeaponCore's has not been tried). | Report the mod with the log. The rest of the HUD is unaffected. |
 
 ### Controller problems
 
@@ -916,10 +940,11 @@ Each entry is symptom, cause, fix. Quoted text is what the log or screen says.
 |---|---|---|
 | Hands with no buttons, arms drop when hands are out of view (Quest) | The Quest is tracking your hands, not controllers. The log says `OpenXR hands: the Quest is tracking hands, not controllers (controllers asleep or hand tracking on): pick up the controllers`. | Pick up the controllers. |
 | A button does nothing | A button is not on your controller, or not bound. | Check the log for `Input: ...` lines when you press it. Check [bindings](#controller-bindings) for your controller. The log lists `OpenXR bound sources (active after a sync): ...`. |
-| Valve Index: no Menu button | The Index has no Menu button the game can use. | Recentre with Options > VR > **Recentre view**. |
-| Vive wand: no X | Wands have no X. | Use the wrist panel or the actions wheel for the dampeners. |
+| Valve Index: no Menu button | The Index has no Menu button; the left trackpad pressed firmly is Menu. | Press the left trackpad firmly: a tap is the game menu, a hold recentres. |
+| Vive wand: no X | Wands have no X button. | Its jobs are on the right Menu: a tap is the dampeners, and held with the right trigger it aims a ping ([Vive wands](#vive-wands)). |
 | `The runtime did not take the bindings for <profile>: ...` or `The runtime did not take all the bindings for <profile> (...); it took N of M, without ...` | The runtime refused some bindings. | Only the controls named are lost. Report your controller and runtime. |
-| `OpenXR controller input could not be set up; continuing without controllers` / `OpenXR controller input failed; controllers off for the rest of the run` | Controller input failed. | Restart the game; attach the log. |
+| `OpenXR controller input could not be set up; continuing without controllers` | Controller input could not be set up. | Restart the game; attach the log. |
+| `OpenXR controller input failed (N in a row); controllers off, trying again in N s` | Reading the controllers failed. | The plugin tries again by itself, waiting twice as long each time, up to 30 s. If it keeps failing, restart the game and attach the log. |
 | `OpenXR <left/right> controller not tracked` | The controller lost tracking. | Keep it in view of the headset. |
 | `Haptics are off for this headset session: <message>` | The runtime refused haptics. | Only the controller buzz is lost. |
 | The view drifts or is facing the wrong way | The view needs a recentre. | Hold the left Menu button for 0.6 seconds (Options > VR > **Recentre view**). |
@@ -964,13 +989,15 @@ If nothing here matches, [report it](#reporting-a-bug).
 
 ## Known issues
 
-True at version 0.5.0:
+True at version 0.6.0:
 - One tested setup (Quest 3 over Link with an RTX 3060). Other headsets, connections and graphics cards should work but have not been tried.
 - Link freezes on recent NVIDIA drivers: see [Picture problems](#picture-problems).
 - Minor: the drill's tip moves slightly while you walk.
-- Mod HUDs drawn by Text HUD API or Rich HUD Framework are too close to read in a headset.
-- Multiplayer has not been tested. Your arms and where you hold your tool are only shown on your own PC. Other players see
-  your tool where their game animates it, but your shots still go where your hand points.
+- Mod HUDs drawn by Text HUD API or Rich HUD Framework show on the VR HUD, in the same 16:9 band as the game's HUD.
+  WeaponCore's HUD has not been tried yet.
+- Multiplayer has not been tested between two PCs yet. In a game hosted by a player who has the plugin, other players
+  with the plugin, in VR or flat, see your head and hands move. Players without it see your character as the game animates
+  it. Your shots go where your hand points.
 - Seated, your fingertip works the cockpit's own switches and screens, not button panel blocks in reach of the seat.
 - Left-handed: the status screen stays on the left gauntlet.
 - Game updates can change the code the plugin hooks. A hook that fails is logged and skipped. If the renderer cannot be hooked,
@@ -990,31 +1017,36 @@ True at version 0.5.0:
 Conflicts:
 - Do not run the plugin from two places at once. On Linux, `setup.sh` without `--no-plugin` registers a clone as a
   development folder; enable only one of the PluginHub version and the clone.
-- Mods that draw their HUD through Text HUD API or Rich HUD Framework show it too close to read (above).
+- Mods that draw their HUD just ahead of the camera (Text HUD API, Rich HUD Framework) have it moved onto the VR HUD; a
+  mod that places its HUD with the API's `HudToWorld` is never moved twice.
 - On Linux the plugin works with CometWorks' linux-compat and its DXVK. A linux-compat update replaces the patched DXVK
   files; run `tools/linux/setup.sh` again.
 
 The plugin does not patch other mods or plugins, and does not read their private fields. A mod that wants to show correctly
 in a headset uses the plugin's API.
 
-The mod API (details in [MOD_API.md](MOD_API.md)):
-- It comes over the game's mod messaging on channel `6000296989824141617` ("SEVRAPI1" in ASCII, as a long). The plugin sends a
-  `Dictionary<string, Delegate>` when a world starts, and again whenever anyone sends the string `"SEVR.ApiRequest"` on the channel.
-- Version 1 members: `Version` (`Func<int>`), `IsActive` (`Func<bool>`, a headset is showing the game), `HudVisible`
-  (`Func<bool>`, false while the helmet is open with the helmet view on), `HudDepth` (`Func<double>`, metres from the eyes),
-  `HudTangents` (`Func<Vector2D>`), `HudToWorld` (`Func<Vector2D, Vector3D>`, a HUD point to its world position).
+The API (version 2; the whole reference is [MOD_API.md](MOD_API.md)) is for plugins, mods and programmable block scripts:
+- Plugins call `SpaceEngineersVR.Api.SevrApi.GetApi()` by reflection. Mods get it over the game's mod messaging on channel
+  `6000296989824141617` ("SEVRAPI1" in ASCII, as a long): the plugin sends a `Dictionary<string, Delegate>` when a world
+  starts, and again whenever anyone sends the string `"SEVR.ApiRequest"` on the channel. Scripts read the programmable
+  block's hidden terminal property `"SevrApi"`, which has the HUD members only.
+- The HUD members (version 1): `Version`, `IsActive` (a headset is showing the game), `HudVisible`, `HudDepth`,
+  `HudTangents`, `HudToWorld` (not offered to scripts). Version 2 adds controller actions the player binds, items on the
+  actions wheel and the wrist panel, panel screens, the hands' and head's poses, the controllers' state, haptics and
+  events.
 - Without the plugin or a headset nothing arrives or `IsActive` returns false: draw as you always do.
-- The API only describes how things are shown. It says nothing the game does not already show a flat player.
-- A mod author can change the one place where a HUD-space position becomes a world position to go through `HudToWorld` while
-  `IsActive` is true. Text HUD API (Draygo) and Rich HUD Framework (DarkStar) each need that one change.
+- The API only describes how things are shown and what the player does with the controllers. It says nothing the game
+  does not already show a flat player.
+- A mod that draws its HUD just ahead of the camera needs no change: the plugin moves it onto the VR HUD (Conflicts, above).
+  A mod that places its HUD itself can go through `HudToWorld` while `IsActive` is true.
 
 ## FAQ
 
 **Does it work on Space Engineers 2?** No. It is for Space Engineers 1 only.
 
 **Which headsets work?** The tested one is a Meta Quest 3 over Meta Link. Air Link, Virtual Desktop and SteamVR headsets
-should work but are untested. Bindings are offered for Index, Vive, Windows Mixed Reality, HP Reverb G2, Steam Frame, PICO 4,
-PICO 4 Ultra and PICO Neo3, none of them tried yet.
+should work but are untested. Bindings are offered for Index, Vive, Windows Mixed Reality, HP Reverb G2, Steam Frame, Vive Cosmos,
+Vive Focus 3, PICO 4, PICO 4 Ultra and PICO Neo3, none of them tried yet.
 
 **Does it work on Linux?** Yes, early, on native Pulsar with WiVRn. See [Linux](#linux). Not with Proton.
 
@@ -1044,7 +1076,9 @@ Headset layers in the desktop window and External view, and see [performance set
 **I get no sound in the headset.** Start Link before the game; Sound through the headset needs a restart after a change.
 On Linux it needs PipeWire's `pw-dump` and `pw-metadata`.
 
-**Does multiplayer work?** It has not been tested. Your arms and tool pose are only shown on your own PC.
+**Does multiplayer work?** It is made for a game a player hosts, and has not been tested between two PCs yet. Other
+players with the plugin, in VR or flat, see your head and hands move; players without it see your character as the game
+animates it.
 
 **Do other players see that I use VR, and does it give me an advantage?** Nothing it shows is more than a flat player could
 see in the same place. Immersive dressing such as the helmet rim and visor tint sits outside the game's field of view or only darkens.
@@ -1071,8 +1105,8 @@ there when:
 - a controller, headset or runtime that is untested misbehaves. Reports from other headsets and graphics cards help most.
 
 Include:
-- The plugin version: the plugin list in Pulsar shows `0.5.0.0` for this release, and the first line of
-  `SpaceEngineersVR.log` shows `SpaceEngineersVR 0.5.0.0 starting via ...`.
+- The plugin version: the plugin list in Pulsar shows `0.6.0.0` for this release, and the first line of
+  `SpaceEngineersVR.log` shows `SpaceEngineersVR 0.6.0.0 starting via ...`.
 - Your headset and how it is connected: Link cable, Air Link, Virtual Desktop, SteamVR, or WiVRn on Linux.
 - The OpenXR runtime in use (the Link app, SteamVR or WiVRn and its version).
 - Your graphics card and driver version.

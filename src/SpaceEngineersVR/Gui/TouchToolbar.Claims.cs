@@ -56,8 +56,13 @@ namespace SpaceEngineersVR.Gui
                     why = null;
                     return false;
                 }
-                into.Add(area);
-                why = $"no screen is set to {TouchToolbarScript.DisplayName}, so the setting's fallback: screen {area}, {pick}";
+                if (ShowsDefault(cockpit, area))
+                {
+                    into.Add(area);
+                    why = $"no screen is set to {TouchToolbarScript.DisplayName}, so the setting's fallback: screen {area}, {pick}";
+                }
+                else
+                    why = $"no screen is set to {TouchToolbarScript.DisplayName}, and the fallback's screen {area} shows what the player chose for it, so it is left alone";
             }
             if (why != lastCase)
             {
@@ -65,6 +70,22 @@ namespace SpaceEngineersVR.Gui
                 Log.Info($"Touch toolbar: {cockpit.BlockDefinition.Id.SubtypeName} {cockpit.EntityId}: {why}");
             }
             return true;
+        }
+
+        /// <summary>
+        /// True while the screen still shows what the cockpit came with (its screen area's script, or nothing): the fallback
+        /// takes only such a screen, so an app the player picks for it in the game's screen settings is what it shows.
+        /// </summary>
+        private static bool ShowsDefault(MyCockpit cockpit, int area)
+        {
+            MyTextPanelComponent panel = Panel(cockpit, area);
+            var areas = cockpit.BlockDefinition.ScreenAreas;
+            if (panel == null || areas == null || area >= areas.Count)
+                return false;
+            string script = areas[area].Script;
+            return string.IsNullOrEmpty(script)
+                ? panel.ContentType == ContentType.NONE
+                : panel.ContentType == ContentType.SCRIPT && string.Equals(panel.Script, script, System.StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>The cockpit this player pilots, working and with at least one screen; null otherwise.</summary>

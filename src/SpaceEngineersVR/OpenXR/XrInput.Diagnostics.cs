@@ -11,7 +11,7 @@ namespace SpaceEngineersVR.OpenXR
     {
         /// <summary>
         /// The profile the runtime picked for each hand: the first read, then only when it changes. Also where a hand is found to be
-        /// on a Vive wand (or no longer), which puts its controls in the Quest's layout (<see cref="WandLayout"/>).
+        /// on a Vive wand (or no longer), whose trackpads are made its sticks (<see cref="WandLayout"/>).
         /// </summary>
         private void LogProfiles()
         {
@@ -27,11 +27,24 @@ namespace SpaceEngineersVR.OpenXR
                         continue;
                     loggedProfile[h] = state.InteractionProfile;
                     string profile = PathName(state.InteractionProfile);
-                    Log.Info($"OpenXR {HandNames[h]} hand interaction profile: {profile}");
+                    Log.Info(state.InteractionProfile == 0
+                        ? $"OpenXR {HandNames[h]} hand interaction profile: none (the runtime has matched no controller in that hand to a profile the plugin offers, so its buttons and pose read nothing)"
+                        : $"OpenXR {HandNames[h]} hand interaction profile: {profile}");
                     HintHandTracking(profile);
                     SetWand(h, state.InteractionProfile == viveProfile);
-                    // The grip fit (the palm's turn and shift on the grip) is kept per profile.
-                    GripFit.SetProfile((Hand)h, state.InteractionProfile == 0 ? null : PathName(state.InteractionProfile));
+                    // The controls are reported by their own names (ControllerControls) and bound per profile; the labels by the
+                    // hands and the Controls page name this controller's own buttons.
+                    profileKey[h] = Input.Bindings.ControllerBindings.Key(state.InteractionProfile == 0 ? null : profile);
+                    Input.Bindings.ControllerBindings.SetProfile((Hand)h, profileKey[h]);
+                    // The grip fit (the palm's turn and shift on the grip) is kept per profile; its failure leaves the bindings be.
+                    try
+                    {
+                        GripFit.SetProfile((Hand)h, state.InteractionProfile == 0 ? null : profile);
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Warn($"Could not set the {HandNames[h]} grip fit for {profile}: {e.Message}");
+                    }
                 }
             }
             catch (Exception e)
@@ -69,6 +82,10 @@ namespace SpaceEngineersVR.OpenXR
                 {
                     ulong hand = handPaths[h];
                     var list = new List<string>();
+                    if (PoseActive(gripAction, hand))
+                        list.Add("grip pose");
+                    if (PoseActive(aimAction, hand))
+                        list.Add("aim pose");
                     if (BooleanActive(menuAction, hand))
                         list.Add("menu");
                     if (BooleanActive(stickClickAction, hand))

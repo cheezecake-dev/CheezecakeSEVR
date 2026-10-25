@@ -89,9 +89,6 @@ namespace SpaceEngineersVR.Hands
             long start = Stopwatch.GetTimestamp();
             try
             {
-                // On the pad, where the pad is drawn this frame (DatapadModel takes it the same way).
-                if (onPad && !hiding)
-                    RidePad();
                 MyObjectsPool<MyBillboard> pool = MyRenderProxy.BillboardsPoolWrite;
                 if (pool == null || !HandWorld.TryGetTrackingToWorld(out MatrixD toWorld))
                     return;

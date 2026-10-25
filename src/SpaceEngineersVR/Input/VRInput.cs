@@ -74,6 +74,16 @@ namespace SpaceEngineersVR.Input
 
         public VRButtons Buttons;
 
+        /// <summary>
+        /// The controller's own controls that are down, as they are on the controller, before any layout puts them in the Quest's
+        /// (a Vive wand's trackpad is its trackpad here, not a stick): bit <c>1 &lt;&lt; (int)ControllerControl</c>. What the
+        /// bindings read (<see cref="Bindings.BindingEngine"/>).
+        /// </summary>
+        public uint ControlsDown;
+
+        /// <summary>The controller's own controls a finger or thumb is on (or that are down), as <see cref="ControlsDown"/>.</summary>
+        public uint ControlsTouched;
+
         /// <summary>The touch sensors a finger is on.</summary>
         public VRTouch Touch;
 

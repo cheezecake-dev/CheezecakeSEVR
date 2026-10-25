@@ -54,6 +54,7 @@ namespace SpaceEngineersVR.Hands
 
             harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateShootDirection)),
                 transpiler: new HarmonyMethod(typeof(HeldItem), nameof(TranspileShootDirection)));
+            MySession.OnUnloading += ToolAim.Forget;
             Log.Info("Hand tools: tools and guns in the hand hooked (shoot direction calls rewritten: " + shootRewrites + ")");
         }
 
@@ -202,6 +203,8 @@ namespace SpaceEngineersVR.Hands
                 SetLogicalPosition(__instance, origin);
                 SetLogicalOrientation(__instance, forward);
                 SetCrosshairPoint(__instance, origin + forward * CrosshairDistance);
+                ToolAim.Placed(weapon, origin, forward);
+                SyncedAim.NoteHand(character, forward);
                 MatrixD world = WeaponWorld(grip, aim, ItemSpots.ToolGrasp(item));
                 if (weapon is IMyHandheldGunObject<MyGunBase> gun && gun.GunBase != null)
                     world.Translation += MuzzleShift(character, gun.GunBase, world);

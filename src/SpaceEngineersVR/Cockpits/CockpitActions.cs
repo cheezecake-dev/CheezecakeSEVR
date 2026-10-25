@@ -64,9 +64,18 @@ namespace SpaceEngineersVR.Cockpits
         }
         internal static bool SetAnalog(int slot,float position)
         {
-            if(toolbar==null || owner==null || editing || !SeatFit.Eligible(owner) || !SharedReady ||
-                !((Sandbox.ModAPI.IMyTerminalBlock)owner).HasPlayerAccess(MySession.Static.LocalPlayerId) ||
-                !ReadAnalog(slot,out _,out _)) return false;
+            if(toolbar==null || owner==null || editing || !SeatFit.Eligible(owner) || !SharedReady) return false;
+            return Drive(slot,position);
+        }
+        /// <summary>
+        /// The seat is being left with this throttle lever in the hand: it springs back to zero thrust, as when let go. Called
+        /// before <see cref="Update"/> takes the seat away; the seat may already be one the player cannot use, which
+        /// <see cref="SetAnalog"/> refuses.
+        /// </summary>
+        internal static bool LetGoOnLeaving(int slot) => toolbar!=null && owner!=null && !editing && SpringsBack(slot) && Drive(slot,0f);
+        private static bool Drive(int slot,float position)
+        {
+            if(!((Sandbox.ModAPI.IMyTerminalBlock)owner).HasPlayerAccess(MySession.Static.LocalPlayerId) || !ReadAnalog(slot,out _,out _)) return false;
             // His MultiplayerRuntime.ApplyAnalog, as it runs without a host: the handle's item, enabled, drives its blocks.
             if(!AnalogControl.Finite(position) || position<0 || position>1) return false;
             long identity=MySession.Static.LocalPlayerId;
@@ -78,6 +87,39 @@ namespace SpaceEngineersVR.Cockpits
             return true;
         }
         internal static string AnalogLabel(int slot,float position) => analog[slot]?.FirstOrDefault()?.Label(position);
+
+        // ---- Throttle levers: a handle on a thrust override springs back to zero when let go, unless the player set it to stay ----
+
+        private static bool[] holds=new bool[0];
+        /// <summary>The handle at <paramref name="slot"/> drives thrust overrides only: a throttle.</summary>
+        internal static bool Throttle(int slot) => ReadAnalog(slot,out _,out _) && analog[slot].All(c=>c.Type==AnalogControl.Kind.Thrust);
+        /// <summary>The player set this throttle lever to stay where it is let go.</summary>
+        internal static bool Holds(int slot) => slot>=0 && slot<holds.Length && holds[slot];
+        /// <summary>Let go, this handle goes back to zero thrust.</summary>
+        internal static bool SpringsBack(int slot) => !Holds(slot) && Throttle(slot);
+        /// <summary>The throttle levers of this cockpit, by slot, with what each is assigned (for the flight settings' Levers page).</summary>
+        internal static List<(int Slot,string Name)> ThrottleLevers()
+        {
+            var result=new List<(int,string)>();
+            if(owner==null || toolbar==null) return result;
+            int count=CockpitLayout.Count(owner.BlockDefinition.Id.SubtypeName);
+            for(int slot=0;slot<count;slot++)
+                if(Throttle(slot)) result.Add((slot,toolbar.GetItemAtIndex(slot)?.DisplayName?.ToString() ?? "Lever "+(slot+1)));
+            return result;
+        }
+        /// <summary>This cockpit has handles at all (a throttle can be assigned to one).</summary>
+        internal static bool HasHandles => owner!=null && Enumerable.Range(0,CockpitLayout.Count(owner.BlockDefinition.Id.SubtypeName)).Any(Handle);
+        internal static bool[] HoldsCopy() => (bool[])holds.Clone();
+        /// <summary>This cockpit's throttle levers that stay where they are let go, kept with its switches.</summary>
+        internal static void SaveHolds(bool[] value)
+        {
+            if(owner==null) return;
+            holds=(bool[])value.Clone();
+            var record=LoadLocal(owner);
+            record.Holds=holds;
+            SaveLocal(owner,record);
+            Log.Info($"ColbyCockpit: throttle levers that stay where let go: {(holds.Any(h=>h) ? string.Join(", ",holds.Select((h,i)=>h ? (i+1).ToString() : null).Where(t=>t!=null)) : "none")}");
+        }
 
         public static void Update(MyCockpit seat)
         {
@@ -96,6 +138,7 @@ namespace SpaceEngineersVR.Cockpits
             toolbarGrid=seat.CubeGrid;
             loadedXml=builder==null ? "" : WriteToolbar(builder);
             toolbar.ItemChanged+=Changed;
+            holds=LoadLocal(seat).Holds;
             Log.Info($"ColbyCockpit: {seat.BlockDefinition.Id.SubtypeName} has {count} switches, {builder?.Slots?.Count ?? 0} assigned");
         }
         private static void Changed(MyToolbar source,MyToolbar.IndexArgs index,bool gamepad)
@@ -214,6 +257,8 @@ namespace SpaceEngineersVR.Cockpits
         {
             internal string Toolbar="";
             internal bool[] Covers=new bool[0];
+            /// <summary>Per control: a throttle lever that stays where it is let go (default: it springs back to zero).</summary>
+            internal bool[] Holds=new bool[0];
         }
         private static MyObjectBuilder_Toolbar ParseToolbar(string xml)
             => string.IsNullOrEmpty(xml) ? null:MyAPIGateway.Utilities.SerializeFromXML<MyObjectBuilder_Toolbar>(xml);
@@ -225,35 +270,38 @@ namespace SpaceEngineersVR.Cockpits
         internal static Record LoadLocal(MyCockpit seat)
         {
             var stored=Find(MySession.Static.CurrentPath,seat.EntityId);
-            return stored==null ? new Record() : new Record { Toolbar=stored.Toolbar,Covers=(bool[])stored.Covers.Clone() };
+            return stored==null ? new Record() : new Record { Toolbar=stored.Toolbar,Covers=(bool[])stored.Covers.Clone(),Holds=(bool[])stored.Holds.Clone() };
         }
         internal static void SaveLocal(MyCockpit seat,Record record)
         {
             string path=MySession.Static.CurrentPath; long id=seat.EntityId;
             var entries=Entries().Where(s=>s.World!=path || s.Cockpit!=id).ToList();
-            entries.Add(new Entry { World=path,Cockpit=id,Toolbar=record.Toolbar ?? "",Covers=record.Covers ?? new bool[0] });
+            entries.Add(new Entry { World=path,Cockpit=id,Toolbar=record.Toolbar ?? "",Covers=record.Covers ?? new bool[0],Holds=record.Holds ?? new bool[0] });
             VRSettings.ColbyCockpitSwitches=string.Join(";",entries.Select(e=>Encode(e.World)+","+e.Cockpit+","+Encode(e.Toolbar)+","+
-                new string(e.Covers.Select(c=>c ? '1':'0').ToArray())));
+                Bits(e.Covers)+(e.Holds.Any(h=>h) ? ","+Bits(e.Holds) : "")));
             VRSettings.Save();
         }
         private sealed class Entry
         {
             public string World,Toolbar;
             public long Cockpit;
-            public bool[] Covers;
+            public bool[] Covers,Holds;
         }
+        private static string Bits(bool[] values) => new string(values.Select(c=>c ? '1':'0').ToArray());
         private static Entry Find(string world,long cockpit) => Entries().FirstOrDefault(s=>s.World==world && s.Cockpit==cockpit);
-        // world,cockpit,toolbar,covers per entry, entries split by ';': the world path and toolbar XML in base64, covers as 0 and 1.
+        // world,cockpit,toolbar,covers[,holds] per entry, entries split by ';': the world path and toolbar XML in base64, covers
+        // and the throttle levers that stay where let go as 0 and 1 by slot (holds left out while none do).
         private static IEnumerable<Entry> Entries()
         {
             foreach(string item in (VRSettings.ColbyCockpitSwitches ?? "").Split(new[] {';'},StringSplitOptions.RemoveEmptyEntries))
             {
                 string[] parts=item.Split(',');
-                if(parts.Length!=4 || !long.TryParse(parts[1],out long cockpit)) continue;
+                if(parts.Length!=4 && parts.Length!=5 || !long.TryParse(parts[1],out long cockpit)) continue;
                 string world,toolbarXml;
                 try { world=Decode(parts[0]); toolbarXml=Decode(parts[2]); }
                 catch(FormatException) { continue; }
-                yield return new Entry { World=world,Cockpit=cockpit,Toolbar=toolbarXml,Covers=parts[3].Select(c=>c=='1').ToArray() };
+                yield return new Entry { World=world,Cockpit=cockpit,Toolbar=toolbarXml,Covers=parts[3].Select(c=>c=='1').ToArray(),
+                    Holds=parts.Length==5 ? parts[4].Select(c=>c=='1').ToArray() : new bool[0] };
             }
         }
         private static string Encode(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text ?? ""));
@@ -275,7 +323,7 @@ namespace SpaceEngineersVR.Cockpits
             }
             toolbarGrid=null;
             Array.Clear(analog,0,analog.Length); Array.Clear(nextAnalog,0,nextAnalog.Length);
-            toolbar=null; owner=null; loadedXml=null;
+            toolbar=null; owner=null; loadedXml=null; holds=new bool[0];
         }
     }
 }

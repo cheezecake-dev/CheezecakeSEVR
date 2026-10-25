@@ -1,6 +1,4 @@
 // GuiTextures: game content paths shared by more than one screen.
-using Sandbox.Definitions;
-using VRage.Game;
 
 namespace SpaceEngineersVR.Gui
 {
@@ -27,22 +25,5 @@ namespace SpaceEngineersVR.Gui
         public const string RadialSectorSelected = "Textures\\GUI\\Controls\\RadialSectorSelected.dds";
         public const string RadialCentre = "Textures\\GUI\\Controls\\RadialCentralCircle.dds";
         public const string RadialCentreSelected = "Textures\\GUI\\Controls\\RadialCentralCircleSelected.dds";
-
-        /// <summary>
-        /// The game's own picture of a kind of thing: the first icon of the first loaded definition of <typeparamref name="T"/>
-        /// that has one, as its inventory and the G menu draw it; null while the definitions are not loaded or none has one.
-        /// </summary>
-        public static string DefinitionIcon<T>() where T : MyDefinitionBase
-        {
-            MyDefinitionManager definitions = MyDefinitionManager.Static;
-            if (definitions == null)
-                return null;
-            foreach (T definition in definitions.GetDefinitionsOfType<T>())
-            {
-                if (definition.Icons != null && definition.Icons.Length > 0 && !string.IsNullOrEmpty(definition.Icons[0]))
-                    return definition.Icons[0];
-            }
-            return null;
-        }
     }
 }

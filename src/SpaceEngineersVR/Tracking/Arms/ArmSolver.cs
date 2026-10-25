@@ -488,7 +488,7 @@ namespace SpaceEngineersVR.Tracking
         }
 
         /// <summary>Puts a bone at a model-space pose (origin and axes), as the game's solver puts the palm on its target.</summary>
-        private static void Place(MyCharacterBone bone, in Matrix pose)
+        internal static void Place(MyCharacterBone bone, in Matrix pose)
         {
             Matrix relative = pose * Matrix.Invert(bone.BindTransform * bone.Parent.AbsoluteTransform);
             bone.Rotation = Quaternion.CreateFromRotationMatrix(Matrix.Normalize(relative).GetOrientation());

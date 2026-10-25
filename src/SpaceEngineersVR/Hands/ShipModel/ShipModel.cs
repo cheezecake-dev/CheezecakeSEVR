@@ -31,8 +31,6 @@ namespace SpaceEngineersVR.Hands
     /// ship, a neutral or unowned one is not shown, however close, and one that stops being yours while shown is put away.</item>
     /// <item>It rides above the off hand, the ship's forward (the cockpit's) pointing where you look, until either hand grips
     /// it: then it turns with that hand, two hands scale it, and let go it stays where it was left.</item>
-    /// <item>Raised from the datapad's Ship page instead, it stands on the pad's screen and goes where the pad goes; a grip
-    /// turns it there, and it goes when the pad is put away (<see cref="TogglePad"/>).</item>
     /// <item>Damaged blocks are red, deeper the more damaged; blocks destroyed or removed while it is out are dark. The overlays
     /// (thrusters orange, power yellow, doors green, weapons outlined red) are switched on the wheel's Model overlays page.</item>
     /// <item>The dominant hand's fingertip in a block of the model, or its ray on one, lights that block on the model and
@@ -216,8 +214,6 @@ namespace SpaceEngineersVR.Hands
                     Hide(main.Closed || main.MarkedForClose ? "the grid is gone" : "switched off");
                 else if (!hiding && !Permitted(main))
                     Hide("the grid is no longer yours or your faction's");
-                else if (!hiding && onPad && (!Datapad.Out || Datapad.Now == Datapad.Phase.Going))
-                    Hide("the datapad was put away");
                 fade = MathHelper.Clamp(fade + (hiding ? -dt : dt) / FadeSeconds, 0f, 1f);
                 if (hiding)
                 {
@@ -256,7 +252,6 @@ namespace SpaceEngineersVR.Hands
         {
             LetGoAll();
             Unpoint();
-            onPad = false;
             foreach (Part part in parts)
                 Unhook(part.Grid);
             parts.Clear();

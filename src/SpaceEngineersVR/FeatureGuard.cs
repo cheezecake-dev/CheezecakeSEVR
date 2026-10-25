@@ -28,9 +28,14 @@ namespace SpaceEngineersVR
         private volatile bool off;
         private long backAt;
 
-        public FeatureGuard(string name)
+        private readonly Func<long> clock;
+
+        /// <param name="name">Heads the guard's log lines.</param>
+        /// <param name="timestamp">The time, in Stopwatch ticks; null for <see cref="Stopwatch.GetTimestamp"/> (a test passes its own).</param>
+        public FeatureGuard(string name, Func<long> timestamp = null)
         {
             this.name = name;
+            clock = timestamp ?? Stopwatch.GetTimestamp;
         }
 
         /// <summary>The feature may run this frame.</summary>
@@ -45,7 +50,7 @@ namespace SpaceEngineersVR
                     Log.Error(e, context);
                 if (off)
                     return false;
-                long now = Stopwatch.GetTimestamp();
+                long now = clock();
                 if (inBurst == 0 || Seconds(burstStart, now) > BurstSeconds)
                 {
                     burstStart = now;
@@ -74,13 +79,13 @@ namespace SpaceEngineersVR
 
         private bool Back()
         {
-            if (Stopwatch.GetTimestamp() < backAt)
+            if (clock() < backAt)
                 return false;
             lock (gate)
             {
                 if (!off)
                     return true;
-                if (Stopwatch.GetTimestamp() < backAt)
+                if (clock() < backAt)
                     return false;
                 off = false;
             }

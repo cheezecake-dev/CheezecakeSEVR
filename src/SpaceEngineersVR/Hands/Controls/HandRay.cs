@@ -6,6 +6,10 @@ using Sandbox.Game.Entities.Character;
 using Sandbox.Game.SessionComponents.Clipboard;
 using Sandbox.Game.Weapons;
 using Sandbox.Game.World;
+using Sandbox.Engine.Physics;
+using VRage.Game.Entity;
+using VRage.Game.ModAPI;
+using VRage.ModAPI;
 using SpaceEngineersVR.Input;
 using SpaceEngineersVR.Rendering;
 using VRage.Game;
@@ -22,8 +26,11 @@ namespace SpaceEngineersVR.Hands
     /// on the hand when the body and the view are moved on past the game frame; never while a menu is up (the laser
     /// pointer is the line then, see <see cref="Laser"/>). The dot is where the builder's own ray cast hits (MyCubeBuilder.GetCurrentRayIntersection),
     /// the same ray the builder and the use detectors are given. Drawn for the empty hand and for placing blocks (the block
-    /// placer, the cube builder, a paste), where it shows where a block goes; never while a hand tool or weapon is held
-    /// (<see cref="HoldsToolOrWeapon"/>): the tool itself shows where it points, and a line off it breaks the immersion.
+    /// placer, the cube builder, a paste), where it shows where a block goes. With a welder, grinder or drill in hand
+    /// (<see cref="VRSettings.ToolLaser"/>) it is the tool's own laser instead: from the tool's tip over the reach its own
+    /// sensor works (the welder's or grinder's caster, the drill's sensor: <see cref="ToolAim.TrySensor"/>), with the dot where
+    /// that reach meets something the sensor would (cast in the sensor's own collision layer), so the player sees where it
+    /// will act and when it is in reach. A gun has none: its aim is the crosshair's (<see cref="Rendering.HandCrosshair"/>).
     /// </summary>
     internal static class HandRay
     {
@@ -60,8 +67,14 @@ namespace SpaceEngineersVR.Hands
                 // A menu is up (the game shows its cursor): the pointer is the laser's, not a tool's.
                 if (MySandboxGame.Static == null || MySandboxGame.Static.IsCursorVisible)
                     return;
-                if (HoldsToolOrWeapon() || Ping.Aiming)
+                if (Ping.Aiming)
                     return; // a ping's aim draws its own, longer laser
+                if (HoldsToolOrWeapon())
+                {
+                    if (VRSettings.ToolLaser)
+                        DrawToolLaser();
+                    return;
+                }
                 if (!HandPlacement.TryRay(out Vector3D origin, out Vector3D direction))
                     return;
 
@@ -88,6 +101,52 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
+        /// The held tool's laser: a line from its tip along its sensor's line to where that reach ends or first meets something, and the dot
+        /// there when it meets something. Nothing for a gun, or an item the game holds its own way (<see cref="ToolAim.TryGet"/>).
+        /// </summary>
+        private static void DrawToolLaser()
+        {
+            if (!ToolAim.TryGet(out MyCharacter character, out IMyEntity weapon, out _, out _)
+                || !ToolAim.TrySensor(weapon, out Vector3D from, out Vector3D to))
+                return;
+            Vector3D direction = Vector3D.Normalize(to - from);
+            bool hit = ToolAim.FirstHit(from, to, character, weapon, MyPhysics.CollisionLayers.ObjectDetectionCollisionLayer, out double along);
+            Vector3D start = weapon is IMyHandheldGunObject<MyToolBase> tool && tool.GunBase != null
+                ? Vector3D.Transform(tool.GunBase.GetMuzzleLocalPosition(), weapon.WorldMatrix)
+                : from;
+            // Out of the tip along the sensor's line: to what the sensor meets, or as far past the tip as its reach goes.
+            Vector3D end = hit ? from + direction * along : start + direction * Math.Max(0d, Vector3D.Dot(to - start, direction));
+            Vector3D line = end - start;
+            double length = line.Length();
+            if (length > 0.02 && Vector3D.Dot(line, direction) > 0d)
+                MotionExtrapolation.AddLine(LineMaterial, LineColor, start, (Vector3)(line / length), (float)length, LineThickness);
+            if (hit)
+                MotionExtrapolation.AddPoint(DotMaterial, DotColor, end - direction * DotLift, DotRadius);
+            NoteToolLaser(weapon, hit, from, to, along);
+        }
+
+        /// <summary>
+        /// One line each time the held tool changes or its laser starts or stops meeting something (not more than twice a second):
+        /// what a test, or a player reading the log, can tell the laser by without seeing it.
+        /// </summary>
+        private static void NoteToolLaser(IMyEntity weapon, bool hit, Vector3D from, Vector3D to, double along)
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            bool newTool = !ReferenceEquals(weapon, laserLoggedTool);
+            if (!newTool && (hit == laserLoggedHit || now - laserLoggedAt < System.Diagnostics.Stopwatch.Frequency / 2))
+                return;
+            laserLoggedTool = weapon;
+            laserLoggedHit = hit;
+            laserLoggedAt = now;
+            Log.Info($"Hand tools: the {weapon.GetType().Name}'s laser drawn from its tip over its sensor's reach ({Vector3D.Distance(from, to):0.00} m), " +
+                     $"{(hit ? $"meeting something {along:0.00} m along" : "meeting nothing")}");
+        }
+
+        private static IMyEntity laserLoggedTool;
+        private static bool laserLoggedHit;
+        private static long laserLoggedAt;
+
+        /// <summary>
         /// How far the ray is drawn: the builder's reach while it builds or pastes (or the game's use distance, if that is
         /// farther), otherwise as far as the use line from the hand reaches.
         /// </summary>
@@ -110,7 +169,7 @@ namespace SpaceEngineersVR.Hands
         /// The local character has a hand tool or weapon in hand (a grinder, welder or drill, a rifle, pistol or launcher):
         /// anything in hand but the block placer, while no block or paste is being placed.
         /// </summary>
-        private static bool HoldsToolOrWeapon()
+        internal static bool HoldsToolOrWeapon()
         {
             var held = MySession.Static?.LocalCharacter?.CurrentWeapon;
             return held != null && !(held is MyBlockPlacerBase) && !BuildMode.Active && !Building();

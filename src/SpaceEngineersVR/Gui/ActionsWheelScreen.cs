@@ -5,6 +5,7 @@ using Sandbox;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Input.Bindings;
 using VRage.Audio;
 using VRage.Input;
 using VRage.Utils;
@@ -331,19 +332,13 @@ namespace SpaceEngineersVR.Gui
                 return;
             }
 
-            if (VRInput.IsNewPressed(Hand.Right, VRButtons.B) || MyInput.Static.IsNewKeyPressed(MyKeys.Escape))
+            // Close the actions wheel (B, Y or a tap of Menu, by default): back out of a page first, then close.
+            if (ControllerBindings.Started(VRAction.CloseActionsWheel) || MyInput.Static.IsNewKeyPressed(MyKeys.Escape))
             {
                 if (onPage)
-                    Back("B");
+                    Back("close");
                 else
-                    Close("B");
-                return;
-            }
-            // Menu closes it on a tap; a hold recentres the view instead (VRControls.MenuButton).
-            if (VRInput.IsNewPressed(Hand.Left, VRButtons.Y)
-                || (VRControls.MenuHoldOff ? VRInput.IsNewPressed(Hand.Left, VRButtons.Menu) : VRControls.MenuTapped))
-            {
-                Close("Y or Menu");
+                    Close("close");
                 return;
             }
 
@@ -360,13 +355,9 @@ namespace SpaceEngineersVR.Gui
             }
 
             bool release = gripHeld && !VRInput.IsPressed(hand, VRButtons.Grip);
-            bool leftTrigger = VRInput.IsNewPressed(Hand.Left, VRButtons.Trigger), rightTrigger = VRInput.IsNewPressed(Hand.Right, VRButtons.Trigger);
-            bool trigger = leftTrigger || rightTrigger;
-            // A trigger pulled on the wheel is the wheel's: it does not fire a tool when the wheel has closed under a finger still on it.
-            if (leftTrigger)
-                VRControls.SwallowTrigger(Hand.Left);
-            if (rightTrigger)
-                VRControls.SwallowTrigger(Hand.Right);
+            // A trigger pulled on the wheel is the wheel's: a press belongs to where it began, so it does not fire a tool when the
+            // wheel has closed under a finger still on it (ControllerBindings).
+            bool trigger = ControllerBindings.Started(VRAction.WheelActivate);
             if (release)
                 gripHeld = false;
             if (release || trigger)
