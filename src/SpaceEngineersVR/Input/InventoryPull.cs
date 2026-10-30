@@ -19,7 +19,8 @@ namespace SpaceEngineersVR.Input
     /// <para>The game's own switch to one inventory item, MyCharacter.SwitchToWeapon(itemId), as the toolbar's slot does
     /// for its weapon, so it is synced and the game's rules apply (CanSwitchToWeapon: not on a ladder, and so on). The item
     /// must be one the G menu would let you pick (<see cref="Gui.InventoryToolbar.TryHandItem"/>), in your own inventory.</para>
-    /// <para>The grip over such an item is the pull's for as long as it is held (<see cref="OwnsGrip"/>): the laser does not
+    /// <para>The grip over such an item is the pull's for as long as it is held (claimed on the menu through
+    /// <see cref="Hands.GripClaim.ClaimInMenu"/>, as <see cref="ClaimName"/>): the laser does not
     /// make it the right mouse button, which on a tool or gun in the inventory does nothing in the game
     /// (MyTerminalInventoryController.ActivateItemKeyboard acts only on consumables and datapads). Over anything
     /// else the grip stays the right button. The pull is measured along the panel's facing (<see cref="Rendering.HudPanel"/>), so
@@ -27,6 +28,9 @@ namespace SpaceEngineersVR.Input
     /// </remarks>
     internal static class InventoryPull
     {
+        /// <summary>The name the grip is claimed under on the menu (<see cref="Hands.GripClaim"/>).</summary>
+        internal const string ClaimName = "Inventory pull";
+
         /// <summary>The hand drawn back this far toward you from where the grip closed takes the item, metres.</summary>
         internal const float PullMetres = 0.15f;
 
@@ -38,16 +42,13 @@ namespace SpaceEngineersVR.Input
         private static string itemName;
         private static Vector3 startAt, facing;
 
-        /// <summary>The grip of <paramref name="which"/> is a pull's, not the right mouse button.</summary>
-        internal static bool OwnsGrip(Hand which) => active && hand == which;
-
         /// <summary>
         /// Game thread, from the laser, as the grip closes with the ray on the panel: a pull begins when the grid under the
         /// cursor is your own inventory and the cell under it a tool or gun you may take.
         /// </summary>
         internal static bool TryBegin(Hand which, MyGuiControlGrid grid, in Vector3 handAt, in Matrix panel)
         {
-            active = false;
+            End();
             MyCharacter character = MySession.Static?.LocalCharacter;
             if (grid == null || character == null || !(grid.UserData is MyInventory inventory) || !ReferenceEquals(inventory, character.GetInventory()))
                 return false;
@@ -60,6 +61,8 @@ namespace SpaceEngineersVR.Input
             if (!(normal.LengthSquared() > 1e-6f))
                 return false;
             normal.Normalize();
+            if (!Hands.GripClaim.ClaimInMenu(which, ClaimName))
+                return false;
             active = true;
             done = false;
             hand = which;
@@ -80,7 +83,7 @@ namespace SpaceEngineersVR.Input
             {
                 if (!done)
                     Log.Info($"Inventory pull: let go of the {itemName} before pulling it out");
-                active = false;
+                End();
                 return;
             }
             if (done)
@@ -95,6 +98,14 @@ namespace SpaceEngineersVR.Input
         /// <summary>The screen closed or the laser lost the panel: the pull ends.</summary>
         internal static void Cancel()
         {
+            End();
+        }
+
+        /// <summary>The pull is over: its grip is the right mouse button again.</summary>
+        private static void End()
+        {
+            if (active)
+                Hands.GripClaim.Release(hand, ClaimName);
             active = false;
         }
 

@@ -50,9 +50,6 @@ namespace SpaceEngineersVR.OpenXR
         /// <summary>The averaged lead is logged once, after this many samples.</summary>
         private const int LeadSamplesToLog = 300;
 
-        /// <summary>RenderDebug HandIKLead=0: the game's hands at the display time of the frame they are read in, to compare.</summary>
-        public static bool Lead = true;
-
         private static double leadNs;
         private static long leadSampleMin = long.MaxValue, leadSampleMax;
         private static int leadSamples;
@@ -120,7 +117,7 @@ namespace SpaceEngineersVR.OpenXR
         private ulong viveProfile;
         private readonly bool[] wand = new bool[2];
 
-        // Render thread only: the hand's current profile as the bindings name it (ControllerBindings.Key), or null.
+        // Render thread only: the hand's current profile as the bindings name it (InteractionProfile.Key), or null.
         private readonly string[] profileKey = new string[2];
 
 
@@ -374,7 +371,7 @@ namespace SpaceEngineersVR.OpenXR
             {
                 leadStartLogged = true;
                 Log.Info($"OpenXR hands for the game: located {period / 1e6:F1} ms (one display period) after the frame's display time " +
-                         "until the time to the frame drawn from them is measured" + (Lead ? string.Empty : "; HandIKLead=0, so at the display time"));
+                         "until the time to the frame drawn from them is measured");
             }
 
             long drawnFrom = CameraHeadLink.HandsFrameTime;
@@ -390,12 +387,11 @@ namespace SpaceEngineersVR.OpenXR
                     {
                         Log.Info($"OpenXR hands for the game: located {leadNs / 1e6:F1} ms ({leadNs / period:F2} display periods of {period / 1e6:F1} ms) " +
                                  $"after the display time of the frame they are read in: the measured average until the frame drawn from them " +
-                                 $"is shown, over {leadSamples} frames (from {leadSampleMin / (double)period:F1} to {leadSampleMax / (double)period:F1} periods)" +
-                                 (Lead ? string.Empty : "; HandIKLead=0, so not applied"));
+                                 $"is shown, over {leadSamples} frames (from {leadSampleMin / (double)period:F1} to {leadSampleMax / (double)period:F1} periods)");
                     }
                 }
             }
-            return Lead ? displayTime + (long)leadNs : displayTime;
+            return displayTime + (long)leadNs;
         }
 
         private void Frame(long displayTime, long poseTime, bool focused)

@@ -121,7 +121,8 @@ namespace SpaceEngineersVR.Gui
         private static readonly List<Claim> claims = new List<Claim>();
         private static readonly List<int> want = new List<int>();
         private static bool applying;
-        private static int frame, errors, retryAt, seatedAt;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(TouchToolbar));
+        private static int frame, retryAt, seatedAt;
         private static long refusedFor, seatedIn;
         private static string lastCase;
 
@@ -221,7 +222,7 @@ namespace SpaceEngineersVR.Gui
 
         private static void Update()
         {
-            if (errors >= 3)
+            if (!guard.On)
                 return;
             try
             {
@@ -314,9 +315,7 @@ namespace SpaceEngineersVR.Gui
 
         private static void Failed(Exception e, string what)
         {
-            if (errors++ < 3)
-                Log.Error(e, $"Touch toolbar failed ({what})");
-            if (errors < 3)
+            if (!guard.Failed(e, $"Touch toolbar failed ({what})"))
                 return;
             for (int i = claims.Count - 1; i >= 0; i--)
             {

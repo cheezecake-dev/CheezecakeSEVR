@@ -70,12 +70,12 @@ namespace SpaceEngineersVR.Tracking
         private static string itemName;
         private static Vector3D otherGrip;
         private static bool hasOtherGrip;
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(ToolSteady));
 
         /// <summary>Game thread, as a camera goes to the renderer (<see cref="CameraHeadLink"/>).</summary>
         public static void Camera(in MatrixD view)
         {
-            if (!On || errors >= 3)
+            if (!On || !guard.On)
                 return;
             try
             {
@@ -83,8 +83,7 @@ namespace SpaceEngineersVR.Tracking
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Tool steadiness could not be measured");
+                guard.Failed(e, "Tool steadiness could not be measured");
             }
         }
 

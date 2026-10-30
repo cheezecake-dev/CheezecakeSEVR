@@ -53,7 +53,7 @@ namespace SpaceEngineersVR.Hands
         private static Vector4[] looks;
         private static Vector4 pointedLinear;
         private static readonly List<MyBillboard> batch = new List<MyBillboard>(QuadBudget + 16);
-        private static int drawErrors;
+        private static readonly FeatureGuard drawGuard = new FeatureGuard(nameof(ShipModel) + " drawing");
 
         // The cost, for the Perf line.
         private static long costTicks, costMaxTicks;
@@ -84,7 +84,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The gameplay screen's draw: the model, its marks, and the real block's outline.</summary>
         private static void Draw()
         {
-            if (!Shown || fade <= 0f || drawErrors >= 3 || !MyTransparentGeometry.HasCamera)
+            if (!Shown || fade <= 0f || !drawGuard.On || !MyTransparentGeometry.HasCamera)
                 return;
             long start = Stopwatch.GetTimestamp();
             try
@@ -134,8 +134,7 @@ namespace SpaceEngineersVR.Hands
             catch (Exception e)
             {
                 batch.Clear();
-                if (drawErrors++ < 3)
-                    Log.Error(e, "Ship model could not be drawn" + (drawErrors >= 3 ? "; it is not drawn for the rest of this run" : string.Empty));
+                drawGuard.Failed(e, "Ship model could not be drawn");
             }
         }
 

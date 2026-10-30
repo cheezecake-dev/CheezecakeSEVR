@@ -57,9 +57,6 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The name the grip is claimed under (<see cref="GripClaim"/>).</summary>
         public const string ClaimName = "Helmet";
 
-        /// <summary>The helmet asks first of the physical interactions, after a hand on the held tool's own grip.</summary>
-        public const int ClaimPriority = 10;
-
         /// <summary>A tick as the hand reaches the helmet, or a fingertip the temple.</summary>
         public const float TickAmplitude = 0.22f, TickSeconds = 0.02f;
 
@@ -153,11 +150,11 @@ namespace SpaceEngineersVR.Hands
         {
             try
             {
-                GripClaim.Register(ClaimName, ClaimPriority, Take);
+                GripClaim.Register(ClaimName, GripPriority.HeadGestures, Take);
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(HeadGestures), nameof(AfterSimulation)));
                 hooked = true;
-                Log.Info($"Helmet and lamp by hand: hooked (grip claim at priority {ClaimPriority}: a grip within {HelmetReach * 100:0} cm of the {HelmetShell * 100:0} cm helmet shell holds the sun visor on its front, opens or closes the helmet on its right side and switches the lamp on its left, as a fingertip tap on either temple switches the lamp)");
+                Log.Info($"Helmet and lamp by hand: hooked (grip claim at priority {(int)GripPriority.HeadGestures}: a grip within {HelmetReach * 100:0} cm of the {HelmetShell * 100:0} cm helmet shell holds the sun visor on its front, opens or closes the helmet on its right side and switches the lamp on its left, as a fingertip tap on either temple switches the lamp)");
             }
             catch (Exception e)
             {

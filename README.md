@@ -306,12 +306,13 @@ example "Press [Right grip] to open".
   container you may not use leaves the clicks as they were. A reminder shows the first time you point at one or your
   hand is on one.
 - **Cockpit sticks** (on by default; Options > VR > Controls, **Cockpits (from ColbyJack1134's SpaceEngineersVR)**): in
-  one of the game's cockpits, the sticks in the seat move with your hands. Reach a hand to one and squeeze the grip to
+  one of the game's cockpits, or a mod's cockpit built on one whose mod tells the plugin so, the sticks in the seat move
+  with your hands. Reach a hand to one and squeeze the grip to
   take hold of it: tilt the right stick to pitch and roll and twist it to yaw; push and pull the left one to move, and
   twist it to go up and down. Let go and it springs back to centre. In a rover, buggy or speeder, take the wheel or
   handlebars the same way and turn them to steer.
   - The thumbsticks fly such a cockpit too only with **Thumbstick controls in cockpits** on. A remote control, and a seat
-    without sticks of its own (a modded cockpit), fly on the thumbsticks.
+    without sticks of its own (a modded cockpit its mod has not told the plugin about), fly on the thumbsticks.
   - A stick is taken with your hand anywhere round its handle or a few centimetres short of it, however your hand is
     turned; a pulse in the controller says you are close enough. A hand closed round a stick takes the stick even when
     a fingertip rests on a switch beside it.
@@ -455,7 +456,8 @@ On foot and on the jetpack. Most of these can be turned off in Options > VR > **
   gun is loaded.
 - **Aim down the sights:** raise a gun and look along its sights, and you are aiming as with the iron sight button in flat
   play: tighter shots, a slower walk, no sprint. A light tick in the gun hand marks starting and stopping. Your view is not
-  zoomed (**Aim down the sights**, under **Guns (from ColbyJack1134's SpaceEngineersVR)**).
+  zoomed (**Aim down the sights**, under **Guns (from ColbyJack1134's SpaceEngineersVR)**). A mod's gun aims down its
+  sights once its mod gives the plugin where they are; it reloads by hand either way.
 - **Helmet and suit lamp:** on foot or in a seat, grip the right side of your helmet, with either hand, to open or close
   it, and the left side to switch the suit lamp (in a seat too it is your suit's lamp, not the ship's lights); or tap the side of your head with a fingertip for the lamp (**Helmet and lamp by hand**). With
   **Helmet view** off, either side switches the lamp. The helmet and the lamp are also on the wrist panel and the actions wheel.

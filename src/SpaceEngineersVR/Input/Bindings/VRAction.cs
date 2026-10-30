@@ -170,22 +170,23 @@ namespace SpaceEngineersVR.Input.Bindings
 
         /// <summary>
         /// Left-handed, the action moves to the other hand's matching control (<see cref="BindingMirror"/>): the tool hand's
-        /// triggers and stick click, the laser hand's click, right click and item move, the off hand's amount buttons. Sprint
-        /// moves with it only while a gun that reloads is held.
+        /// triggers and stick clicks, the laser hand's click, right click and item move, the off hand's amount buttons. Where it
+        /// is used with which of its bindings is <see cref="BindingMirror.Moves"/>'s to say.
         /// </summary>
         public readonly bool FollowsHand;
 
         /// <summary>
-        /// Left-handed, the places where a hand-following action stays on its own control because a held mode has the one it
-        /// would move to: reload on the jetpack, where zero-g pitch and roll holds the left stick click (Hands.Reload.ButtonHandIn).
+        /// A hand-following action that moves only to make way: left-handed, it moves while another hand-following action that
+        /// can be used now moves onto its control (sprint, while a gun that reloads has the left stick click), and stays on its
+        /// own control otherwise (<see cref="BindingMirror.Moves"/>).
         /// </summary>
-        public readonly BindingContext StaysLeftHanded;
+        public readonly bool MakesWay;
 
         public VRActionInfo(VRAction action, string name, string group, BindingContext contexts, string fixedBecause = null, bool heldMode = false,
-                            bool followsHand = false, BindingContext staysLeftHanded = BindingContext.None)
+                            bool followsHand = false, bool makesWay = false)
         {
-            FollowsHand = followsHand;
-            StaysLeftHanded = staysLeftHanded;
+            FollowsHand = followsHand || makesWay;
+            MakesWay = makesWay;
             Index = (int)action;
             SaveName = action.ToString();
             Name = name;
@@ -196,7 +197,7 @@ namespace SpaceEngineersVR.Input.Bindings
             Suggested = Array.Empty<Binding>();
         }
 
-        /// <summary>An outside action: rebindable, never a held mode, never staying put left-handed.</summary>
+        /// <summary>An outside action: rebindable, never a held mode, and when it follows the hand, never only to make way.</summary>
         internal VRActionInfo(int index, string owner, string saveName, string name, string group, BindingContext contexts, bool followsHand,
                               IReadOnlyList<Binding> suggested)
         {
@@ -246,7 +247,7 @@ namespace SpaceEngineersVR.Input.Bindings
         private static readonly VRActionInfo[] builtIn = Build(
             new VRActionInfo(VRAction.Jump, "Jump", OnFootGroup, BindingContext.OnFoot | BindingContext.WristPanel),
             new VRActionInfo(VRAction.Crouch, "Crouch", OnFootGroup, BindingContext.OnFoot | BindingContext.WristPanel),
-            new VRActionInfo(VRAction.Sprint, "Sprint (hold)", OnFootGroup, BindingContext.OnFoot | BindingContext.WristPanel, followsHand: true),
+            new VRActionInfo(VRAction.Sprint, "Sprint (hold)", OnFootGroup, BindingContext.OnFoot | BindingContext.WristPanel, makesWay: true),
             new VRActionInfo(VRAction.ToggleJetpack, "Jetpack on/off", OnFootGroup, Moving),
             new VRActionInfo(VRAction.Dampeners, "Dampeners on/off", OnFootGroup, Moving | BindingContext.Seat),
             new VRActionInfo(VRAction.Ping, "Ping (hold to aim, let go to ping)", OnFootGroup, Moving | BindingContext.Seat),
@@ -254,7 +255,7 @@ namespace SpaceEngineersVR.Input.Bindings
             new VRActionInfo(VRAction.Use, "Use what you point at", OnFootGroup, Moving, GripGrabs),
             new VRActionInfo(VRAction.PrimaryAction, "Fire, weld, grind or drill", OnFootGroup, Moving, followsHand: true),
             new VRActionInfo(VRAction.SecondaryAction, "Tool's secondary action", OnFootGroup, Moving, followsHand: true),
-            new VRActionInfo(VRAction.Reload, "Reload", OnFootGroup, Moving, followsHand: true, staysLeftHanded: BindingContext.Jetpack),
+            new VRActionInfo(VRAction.Reload, "Reload", OnFootGroup, Moving, followsHand: true),
             new VRActionInfo(VRAction.ToolsWheel, "Tools wheel (hold)", OnFootGroup, Moving | BindingContext.ToolsWheel, GripGrabs),
             new VRActionInfo(VRAction.WristPanel, "Wrist panel open/close", OnFootGroup, Moving | BindingContext.WristPanel),
 
@@ -287,7 +288,8 @@ namespace SpaceEngineersVR.Input.Bindings
             new VRActionInfo(VRAction.PingCommit, "Ping or mark (aiming from the wheel)", WheelGroup, BindingContext.PingAim, followsHand: true),
             new VRActionInfo(VRAction.PingCancel, "Stop aiming", WheelGroup, BindingContext.PingAim),
 
-            new VRActionInfo(VRAction.LeaveSeat, "Leave the seat or camera (hold)", SeatGroup, BindingContext.Seat | BindingContext.CameraView),
+            new VRActionInfo(VRAction.LeaveSeat, "Leave the seat, turret or camera (hold)", SeatGroup,
+                BindingContext.Seat | BindingContext.Turret | BindingContext.CameraView),
             new VRActionInfo(VRAction.SeatToolsWheel, "Tools wheel", SeatGroup, BindingContext.Seat),
             new VRActionInfo(VRAction.ThrustUp, "Thrust up", SeatGroup, BindingContext.Seat),
             new VRActionInfo(VRAction.ThrustDown, "Thrust down", SeatGroup, BindingContext.Seat),
@@ -393,21 +395,8 @@ namespace SpaceEngineersVR.Input.Bindings
         /// <summary>The two actions can be wanted at the same moment, so their bindings must not collide.</summary>
         public static bool SameContext(int a, int b) => SameContext(ContextsOf(a), ContextsOf(b));
 
-        /// <summary>
-        /// As <see cref="SameContext(int, int)"/> for the bindings as they work left-handed (<see cref="BindingMirror.Table"/>):
-        /// a hand-following action's moved binding does not act where it stays on its own control (<see cref="VRActionInfo.StaysLeftHanded"/>).
-        /// </summary>
-        public static bool SameContextLeftHanded(int a, int b) => SameContext(LeftHandedContexts(a), LeftHandedContexts(b));
-
-        private static BindingContext LeftHandedContexts(int action)
-        {
-            VRActionInfo info = Info(action);
-            if (info == null)
-                return BindingContext.None;
-            return info.FollowsHand ? info.Contexts & ~info.StaysLeftHanded : info.Contexts;
-        }
-
-        private static bool SameContext(BindingContext x, BindingContext y)
+        /// <summary>Actions applying in <paramref name="x"/> and actions applying in <paramref name="y"/> can be wanted at the same moment.</summary>
+        public static bool SameContext(BindingContext x, BindingContext y)
         {
             if ((x & y) != 0)
                 return true;

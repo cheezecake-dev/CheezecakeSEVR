@@ -100,7 +100,8 @@ namespace SpaceEngineersVR.Input.Bindings
         /// <summary>
         /// <paramref name="candidate"/> added to <paramref name="list"/> (<paramref name="profile"/>'s bindings) clashes with no
         /// binding there (<see cref="BindingEngine.Conflicts"/>), neither as they work right-handed nor left-handed
-        /// (<see cref="BindingMirror.Table"/>), so a suggestion given does not depend on the handedness setting.
+        /// (<see cref="BindingMirror.Conflicts"/>, with every action counted usable), so a suggestion given does not depend on the
+        /// handedness setting or on what the settings switch off.
         /// </summary>
         public static bool ClashesWithNothing(string profile, IReadOnlyList<Binding> list, Binding candidate)
         {
@@ -110,10 +111,8 @@ namespace SpaceEngineersVR.Input.Bindings
             foreach ((Binding a, Binding b, string _) in BindingEngine.Conflicts(trial, VRActions.SameContext, VRActions.HeldMode))
                 if (ReferenceEquals(a, candidate) || ReferenceEquals(b, candidate))
                     return false;
-            List<Binding> left = BindingMirror.Table(profile, trial);
-            Binding moved = left[left.Count - 1];
-            foreach ((Binding a, Binding b, string _) in BindingEngine.Conflicts(left, VRActions.SameContextLeftHanded, VRActions.HeldMode))
-                if (ReferenceEquals(a, moved) || ReferenceEquals(b, moved))
+            foreach ((Binding a, Binding b, string _) in BindingMirror.Conflicts(profile, trial, _ => true))
+                if (ReferenceEquals(a, candidate) || ReferenceEquals(b, candidate))
                     return false;
             return true;
         }

@@ -87,8 +87,12 @@ namespace SpaceEngineersVR.Hands
                 Log.Info($"Build: placed {MyCubeBuilder.Static?.CurrentBlockDefinition?.Id.SubtypeName}");
         }
 
+        private static readonly FeatureGuard removalGuard = new FeatureGuard(nameof(BuildMode) + " removal pulse");
+
         private static void BeforeRemove(List<Vector3I> ___m_tmpBlockPositionList)
         {
+            if (!removalGuard.On)
+                return;
             try
             {
                 if (___m_tmpBlockPositionList == null || ___m_tmpBlockPositionList.Count == 0)
@@ -99,8 +103,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Build mode: removal pulse failed");
+                removalGuard.Failed(e, "Build mode: removal pulse failed");
             }
         }
     }

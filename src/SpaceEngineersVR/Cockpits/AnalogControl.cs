@@ -22,32 +22,6 @@ namespace SpaceEngineersVR.Cockpits
 {
     internal static class AnalogControl
     {
-        internal static bool IsHandle(string subtype,int slot)
-        {
-            switch(subtype)
-            {
-                case "OpenCockpitLarge": return slot>=69 && slot<77;
-                case "SmallBlockCockpit": return slot>=35 && slot<37;
-                case "LargeBlockCockpitSeat": return slot>=115 && slot<117;
-                case "LargeBlockModularBridgeCockpit": return slot>=0 && slot<1;
-                case "RoverCockpit": return slot>=0 && slot<1;
-                case "SmallBlockFlushCockpit": return slot==18;
-                case "LargeBlockSuspendedControlSeat": return slot==11;
-                case "LargeBlockSuspendedControlSeatB": return slot==11;
-                case "SmallBlockSuspendedControlSeat": return slot==11;
-                case "SmallBlockSuspendedControlSeatB": return slot==11;
-                case "SmallBlockCapCockpit": return slot==15;
-                case "SpeederCockpit": return slot==1;
-                case "SpeederCockpitCompact": return slot==1;
-                case "LargeBlockOpenSlopedCockpit": return slot>=23 && slot<26;
-                case "LargeBlockClosedSlopedCockpit": return slot>=23 && slot<26;
-                case "SmallBlockOpenSlopedCockpit": return slot>=8 && slot<11;
-                case "SmallBlockClosedSlopedCockpit": return slot>=8 && slot<11;
-                case "SmallBlockStandingCockpit": return slot>=13 && slot<18;
-                case "LargeBlockStandingCockpit": return slot>=13 && slot<18;
-                default: return false;
-            }
-        }
         internal enum Kind { Slider, Piston, Rotor, Thrust }
         // The last 2% of travel at each end holds the exact limit, so the rear stop reaches 0 (thrust override disabled).
         internal const float EndZone=.02f;

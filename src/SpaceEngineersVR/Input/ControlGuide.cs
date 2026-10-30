@@ -146,11 +146,11 @@ namespace SpaceEngineersVR.Input
         /// (<see cref="ActionNames"/>), so a rebinding moves the line. <paramref name="swapped"/>: the triggers follow the hand
         /// holding a tool or gun (left-handed, on foot: <see cref="Hands.ItemSpots.TriggersSwapped"/>); <paramref name="pointing"/>
         /// is the hand whose laser works menus; <paramref name="zeroGRoll"/>: the jetpack's stick click holds the zero-g pitch and roll;
-        /// <paramref name="sprintHand"/> and <paramref name="reloadHand"/>: the stick clicks that sprint and reload now
-        /// (<see cref="Hands.Reload.SprintHandIn"/>, <see cref="Hands.Reload.ButtonHandIn"/>: they swap left-handed with a gun).
+        /// <paramref name="sprintMirrored"/> and <paramref name="reloadMirrored"/>: sprint and reload are on the other hand's controls
+        /// there (<see cref="ControllerBindings.MirrorsIn"/>: left-handed with a gun, the clicks swap).
         /// </summary>
         public static List<Line> For(Situation where, bool swapped = false, Hand pointing = Hand.Right, bool zeroGRoll = true, bool wristPanel = true,
-            Hand sprintHand = Hand.Left, Hand reloadHand = Hand.Right)
+            bool sprintMirrored = false, bool reloadMirrored = false)
         {
             var lines = new List<Line>();
             // An action's line on its binding's control (on that hand, when given), with its notes: a fixed one, and what
@@ -198,13 +198,13 @@ namespace SpaceEngineersVR.Input
                     if (jet)
                         A(VRAction.ZeroGTurn, zeroGRoll ? "Hold: pitch and roll" : null);
                     else
-                        A(VRAction.Sprint, "Sprint", sprintHand == Hand.Right);
+                        A(VRAction.Sprint, "Sprint", sprintMirrored);
                     A(VRAction.ToolsWheel, "Tools wheel  (on a thing: grab)");
                     A(VRAction.SecondaryAction, "Secondary  (at a gun's magazine: reload)", swapped);
                     A(VRAction.ToggleJetpack, jet ? "Jetpack off" : "Jetpack on");
                     A(jet ? VRAction.JetpackUp : VRAction.Jump, jet ? "Up" : "Jump");
                     C(R, Stick, jet ? "Turn  (up, down: rise, sink)" : "Turn  (up: jump, down: crouch)");
-                    A(VRAction.Reload, "Reload the gun", reloadHand == Hand.Left);
+                    A(VRAction.Reload, "Reload the gun", reloadMirrored);
                     A(VRAction.Use, "Use, grab");
                     A(VRAction.PrimaryAction, "Fire, weld, grind, drill", swapped);
                     break;

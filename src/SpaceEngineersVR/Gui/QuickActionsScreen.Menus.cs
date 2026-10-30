@@ -123,7 +123,8 @@ namespace SpaceEngineersVR.Gui
 
             VRContext shownContext = controlsShown == ControlGuide.Situation.Jetpack ? VRContext.Jetpack : VRContext.OnFoot;
             List<ControlGuide.Line> guide = ControlGuide.For(controlsShown, Hands.ItemSpots.TriggersSwapped, VRSettings.DominantHand,
-                VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff, WristButton.Enabled, Hands.Reload.SprintHandIn(shownContext), Hands.Reload.ButtonHandIn(shownContext));
+                VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff, WristButton.Enabled,
+                ControllerBindings.MirrorsIn(VRAction.Sprint, shownContext), ControllerBindings.MirrorsIn(VRAction.Reload, shownContext));
             // The actions other plugins and mods registered that are bound and apply in this situation, after the plugin's own.
             // The stamp is what the page was built from: when a plugin registers or removes an action, or a binding moves, it is built again.
             controlsStamp = ControlsStampNow();

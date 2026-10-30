@@ -28,8 +28,9 @@ namespace SpaceEngineersVR.Hands
     /// the camera controller are left alone), as the eyes are drawn with the headset's own field of view anyway. The game
     /// drops the iron sight by itself as a reload starts (MyAutomaticRifleGun.Reload), so it is put back while the sights
     /// are still lined up, once the reload is over. A small tick on the gun hand marks starting and stopping to aim.</para>
-    /// <para>Only the game's own weapons have sights measured (<see cref="GunProfile"/>); a mod's weapon is never aimed down
-    /// its sights. A character in the iron sight any other way (a key, the drive, a mod) is taken out of it as the game does
+    /// <para>A gun is aimed down its sights when its sight is known (<see cref="GunProfile.Sight"/>): the game's own guns have
+    /// ColbyJack1134's measured ones, and a mod's gun the one its mod registers (SevrApi <c>RegisterGunSight</c>); a gun with
+    /// none is never aimed down its sights. A character in the iron sight any other way (a key, the drive, a mod) is taken out of it as the game does
     /// when the weapon is put away (MyCharacter.cs:8777): EnableIronsight off, the view kept as it was, and the camera's zoom
     /// reset.</para>
     /// </remarks>
@@ -49,7 +50,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The iron sight is the sight line's: leaving it goes without the camera, as it came.</summary>
         private static bool ours;
 
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(IronSight));
 
         /// <summary>The player is aiming down the held gun's sights now.</summary>
         public static bool Aiming => aiming;
@@ -67,6 +68,12 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         public static bool Frame()
         {
+            // Switched off, no hand weapon is held and no sight is looked down; it picks up from the game's state when it is back.
+            if (!guard.On)
+            {
+                aiming = false;
+                return false;
+            }
             try
             {
                 MyCharacter character = MySession.Static?.LocalCharacter;
@@ -78,7 +85,7 @@ namespace SpaceEngineersVR.Hands
                     if (holding)
                         Log.Info($"Iron sight: {Describe(character)} in hand; the {FireHand.ToString().ToLowerInvariant()} trigger fires, the {SightHand.ToString().ToLowerInvariant()} one (its iron sight) is held back from the game" +
                                  (!VRSettings.ColbyAimDownSights ? string.Empty
-                                  : GunProfile.Of(character)?.Sight != null ? "; aimed down its sights by looking along them" : "; its sights are not measured, so it is not aimed down them"));
+                                  : GunProfile.Of(character)?.Sight != null ? "; aimed down its sights by looking along them" : "; its sight is not known (a mod gives it with RegisterGunSight), so it is not aimed down it"));
                 }
 
                 bool sighted = holding && character.Definition?.CanIronsight == true && VRSettings.ColbyAimDownSights && !HandTools.Off && VRInput.Active && Sighted(character, aiming);
@@ -116,8 +123,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Iron sight: could not be checked this frame");
+                guard.Failed(e, "Iron sight: could not be checked this frame");
                 return false;
             }
         }

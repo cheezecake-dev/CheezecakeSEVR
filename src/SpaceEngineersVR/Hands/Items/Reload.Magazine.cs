@@ -104,9 +104,6 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The name the other hand's grip is claimed under at the hip, and while it holds a magazine (<see cref="GripClaim"/>).</summary>
         public const string PouchGripName = "Reload pouch";
 
-        /// <summary>Asked after the reload at the magazine (6).</summary>
-        public const int PouchGripPriority = 7;
-
         /// <summary>Where the fist holds the magazine: this share of its length from its bottom.</summary>
         private const float HoldAt = 0.35f;
 
@@ -236,7 +233,7 @@ namespace SpaceEngineersVR.Hands
             {
                 Log.Error(e, "Reload: the game's reload of a magazine fired empty could not be held back; it drops by itself");
             }
-            GripClaim.Register(PouchGripName, PouchGripPriority, hand => hand == TwoHand.OffHand && (inHand || TakeMagazine(hand, "grip closed", hipOnly: true)));
+            GripClaim.Register(PouchGripName, GripPriority.ReloadPouch, hand => hand == TwoHand.OffHand && (inHand || TakeMagazine(hand, "grip closed", hipOnly: true)));
             try
             {
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), "RealignMagazineWithHand"),

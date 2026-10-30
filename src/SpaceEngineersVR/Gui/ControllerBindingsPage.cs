@@ -65,16 +65,17 @@ namespace SpaceEngineersVR.Gui
 
         /// <summary>
         /// Left-handed, the list shows and takes the hand-following actions on the hand they follow (<see cref="BindingMirror"/>),
-        /// and saves them as their right-handed partners, so what the player presses here is what works in play. Sprint moves
-        /// only while a gun that reloads is held, so it is shown where it is without one.
+        /// and saves them as their right-handed partners, so what the player presses here is what works in play. An action that
+        /// moves only to make way (<see cref="VRActionInfo.MakesWay"/>: sprint, while a gun that reloads is held) is shown where
+        /// it is without that.
         /// </summary>
         private static bool Mirrors(VRActionInfo info) =>
-            VRSettings.DominantHand == Hand.Left && info.FollowsHand && info.Action != VRAction.Sprint;
+            VRSettings.DominantHand == Hand.Left && info.FollowsHand && !info.MakesWay;
 
         private Binding Shown(VRActionInfo info, Binding saved) => Mirrors(info) ? BindingMirror.Mirror(profile, saved) : saved;
 
         private const string MirroredTip = "Left-handed, this is on the hand it follows.";
-        private const string SprintTip = "Left-handed, while you hold a gun that reloads, sprint is on the other hand's matching control.";
+        private const string MakesWayTip = "Left-handed, while you hold a gun that reloads, sprint is on the other hand's matching control.";
 
         private readonly MyGuiControlLabel header;
         private readonly MyGuiControlImage[] pictures = new MyGuiControlImage[2];
@@ -269,11 +270,9 @@ namespace SpaceEngineersVR.Gui
             actionsShown = VRActions.Version;
             Row before = select ?? table.SelectedRow?.UserData as Row;
             List<Binding> list = ControllerBindings.Bindings(profile);
-            // Left-handed, the clashes are those of the bindings as they work left-handed (BindingMirror.Table, in the same order).
-            bool leftHanded = VRSettings.DominantHand == Hand.Left;
-            List<Binding> playing = leftHanded ? BindingMirror.Table(profile, list) : list;
+            // Left-handed, the clashes are those of the bindings as they work left-handed, by the hand rule play uses; each names its bindings in list.
             var clashes = new Dictionary<Binding, string>();
-            foreach ((Binding a, Binding b, string why) in ControllerBindings.Conflicts(playing, leftHanded))
+            foreach ((Binding a, Binding b, string why) in ControllerBindings.Conflicts(profile, list, VRSettings.DominantHand == Hand.Left))
             {
                 Note(clashes, a, b, why);
                 Note(clashes, b, a, why);
@@ -304,7 +303,7 @@ namespace SpaceEngineersVR.Gui
                         if (b.Action != (int)info.Action)
                             continue;
                         var row = new Row { Info = info, Binding = b, Shown = Shown(info, b) };
-                        clashes.TryGetValue(playing[i], out string clash);
+                        clashes.TryGetValue(b, out string clash);
                         AddLine(row, first, ControlNames.Describe(profile, row.Shown), clash);
                         if (before != null && before.Info.Index == info.Index && before.Binding != null && Same(before.Binding, b))
                             selectIndex = table.RowsCount - 1;
@@ -351,7 +350,7 @@ namespace SpaceEngineersVR.Gui
         }
 
         private static string HandTip(VRActionInfo info) =>
-            VRSettings.DominantHand != Hand.Left || !info.FollowsHand ? null : info.Action == VRAction.Sprint ? SprintTip : MirroredTip;
+            VRSettings.DominantHand != Hand.Left || !info.FollowsHand ? null : info.MakesWay ? MakesWayTip : MirroredTip;
 
         private static bool Same(Binding a, Binding b) =>
             a.Action == b.Action && a.Control.Equals(b.Control) && a.Kind == b.Kind && Nullable.Equals(a.Modifier, b.Modifier)

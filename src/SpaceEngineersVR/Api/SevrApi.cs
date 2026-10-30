@@ -244,10 +244,10 @@ namespace SpaceEngineersVR.Api
         /// "BindingsChanged" (the player rebound something, the controller changed, or an action was registered or taken away,
         /// so what ActionLabel says may have changed).</item>
         /// <item>"Unsubscribe": Func&lt;string owner, string eventName, bool&gt;, takes the owner's handler away; true when it had one.</item>
-        /// <item>"Unregister": Func&lt;string owner, bool&gt;, takes away all the owner's actions, handlers, menu items and panel
-        /// screens; true when it had any.</item>
-        /// <item>"UnregisterId": Func&lt;string owner, string id, bool&gt;, takes away the owner's action <c>id</c>; true when it
-        /// was registered. The player's binding for it is kept for when it is registered again.</item>
+        /// <item>"Unregister": Func&lt;string owner, bool&gt;, takes away all the owner's actions, handlers, menu items, panel
+        /// screens, gun sights, cockpits and grip claims; true when it had any.</item>
+        /// <item>"UnregisterId": Func&lt;string owner, string id, bool&gt;, takes away the owner's action <c>id</c>, and its grip
+        /// claim <c>id</c>; true when either was registered. The player's binding for the action is kept for when it is registered again.</item>
         /// <item>"RegisterMenuItem": Func&lt;string owner, string menu, string id, string parent, string label, string icon, Action
         /// run, Func&lt;bool&gt; canUse, Func&lt;string&gt; state, string options, bool&gt;, puts an item on one of the plugin's menus, drawn and
         /// used as the plugin's own items are; using it calls <c>run</c>. True when registered.
@@ -297,6 +297,18 @@ namespace SpaceEngineersVR.Api
         /// Mods have no GUI screens of their own (the mod whitelist leaves them out), so this member is a plugin's.</item>
         /// <item>"UnregisterPanelScreen": Func&lt;string owner, string screenType, bool&gt;, takes the owner's registration of the
         /// screen type away; true when it had one.</item>
+        /// <item>"RegisterGripClaim": Func&lt;string owner, string id, Func&lt;int, bool&gt; take, Action&lt;int&gt; released, bool&gt;,
+        /// takes a grip that closes in the world for an interaction of the caller's own (a lever, a handle). True when registered;
+        /// at most 16 per owner.
+        /// <list type="bullet">
+        /// <item>As a grip closes, after the plugin's own (the held tool, holsters, the helmet, floating items, use objects) and
+        /// before the hull and ladders, each claim is asked, owners and then ids in ordinal order: <c>take(hand)</c> (0 left, 1
+        /// right) true makes the press the claim's, and the plugin does nothing with that grip (no Use, no wheel, no hull grab)
+        /// until it opens. Asked only while VR is active.</item>
+        /// <item><c>released(hand)</c>, null for none: called once when the grip it took opens, or VR stops.</item>
+        /// <item><c>id</c>: as an action's. Registering the same owner and id again replaces the claim. Unregister and UnregisterId
+        /// take it away, with no <c>released</c>; the grip it held then does nothing until it opens.</item>
+        /// </list></item>
         /// <item>"OwnerEnabled": Func&lt;string owner, bool&gt;, the owner's callbacks are being called: false while its guard has
         /// them switched off after exceptions.</item>
         /// <item>"DominantHand": Func&lt;int&gt;, the player's main hand: 1 right-handed, 0 left-handed.</item>
@@ -317,6 +329,8 @@ namespace SpaceEngineersVR.Api
         /// <item>"Pulse": Func&lt;int hand, double amplitude, double seconds, bool&gt;, buzzes the controller: amplitude 0 to 1 and
         /// seconds 0 to 10 (outside those, clamped to them; 0 seconds is the shortest pulse the controller gives), scaled by the
         /// player's haptics setting. True when sent; false while VR is not active, or for a hand or a number not valid.</item>
+        /// <item>"RegisterGunSight", "UnregisterGunSight": a mod's hand guns, see <see cref="AddGuns"/>.</item>
+        /// <item>"RegisterCockpit", "UnregisterCockpit": a mod's cockpits, see <see cref="AddCockpits"/>.</item>
         /// </list>
         /// </summary>
         private static Dictionary<string, Delegate> Build(Route route)
@@ -333,7 +347,58 @@ namespace SpaceEngineersVR.Api
                 return members;
             members["HudToWorld"] = new Func<Vector2D, Vector3D>(HudToWorld);
             AddVersion2(members, route == Route.Mod ? ApiScope.World : ApiScope.Run);
+            AddGuns(members, route == Route.Mod ? ApiScope.World : ApiScope.Run);
+            AddCockpits(members, route == Route.Mod ? ApiScope.World : ApiScope.Run);
             return members;
+        }
+
+        /// <summary>
+        /// Version 2's members for a mod's hand guns (docs/MOD_API.md, "Guns and cockpits"), registering in
+        /// <paramref name="scope"/>. A mod's gun works in VR from its own definitions and model; these give what a model does
+        /// not carry. Game thread; each refuses (false, logged once) on input not valid, and works whether or not VR is active,
+        /// so a mod registers once at load.
+        /// <list type="bullet">
+        /// <item>"RegisterGunSight": Func&lt;string owner, string item, Vector3D sight, Vector3D direction, bool&gt;, the sight of
+        /// the hand gun whose physical item subtype is <c>item</c>, in the gun model's space (metres; the gun fires along -Z):
+        /// <c>sight</c> is the aim point (the peep, notch, dot or reticle the eye looks through), within 2 m of the origin, and
+        /// <c>direction</c> the sight line's (Vector3D.Zero for along the bore; otherwise pointing forward, -Z). With it the
+        /// player aims down the gun's sights by looking along them, as with the game's guns. The game's own guns keep their
+        /// measured sights; a registration for a game item is used only while that item has another model. When two owners
+        /// register one item, the first owner by id is used. At most 64 per owner.</item>
+        /// <item>"UnregisterGunSight": Func&lt;string owner, string item, bool&gt;, takes the owner's sight for the item away; true
+        /// when it had one.</item>
+        /// </list>
+        /// </summary>
+        private static void AddGuns(Dictionary<string, Delegate> members, ApiScope scope)
+        {
+            ApiGuns guns = ApiRuntime.Guns;
+            members["RegisterGunSight"] = new Func<string, string, Vector3D, Vector3D, bool>((owner, item, sight, direction) =>
+                guns.Register(owner, item, sight, direction, scope, "RegisterGunSight"));
+            members["UnregisterGunSight"] = new Func<string, string, bool>((owner, item) => guns.Unregister(owner, item, "UnregisterGunSight"));
+        }
+
+        /// <summary>
+        /// Version 2's members for a mod's cockpits (docs/MOD_API.md, "Guns and cockpits"), registering in
+        /// <paramref name="scope"/>. A mod's cockpit block built on one of the game's cockpits gets that cockpit's VR controls.
+        /// Game thread; each refuses (false, logged once) on input not valid, and works whether or not VR is active, so a mod
+        /// registers once at load.
+        /// <list type="bullet">
+        /// <item>"RegisterCockpit": Func&lt;string owner, string subtype, string like, bool&gt;, the cockpit block
+        /// <c>subtype</c> is built on the game's cockpit <c>like</c> (both block subtype ids) and gets its VR controls: sticks,
+        /// switches, levers, handles and buttons. They are measured on the game's meshes, so the block's model (or interior
+        /// model) must be that cockpit's; another model gets none, checked when the player sits. <c>like</c> must be one of the
+        /// game's cockpits with VR controls, and <c>subtype</c> not one of them. When two owners register one subtype, the
+        /// first owner by id is used. At most 64 per owner.</item>
+        /// <item>"UnregisterCockpit": Func&lt;string owner, string subtype, bool&gt;, takes the owner's registration of the
+        /// cockpit away; true when it had one.</item>
+        /// </list>
+        /// </summary>
+        private static void AddCockpits(Dictionary<string, Delegate> members, ApiScope scope)
+        {
+            ApiCockpits cockpits = ApiRuntime.Cockpits;
+            members["RegisterCockpit"] = new Func<string, string, string, bool>((owner, subtype, like) =>
+                cockpits.Register(owner, subtype, like, scope, "RegisterCockpit"));
+            members["UnregisterCockpit"] = new Func<string, string, bool>((owner, subtype) => cockpits.Unregister(owner, subtype, "UnregisterCockpit"));
         }
 
         /// <summary>Version 2's members (see <see cref="Build"/>), registering in <paramref name="scope"/>.</summary>
@@ -344,6 +409,7 @@ namespace SpaceEngineersVR.Api
             ApiEvents events = ApiRuntime.Events;
             ApiMenus menus = ApiRuntime.Menus;
             ApiScreens screens = ApiRuntime.Screens;
+            ApiGrips grips = ApiRuntime.Grips;
 
             members["SetOwnerName"] = new Func<string, string, bool>((owner, name) =>
             {
@@ -396,6 +462,8 @@ namespace SpaceEngineersVR.Api
                 screens.Register(owner, screenType, options, scope, "RegisterPanelScreen"));
             members["UnregisterPanelScreen"] = new Func<string, string, bool>((owner, screenType) =>
                 screens.Unregister(owner, screenType, "UnregisterPanelScreen"));
+            members["RegisterGripClaim"] = new Func<string, string, Func<int, bool>, Action<int>, bool>((owner, id, take, released) =>
+                grips.Register(owner, id, take, released, scope, "RegisterGripClaim"));
             members["OwnerEnabled"] = new Func<string, bool>(owner => core.OnGameThread(owner, "OwnerEnabled") && core.OwnerEnabled(owner));
 
             members["DominantHand"] = new Func<int>(() => core.OnGameThread(null, "DominantHand") ? (int)VRSettings.DominantHand : (int)Hand.Right);

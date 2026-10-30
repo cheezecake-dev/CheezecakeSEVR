@@ -17,29 +17,24 @@ namespace SpaceEngineersVR.Multiplayer
     /// the host and no further (MyModAPIHelper.MyMultiplayer: ModMessageClientUnreliable is a [Server][Client] event the
     /// host's replication sends back to where it came from). So it runs through the host:
     /// <list type="bullet">
-    /// <item>On joining, a client says <see cref="Hello"/> to the host. A host with the plugin keeps it as a peer and
-    /// answers <see cref="Welcome"/>; a host without it drops the message and nothing more is sent.</item>
-    /// <item>A VR client sends its pose to the host (<see cref="PoseToHost"/>); the host draws it and passes it on, with the
-    /// sender's Steam id, to every other peer (<see cref="PoseFromHost"/>). A VR host sends its own the same way.</item>
+    /// <item>On joining, a client says <see cref="PeerWire.Hello"/> to the host. A host with the plugin keeps it as a peer and
+    /// answers <see cref="PeerWire.Welcome"/>; a host without it drops the message and nothing more is sent.</item>
+    /// <item>A VR client sends its pose to the host (<see cref="PeerWire.PoseToHost"/>); the host draws it and passes it on, with the
+    /// sender's Steam id, to every other peer (<see cref="PeerWire.PoseFromHost"/>). A VR host sends its own the same way.</item>
     /// </list>
     /// The host takes a pose's sender from the game's own record of who sent it, never from the message; a client takes
-    /// <see cref="PoseFromHost"/> only from the host. Poses go unreliably (a lost one is replaced by the next) at
+    /// <see cref="PeerWire.PoseFromHost"/> only from the host. Poses go unreliably (a lost one is replaced by the next) at
     /// <see cref="Interval"/>: 15 a second, 48 bytes each from the host and 40 to it.
-    /// No dedicated server and no host-side plugin: a game hosted without the plugin shows nobody's VR arms.
+    /// On a dedicated server the relay mod (mods/SevrRelay) plays the host's part, answering hello and passing poses on, but
+    /// it runs no scenario: its <see cref="PeerWire.Welcome"/> says so (<see cref="PeerWire.FromRelay"/>), and <see cref="HostHasPlugin"/> stays
+    /// false. A game hosted by a player without the plugin, or a server without the mod, shows nobody's VR arms.
+    /// The layout is <see cref="PeerWire"/>'s.
     /// <para>The handshake is also how the plugin's scenarios know who has the plugin (<see cref="HasPlugin"/>,
     /// <see cref="HostHasPlugin"/>, <see cref="PlayerWithPlugin"/>); they send their own messages on channels of their own.</para>
     /// </remarks>
     [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
     public partial class PeerChannel : MySessionComponentBase
     {
-        /// <summary>The bug swarm's is 39317.</summary>
-        internal const ushort Channel = 39318;
-
-        /// <summary>Raised when a message's layout changes; players on different versions do not pair up.</summary>
-        private const byte Version = 1;
-
-        private const byte Hello = 1, Welcome = 2, PoseToHost = 3, PoseFromHost = 4;
-
         /// <summary>
         /// Simulation frames between poses: 15 a second at 60. Arms and heads interpolated at 15 Hz with a 100 ms buffer
         /// (<see cref="RemotePoses"/>) move smoothly at a glance; 20 Hz would cost a third more for a quicker reaction,
@@ -61,14 +56,17 @@ namespace SpaceEngineersVR.Multiplayer
         private static readonly HashSet<ulong> peers = new HashSet<ulong>();
         private static readonly List<ulong> gone = new List<ulong>();
 
-        /// <summary>On a client: the host has the plugin and passes poses on.</summary>
+        /// <summary>On a client: the host has answered hello and passes poses on.</summary>
         private static bool welcomed;
+
+        /// <summary>On a client: what answered was a dedicated server's relay mod, which runs no scenario.</summary>
+        private static bool hostRelays;
 
         private static bool registered;
         private static int frame, sent, relayed, refused;
         private static int loggedSent, loggedReceived, loggedDrawn;
-        private static readonly byte[] toHost = new byte[1 + PeerPose.Size];
-        private static readonly byte[] fromHost = new byte[1 + 8 + PeerPose.Size];
+        private static readonly byte[] toHost = new byte[PeerWire.ToHostSize];
+        private static readonly byte[] fromHost = new byte[PeerWire.FromHostSize];
 
         /// <summary>
         /// On the host: a player with the plugin said hello (on joining, or again). Raised for each hello, so a scenario can
@@ -84,9 +82,11 @@ namespace SpaceEngineersVR.Multiplayer
 
         /// <summary>
         /// Whether the game's host has the plugin: true when hosting (or in single player), or once the host has answered;
-        /// false once it has not answered either hello; null while asking.
+        /// false once it has not answered either hello, or when a dedicated server's relay mod answered (it passes poses on
+        /// but runs no scenario); null while asking.
         /// </summary>
-        internal static bool? HostHasPlugin => !Sync.MultiplayerActive || Sync.IsServer || welcomed ? true
+        internal static bool? HostHasPlugin => !Sync.MultiplayerActive || Sync.IsServer ? true
+            : welcomed ? !hostRelays
             : frame >= NoAnswerAt ? false : (bool?)null;
 
         // A test aid loops the poses this game sends back into its own drawing (onto a puppet); compiled away without it.
@@ -96,22 +96,22 @@ namespace SpaceEngineersVR.Multiplayer
         public override void BeforeStart()
         {
             peers.Clear();
-            welcomed = false;
+            welcomed = hostRelays = false;
             frame = sent = relayed = refused = loggedSent = loggedReceived = loggedDrawn = 0;
             RemotePoses.Clear();
             if (MyAPIGateway.Utilities.IsDedicated)
                 return;
-            MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(Channel, Received);
+            MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(PeerWire.Channel, Received);
             registered = true;
         }
 
         protected override void UnloadData()
         {
             if (registered)
-                MyAPIGateway.Multiplayer?.UnregisterSecureMessageHandler(Channel, Received);
+                MyAPIGateway.Multiplayer?.UnregisterSecureMessageHandler(PeerWire.Channel, Received);
             registered = false;
             peers.Clear();
-            welcomed = false;
+            welcomed = hostRelays = false;
             RemotePoses.Clear();
         }
 
@@ -124,7 +124,7 @@ namespace SpaceEngineersVR.Multiplayer
                 frame++;
                 if (Sync.MultiplayerActive && !Sync.IsServer && !welcomed && (frame == HelloAt || frame == HelloAgainAt))
                 {
-                    MyAPIGateway.Multiplayer.SendMessageToServer(Channel, new[] { Hello, Version }, true);
+                    MyAPIGateway.Multiplayer.SendMessageToServer(PeerWire.Channel, new[] { PeerWire.Hello, PeerWire.Version }, true);
                     Log.Info($"Peers: said hello to the host ({(frame == HelloAt ? "joining" : "no answer yet, again")})");
                 }
                 int now = MySession.Static.GameplayFrameCounter;
@@ -161,16 +161,16 @@ namespace SpaceEngineersVR.Multiplayer
             }
             else
             {
-                toHost[0] = PoseToHost;
+                toHost[0] = PeerWire.PoseToHost;
                 pose.Write(toHost, 1);
-                MyAPIGateway.Multiplayer.SendMessageToServer(Channel, toHost, false);
+                MyAPIGateway.Multiplayer.SendMessageToServer(PeerWire.Channel, toHost, false);
             }
             sent++;
         }
 
         private static void FromHost(ulong steamId, in PeerPose pose)
         {
-            fromHost[0] = PoseFromHost;
+            fromHost[0] = PeerWire.PoseFromHost;
             BitConverter.GetBytes(steamId).CopyTo(fromHost, 1);
             pose.Write(fromHost, 9);
         }
@@ -186,7 +186,7 @@ namespace SpaceEngineersVR.Multiplayer
                     continue;
                 }
                 if (peer != except)
-                    MyAPIGateway.Multiplayer.SendMessageTo(Channel, fromHost, peer, false);
+                    MyAPIGateway.Multiplayer.SendMessageTo(PeerWire.Channel, fromHost, peer, false);
             }
             foreach (ulong peer in gone)
             {
@@ -204,12 +204,12 @@ namespace SpaceEngineersVR.Multiplayer
             {
                 switch (message[0])
                 {
-                    case Hello:
-                        if (!Sync.IsServer || message[1] != Version || sender == 0 || sender == Sync.MyId)
+                    case PeerWire.Hello:
+                        if (!Sync.IsServer || message[1] != PeerWire.Version || sender == 0 || sender == Sync.MyId)
                             return;
                         if (peers.Add(sender))
                             Log.Info($"Peers: {sender} has the plugin; {peers.Count} with it besides the host");
-                        MyAPIGateway.Multiplayer.SendMessageTo(Channel, new[] { Welcome, Version }, sender, true);
+                        MyAPIGateway.Multiplayer.SendMessageTo(PeerWire.Channel, new[] { PeerWire.Welcome, PeerWire.Version, PeerWire.FromPlugin }, sender, true);
                         try
                         {
                             PlayerWithPlugin?.Invoke(sender);
@@ -220,13 +220,16 @@ namespace SpaceEngineersVR.Multiplayer
                             Log.Error(e, "Peers: a scenario could not greet a player with the plugin");
                         }
                         return;
-                    case Welcome:
-                        if (Sync.IsServer || !fromServer || message[1] != Version || welcomed)
+                    case PeerWire.Welcome:
+                        if (Sync.IsServer || !fromServer || message[1] != PeerWire.Version || welcomed)
                             return;
                         welcomed = true;
-                        Log.Info("Peers: the host has the plugin; VR heads and hands go both ways");
+                        hostRelays = message.Length > 2 && message[2] == PeerWire.FromRelay;
+                        Log.Info(hostRelays
+                            ? "Peers: the server's relay mod answered; VR heads and hands go both ways, scenarios need a host with the plugin"
+                            : "Peers: the host has the plugin; VR heads and hands go both ways");
                         return;
-                    case PoseToHost:
+                    case PeerWire.PoseToHost:
                         if (!Sync.IsServer || !peers.Contains(sender) || !PeerPose.TryRead(message, 1, out PeerPose pose))
                         {
                             refused++;
@@ -240,8 +243,8 @@ namespace SpaceEngineersVR.Multiplayer
                             relayed++;
                         }
                         return;
-                    case PoseFromHost:
-                        if (Sync.IsServer || !fromServer || message.Length < 9 || !PeerPose.TryRead(message, 9, out PeerPose passed))
+                    case PeerWire.PoseFromHost:
+                        if (Sync.IsServer || !fromServer || message.Length < PeerWire.FromHostSize || !PeerPose.TryRead(message, 9, out PeerPose passed))
                         {
                             refused++;
                             return;
@@ -266,7 +269,8 @@ namespace SpaceEngineersVR.Multiplayer
                 return;
             Log.Info($"Peers: {sent - loggedSent} poses sent, {received - loggedReceived} received, {drawn - loggedDrawn} draws of other VR players " +
                      $"in the last {LogEvery / 60} s; {relayed} passed on, {refused} refused in all; " +
-                     (Sync.IsServer ? $"hosting, {peers.Count} peers" : welcomed ? "the host has the plugin" : "the host has not answered"));
+                     (Sync.IsServer ? $"hosting, {peers.Count} peers" : !welcomed ? "the host has not answered"
+                         : hostRelays ? "the server's relay mod passes poses on" : "the host has the plugin"));
             loggedSent = sent;
             loggedReceived = received;
             loggedDrawn = drawn;

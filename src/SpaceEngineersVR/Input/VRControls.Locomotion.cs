@@ -95,14 +95,14 @@ namespace SpaceEngineersVR.Input
             Set(Intent.CycleNext, Hands.PaintMode.CycleNext);
             Set(Intent.CyclePrev, Hands.PaintMode.CyclePrev);
             // At a container the grip's Use waits for the grip to be let go, so the right stick click can deposit with it held
-            // (Hands.QuickInventory.HoldsBack; the ray Use is done there on release, a grab's in Hands.GrabUse).
-            Set(Intent.Use, On(VRAction.Use) && Hands.GripClaim.Owner(Hand.Right) == null && !Hands.QuickInventory.HoldsBack);
+            // (Hands.GripClaim.UseWaits, set by Hands.QuickInventory; the ray Use is done there on release, a grab's in Hands.GrabUse).
+            Set(Intent.Use, On(VRAction.Use) && Hands.GripClaim.Owner(Hand.Right) == null && !Hands.GripClaim.UseWaits(Hand.Right));
             Set(Intent.Jump, jumpButton || stickUp);
             Set(Intent.Crouch, stickDown || On(VRAction.Crouch) || On(VRAction.JetpackDown));
             Set(Intent.Thrusts, On(VRAction.ToggleJetpack));
             Set(Intent.Damping, On(VRAction.Dampeners));
-            // Left-handed with a hand weapon that reloads, the clicks are mirrored: the left is reload, sprint the right (Hands.Reload.SprintHand).
-            Set(Intent.Sprint, ControllerBindings.IsActive(VRAction.Sprint, Hands.Reload.SprintHand == Hand.Right));
+            // On the hand the binding layer says: left-handed with a hand weapon that reloads, the left click reloads and sprint is the right.
+            Set(Intent.Sprint, ControllerBindings.ActiveForPlayer(VRAction.Sprint));
             Set(Intent.MoveCloser, Hands.BuildMode.Closer);
             Set(Intent.MoveFurther, Hands.BuildMode.Further);
             Set(Intent.UseSymmetry, Hands.BuildMode.SymmetryTap);
@@ -149,7 +149,7 @@ namespace SpaceEngineersVR.Input
             UpdateZeroGLock(click, allowed, why);
             bool held = (click || zeroGLocked) && allowed;
             if (click && !held && !zeroGRefused)
-                Log.Info($"Zero-g pitch and roll: not here ({why}); the left stick click does nothing on the jetpack");
+                Log.Info($"Zero-g pitch and roll: not here ({why}); {ActionNames.ForLog(VRAction.ZeroGTurn)} does nothing on the jetpack");
             zeroGRefused = click && !held;
             if (held != zeroGHeld)
             {
@@ -159,9 +159,10 @@ namespace SpaceEngineersVR.Input
                 {
                     // A stick already pushed as the click goes down has to come back to the middle before it snaps.
                     zeroGArmed = rightStick.Length() < FlickRelease;
+                    string pressed = $"{ActionNames.ForLog(VRAction.ZeroGTurn)} {(zeroGLocked ? "tapped" : "held")}";
                     Log.Info(mode == VRSettings.ZeroGTurnSnap
-                        ? $"Zero-g pitch and roll: left stick click {(zeroGLocked ? "tapped" : "held")}, the right stick pitches and rolls {VRSettings.SnapTurnDegrees:F0} deg a flick"
-                        : $"Zero-g pitch and roll: left stick click {(zeroGLocked ? "tapped" : "held")}, the right stick pitches and rolls at up to {VRSettings.SmoothTurnSpeedDegrees:F0} deg/s");
+                        ? $"Zero-g pitch and roll: {pressed}, the right stick pitches and rolls {VRSettings.SnapTurnDegrees:F0} deg a flick"
+                        : $"Zero-g pitch and roll: {pressed}, the right stick pitches and rolls at up to {VRSettings.SmoothTurnSpeedDegrees:F0} deg/s");
                 }
                 else
                 {
@@ -287,8 +288,9 @@ namespace SpaceEngineersVR.Input
             {
                 return MyInput.Static?.GetJoystickYInversionCharacter() ?? false;
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                OnceLog.Error("VRControls.InvertCharacterY", e, "The game's invert Y for the character could not be read; the right stick is not inverted");
                 return false;
             }
         }
@@ -451,8 +453,8 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// Leave seat (Y held, by default) in a seat, or looking through a camera block, is the game's USE, which leaves the seat
-        /// or the camera. The game acts on USE being let go, so the frame the hold completes hands it a release: USE was down
+        /// Leave seat (Y held, by default) in a seat, at a turret, or looking through a camera block, is the game's USE, which
+        /// leaves the seat, the turret or the camera. The game acts on USE being let go, so the frame the hold completes hands it a release: USE was down
         /// last frame and is up now. The hold is the binding's, timed from a press made there (ControllerBindings).
         /// </summary>
         private static void UpdateUseHold()

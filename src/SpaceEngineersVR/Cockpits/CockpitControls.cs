@@ -216,8 +216,15 @@ namespace SpaceEngineersVR.Cockpits
             string subtype=cockpit.BlockDefinition.Id.SubtypeName,model=cockpit.BlockDefinition.InteriorModel ?? cockpit.BlockDefinition.Model;
             var rig=CockpitRig.Find(subtype);
             // Stick cockpits, handle cockpits and wheel cockpits (rovers, buggies, speeders), as his.
-            return rig!=null && (rig.HasSticks || rig.Handles.Length>0 || rig.Wheel!=null) && rig.Matches(model);
+            if(rig==null || !(rig.HasSticks || rig.Handles.Length>0 || rig.Wheel!=null)) return false;
+            if(rig.Matches(model)) return true;
+            // A mod's cockpit registered as built on a game cockpit (SevrApi RegisterCockpit) whose model is another: its author is told once.
+            if(!CockpitRig.HasControls(subtype) && unmatchedLogged.Add(subtype))
+                Log.Warn($"SEVR API: the cockpit {subtype} is registered as built on the game's cockpit with the model {rig.Model}, but its model is {model ?? "none"}; "+
+                    "the controls are measured on that model, so it has no VR controls (docs/MOD_API.md, Cockpits)");
+            return false;
         }
+        private static readonly HashSet<string> unmatchedLogged=new HashSet<string>(StringComparer.Ordinal);
 
         public static Matrix HandLocal(Hand hand) => SeatLocal(CockpitHand.GripTracking(hand));
         private static Matrix SeatLocal(Matrix tracking) => tracking*trackingToSeat;

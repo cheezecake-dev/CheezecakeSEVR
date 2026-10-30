@@ -202,8 +202,7 @@ namespace SpaceEngineersVR.Tracking
         /// Sitting down (<see cref="CockpitHead"/>): a recentre on all axes, at once, as Recentre view's: where the head is and
         /// faces now becomes the seat's eye and forward, whatever the play position and however the player stands or sits in
         /// the room, so the eye starts at the pilot's eye and not pressed against the top or the bottom of the seat's hold.
-        /// The on-foot centre and height are kept for getting up (<see cref="OnFoot"/>). RenderDebug RecentreAll=0: it only
-        /// turns, as it did before, and the eye stays where the on-foot centre puts it.
+        /// The on-foot centre and height are kept for getting up (<see cref="OnFoot"/>).
         /// </summary>
         /// <param name="seat">The seat, for the log.</param>
         public static void SitDown(string seat)
@@ -215,13 +214,10 @@ namespace SpaceEngineersVR.Tracking
                 Vector3 before = head.Translation;
                 float turned = yaw;
                 anchor = HeadCentre.Yaw(raw);
-                if (!RecentreTurnOnly)
-                {
-                    seatCentre = raw.Translation;
-                    inSeat = true;
-                }
+                seatCentre = raw.Translation;
+                inSeat = true;
                 Anchor();
-                Log.Info($"Sat down in {seat}: {(inSeat ? "recentred on all axes onto the seat's eye" : "turned only (RecentreAll=0)")}; " +
+                Log.Info($"Sat down in {seat}: recentred on all axes onto the seat's eye; " +
                          $"turned {MathHelper.ToDegrees(turned):F0} deg; eye was ({before.X:F2}, {before.Y:F2}, {before.Z:F2}), " +
                          $"now ({head.Translation.X:F2}, {head.Translation.Y:F2}, {head.Translation.Z:F2}) m from the seat's eye (x right, y up, z back)");
             }
@@ -276,9 +272,6 @@ namespace SpaceEngineersVR.Tracking
             }
         }
 
-        /// <summary>RenderDebug RecentreAll=0: a recentre only turns (the body's forward is where the head faces) and the eye stays where it was.</summary>
-        public static bool RecentreTurnOnly { get; set; }
-
         /// <summary>A recentre has been asked for and the head it is to be taken from has not come yet.</summary>
         public static bool RecentrePending
         {
@@ -321,17 +314,13 @@ namespace SpaceEngineersVR.Tracking
             recentreAfter = -1;
             anchor = HeadCentre.Yaw(raw);
             // In a seat it is the seat's centre that moves; the on-foot one is kept for getting up.
-            if (!RecentreTurnOnly)
-            {
-                if (inSeat)
-                    seatCentre = raw.Translation;
-                else
-                    centre = raw.Translation;
-            }
+            if (inSeat)
+                seatCentre = raw.Translation;
+            else
+                centre = raw.Translation;
             Anchor();
             bool fromFloor = !inSeat && !VRSettings.SeatedPlay && originAboveFloor.HasValue && VRSettings.EyeHeight.HasValue;
-            string height = RecentreTurnOnly ? "turn only (RecentreAll=0)"
-                : inSeat ? "in a seat, onto the seat's eye"
+            string height = inSeat ? "in a seat, onto the seat's eye"
                 : fromFloor ? $"height from the floor (calibrated eye height {VRSettings.EyeHeight.Value:F2} m)"
                 : "height from the recentre";
             Log.Info($"Recentred ({recentreBy}): play position {(VRSettings.SeatedPlay ? "seated" : "standing")}, {height}; " +
@@ -481,7 +470,7 @@ namespace SpaceEngineersVR.Tracking
             string over = first ? "" : $", in {(snapshotFrame - pushLogFrame) / 60f:F0} s";
             Log.Info($"Head lock: the on-foot centre moved {pushedSinceLog * 100f:F0} cm with the head past the edge ({way}{over}), " +
                      $"so the view stays on the head; the head is now {head.Translation.X:F2} right, {head.Translation.Z:F2} back of the character's eye " +
-                     $"(reach {pushReach * 100f:F0} cm forward, {BodyVolume.LockBack * 100f:F0} back; RenderDebug HeadPush=0 holds it instead)");
+                     $"(reach {pushReach * 100f:F0} cm forward, {BodyVolume.LockBack * 100f:F0} back)");
             pushLogFrame = snapshotFrame;
             pushedSinceLog = 0f;
             pushedWay = Vector3.Zero;

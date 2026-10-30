@@ -97,7 +97,7 @@ namespace SpaceEngineersVR.Rendering
         private static bool haveSituation;
         private static List<ControlGuide.Line> lines = new List<ControlGuide.Line>();
         // What the lines were made for: made again only when one of these changes, not every frame.
-        private static (ControlGuide.Situation Where, bool Swapped, Hand Dominant, bool ZeroG, bool Wrist, Hand Sprint, Hand Reload, int Names) linesFor;
+        private static (ControlGuide.Situation Where, bool Swapped, Hand Dominant, bool ZeroG, bool Wrist, bool SprintMirrored, bool ReloadMirrored, int Names) linesFor;
         private static bool haveLines;
         // The outside actions' lines (SevrApi), after the plugin's own, and what they were made for: the situation, where the
         // player is for the bindings (an overlay such as a container in reach is not a situation of its own), the action table,
@@ -210,7 +210,7 @@ namespace SpaceEngineersVR.Rendering
             }
             bool onFoot = context == VRContext.OnFoot || context == VRContext.Jetpack;
             var want = (now, Hands.ItemSpots.TriggersSwapped && onFoot, VRSettings.DominantHand, VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff,
-                WristButton.Enabled, Hands.Reload.SprintHandIn(context), Hands.Reload.ButtonHandIn(context), ActionNames.Version);
+                WristButton.Enabled, ControllerBindings.MirrorsIn(VRAction.Sprint, context), ControllerBindings.MirrorsIn(VRAction.Reload, context), ActionNames.Version);
             if (!haveLines || want != linesFor)
             {
                 lines = ControlGuide.For(want.Item1, want.Item2, want.Item3, want.Item4, want.Item5, want.Item6, want.Item7);

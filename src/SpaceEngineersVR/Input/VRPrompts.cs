@@ -143,11 +143,11 @@ namespace SpaceEngineersVR.Input
                 return turret ? null : ActionNames.Name(VRAction.Dampeners);
             // With a block in hand the left stick click is building's (Hands.BuildMode.Modifier), not sprint or zero g's roll.
             if (control == MyControlsSpace.SPRINT)
-                return where == VRContext.OnFoot && !Hands.BuildMode.Active ? ActionNames.Name(VRAction.Sprint, Hands.Reload.SprintHandIn(where) == Hand.Right) : null;
+                return where == VRContext.OnFoot && !Hands.BuildMode.Active ? ActionNames.Name(VRAction.Sprint, ControllerBindings.MirrorsIn(VRAction.Sprint, where)) : null;
             if (control == MyControlsSpace.MAIN_MENU)
                 return ActionNames.Name(VRAction.GameMenu);
             if (control == MyControlsSpace.RELOAD)
-                return walking ? ActionNames.Name(VRAction.Reload, Hands.Reload.ButtonHandIn(where) == Hand.Left) : null;
+                return walking ? ActionNames.Name(VRAction.Reload, ControllerBindings.MirrorsIn(VRAction.Reload, where)) : null;
             if (control == MyControlsSpace.LANDING_GEAR)
                 return ship ? ActionNames.Name(VRAction.LandingGear) : null;
             // On the jetpack the roll is zero g's only (VRControls.UpdateZeroG).

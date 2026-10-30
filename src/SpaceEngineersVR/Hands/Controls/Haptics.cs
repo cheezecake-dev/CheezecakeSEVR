@@ -39,7 +39,8 @@ namespace SpaceEngineersVR.Hands
         /// <summary>A block placed: a click.</summary>
         public const float PlaceAmplitude = 0.6f, PlaceSeconds = 0.03f;
 
-        private static int errors;
+        private static readonly FeatureGuard shotGuard = new FeatureGuard(nameof(Haptics) + " shot");
+        private static readonly FeatureGuard placedGuard = new FeatureGuard(nameof(Haptics) + " block placed");
         private static Harmony harmony;
         private static bool lateHooked;
 
@@ -102,6 +103,8 @@ namespace SpaceEngineersVR.Hands
 
         private static void AfterShoot(MyAutomaticRifleGun __instance, MyShootActionEnum action)
         {
+            if (!shotGuard.On)
+                return;
             try
             {
                 if (action == MyShootActionEnum.PrimaryAction && IsLocal(__instance.Owner))
@@ -109,7 +112,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "firing");
+                shotGuard.Failed(e, "Haptics (firing) failed");
             }
         }
 
@@ -124,6 +127,8 @@ namespace SpaceEngineersVR.Hands
 
         private static void AfterBlockAdded(bool __result)
         {
+            if (!placedGuard.On)
+                return;
             try
             {
                 if (__result)
@@ -134,14 +139,8 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "block placed");
+                placedGuard.Failed(e, "Haptics (block placed) failed");
             }
-        }
-
-        private static void Failed(Exception e, string what)
-        {
-            if (errors++ < 3)
-                Log.Error(e, $"Haptics ({what}) failed");
         }
     }
 }

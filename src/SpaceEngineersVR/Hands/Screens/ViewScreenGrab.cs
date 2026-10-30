@@ -15,7 +15,7 @@ namespace SpaceEngineersVR.Hands
     /// stretched between two hands.
     /// </summary>
     /// <remarks>
-    /// The grip is claimed through <see cref="GripClaim"/> at <see cref="ClaimPriority"/>, before items, doors, seats and the
+    /// The grip is claimed through <see cref="GripClaim"/> at <see cref="GripPriority.ViewScreenGrab"/>, before items, doors, seats and the
     /// hull, so a grip on the screen never also uses the seat or the door behind it, and a grip anywhere else keeps its old job.
     /// Off with the setting (<see cref="VRSettings.MoveViewByHand"/>) or RenderDebug ViewGrab=0.
     /// </remarks>
@@ -25,9 +25,6 @@ namespace SpaceEngineersVR.Hands
         public static bool Off { get; set; }
 
         private const string ClaimName = "external view screen";
-
-        /// <summary>After the helmet and the holsters (10), before floating items (20), grab-to-use (30) and the hull (40).</summary>
-        private const int ClaimPriority = 15;
 
         /// <summary>How far round the screen's edge, and in front of it or behind it, a grip still takes it, metres.</summary>
         private const float EdgeReach = GrabTolerance.Edge, FaceReach = (float)GrabTolerance.Body;
@@ -44,9 +41,9 @@ namespace SpaceEngineersVR.Hands
         private static float resizeFrom, widthFrom;
         private static bool resizing;
         private static bool registered;
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(ViewScreenGrab));
 
-        private static bool Enabled => !Off && VRSettings.MoveViewByHand && errors < 3;
+        private static bool Enabled => !Off && VRSettings.MoveViewByHand && guard.On;
 
         /// <summary>Game thread, once a frame after the hands are read: registers the claim the first time, then moves a held screen.</summary>
         internal static void Frame()
@@ -54,11 +51,10 @@ namespace SpaceEngineersVR.Hands
             if (!registered)
             {
                 registered = true;
-                GripClaim.Register(ClaimName, ClaimPriority, Take);
-                Log.Info($"External view screen by hand: grip claim at priority {ClaimPriority} ({EdgeReach * 100:0} cm round its edge, {FaceReach * 100:0} cm off its face)");
+                GripClaim.Register(ClaimName, GripPriority.ViewScreenGrab, Take);
+                Log.Info($"External view screen by hand: grip claim at priority {(int)GripPriority.ViewScreenGrab} ({EdgeReach * 100:0} cm round its edge, {FaceReach * 100:0} cm off its face)");
             }
-            if (errors >= 3)
-                return;
+            // Switched off, Step lets go of a held screen (Enabled) and picks nothing up.
             try
             {
                 foreach (Hand hand in Hands)
@@ -66,8 +62,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "External view screen by hand failed" + (errors >= 3 ? "; it stays where it is for this run" : string.Empty));
+                guard.Failed(e, "External view screen by hand failed");
             }
         }
 

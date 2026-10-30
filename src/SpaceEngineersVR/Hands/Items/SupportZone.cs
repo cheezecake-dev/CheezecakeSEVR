@@ -59,7 +59,7 @@ namespace SpaceEngineersVR.Hands
         {
             Place was = ReferenceEquals(currentOf, weapon) ? current : Place.None;
             GunProfile profile = GunProfile.Of(character);
-            bool pistol = profile != null && profile.Kind == GunKind.Pistol;
+            bool pistol = profile != null && profile.IsPistol;
             bool magazine = Reload.MagazineAt(character, weapon, profile, off, was == Place.Magazine ? Hysteresis : 1f, out double toMagazine);
             double toGrip = item != null && VRSettings.TwoHandedTools && !TwoHand.Off && TwoHand.GameHasLeftHand(item)
                 ? Vector3D.Distance(off, Vector3D.Transform((Vector3D)ItemSpots.OtherGrasp(item), weapon.WorldMatrix))

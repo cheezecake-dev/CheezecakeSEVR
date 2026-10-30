@@ -45,7 +45,7 @@ namespace SpaceEngineersVR.Hands
         private static readonly MyStringId LineMaterial = MyStringId.GetOrCompute("SquareIgnoreDepth");
         private static readonly MyStringId DotMaterial = MyStringId.GetOrCompute("RedDot");
 
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(HandRay));
 
         public static void Patch(Harmony harmony)
         {
@@ -61,8 +61,8 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 HandPlacement.Hook();
-                // After three failures it stays off for the run: an exception every frame would cost more than the line is worth.
-                if (errors >= 3 || HandTools.Off || !VRInput.Active || !(HandUse.Hooked || HandPlacement.Hooked) || !MyTransparentGeometry.HasCamera)
+                // The guard switches the ray off while it keeps failing: an exception every frame would cost more than the line is worth.
+                if (!guard.On || HandTools.Off || !VRInput.Active || !(HandUse.Hooked || HandPlacement.Hooked) || !MyTransparentGeometry.HasCamera)
                     return;
                 // A menu is up (the game shows its cursor): the pointer is the laser's, not a tool's.
                 if (MySandboxGame.Static == null || MySandboxGame.Static.IsCursorVisible)
@@ -95,8 +95,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not draw the hand ray");
+                guard.Failed(e, "Hand tools could not draw the hand ray");
             }
         }
 

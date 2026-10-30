@@ -10,10 +10,22 @@ using VRageRender;
 namespace SpaceEngineersVR.Rendering
 {
     /// <summary>
-    /// Mods' HUDs drawn as billboards just ahead of the camera (Text HUD API, Rich HUD Framework, and the mods built on them),
-    /// moved onto the VR HUD for the eyes, without touching the mods.
+    /// A compatibility shim, by name: mods' HUDs drawn as billboards just ahead of the camera, moved onto the VR HUD for the
+    /// eyes, without touching the mods. The way into VR for a mod's HUD is <see cref="Api.SevrApi"/>'s HudToWorld (with
+    /// HudVisible, HudDepth and HudTangents, docs/MOD_API.md "HUD"); this shim is for the HUD frameworks that do not call it.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// What it is for, and only this:
+    /// <list type="bullet">
+    /// <item>Text HUD API (Steam Workshop 758597413), and the mods that draw through it.</item>
+    /// <item>Rich HUD Framework (Steam Workshop 1965654081), and the mods that draw through it.</item>
+    /// </list>
+    /// A framework or mod on that list that calls HudToWorld is left alone by it (a HUD placed by HudToWorld is at least
+    /// 0.5 m out, beyond <see cref="Within"/>), so the list shrinks as they do. Nothing is added to it without a framework
+    /// that cannot call the API; a mod or plugin author is pointed at HudToWorld (docs/MOD_API.md, "Mods that do not use the
+    /// API").
+    /// </para>
     /// <para>
     /// Those frameworks place their HUD on the game thread, from MyAPIGateway.Session.Camera.WorldMatrix (the game frame's
     /// camera): Text HUD API 0.1 m ahead of it (ModHUDMessage.WriteLetter), Rich HUD Framework at the camera's near plane
@@ -38,12 +50,15 @@ namespace SpaceEngineersVR.Rendering
     /// (none in the game frame's list is drawn after processing but the disconnected player's icon, and this plugin's after-
     /// processing quads are added for one eye's pass, <see cref="OnceBillboards"/>), lines, billboards given in an object's
     /// space or with their own projection, and a mod's HUD that uses <see cref="Api.SevrApi"/>'s HudToWorld (at
-    /// <see cref="VRSettings.HudDistance"/>, at least 0.5 m out). RenderDebug ModHud=0 leaves them all where the mod put them.
+    /// <see cref="VRSettings.HudDistance"/>, at least 0.5 m out). <see cref="Off"/> leaves them all where the mod put them.
     /// </para>
     /// </remarks>
     internal static class ModHudBillboards
     {
-        /// <summary>RenderDebug ModHud=0: mods' HUD billboards are drawn where the mod put them, as before.</summary>
+        /// <summary>
+        /// Diagnostic off switch (RenderDebug ModHud=0): the shim takes no billboards, so the eyes draw each mod's HUD where the
+        /// mod put it, to tell what a mod draws from what the shim does to it. No other path is kept behind it.
+        /// </summary>
         public static bool Off { get; set; }
 
         /// <summary>A mod's HUD lies wholly within this of the camera, m. Below the HUD's least distance (0.5 m), so a HUD placed by HudToWorld is never taken.</summary>

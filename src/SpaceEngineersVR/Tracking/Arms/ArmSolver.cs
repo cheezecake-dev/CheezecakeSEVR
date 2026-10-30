@@ -25,9 +25,6 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>The knobs, all from RenderDebug (<see cref="HandIK"/>).</summary>
         public struct Settings
         {
-            /// <summary>The elbow also follows what the hand asks of the forearm (twist, wrist bend); off: the body's hint only.</summary>
-            public bool HandSwivel;
-
             /// <summary>The most the arm may lengthen to keep the hand on the controller, a share of its length.</summary>
             public float Stretch;
 
@@ -73,7 +70,7 @@ namespace SpaceEngineersVR.Tracking
             /// <summary>The most the stretch moves in one solve while easing (<see cref="EaseFrom"/>).</summary>
             public float EaseStep;
 
-            public static Settings Default => new Settings { HandSwivel = true, Stretch = 0.25f, Shrug = 30f, TwistShare = 1f, SwivelStep = 6f, Cap = 1.30f };
+            public static Settings Default => new Settings { Stretch = 0.25f, Shrug = 30f, TwistShare = 1f, SwivelStep = 6f, Cap = 1.30f };
         }
 
         /// <summary>What an arm was solved to; for logging and the offline probe.</summary>
@@ -300,31 +297,28 @@ namespace SpaceEngineersVR.Tracking
 
             Frame frame = new Frame { C = c, Side = side, Shoulder = shoulder, Wrist = wrist, Along = along, X = x, H = h, Torso = torso, Target = targetRot, TwistShare = settings.TwistShare };
             float best = 0f;
-            if (settings.HandSwivel)
+            float bestCost = float.MaxValue;
+            for (int i = 0; i < Samples; i++)
             {
-                float bestCost = float.MaxValue;
-                for (int i = 0; i < Samples; i++)
+                float phi = MathHelper.TwoPi * i / Samples;
+                float cost = frame.Cost(Dir(b1, b2, phi), phi);
+                if (cost < bestCost)
                 {
-                    float phi = MathHelper.TwoPi * i / Samples;
-                    float cost = frame.Cost(Dir(b1, b2, phi), phi);
-                    if (cost < bestCost)
-                    {
-                        bestCost = cost;
-                        best = phi;
-                    }
+                    bestCost = cost;
+                    best = phi;
                 }
-                // A golden-section look within a sample either side.
-                float lo = best - MathHelper.TwoPi / Samples, hi = best + MathHelper.TwoPi / Samples;
-                for (int i = 0; i < 12; i++)
-                {
-                    float m1 = hi - (hi - lo) * 0.618f, m2 = lo + (hi - lo) * 0.618f;
-                    if (frame.Cost(Dir(b1, b2, m1), m1) < frame.Cost(Dir(b1, b2, m2), m2))
-                        hi = m2;
-                    else
-                        lo = m1;
-                }
-                best = (lo + hi) * 0.5f;
             }
+            // A golden-section look within a sample either side.
+            float lo = best - MathHelper.TwoPi / Samples, hi = best + MathHelper.TwoPi / Samples;
+            for (int i = 0; i < 12; i++)
+            {
+                float m1 = hi - (hi - lo) * 0.618f, m2 = lo + (hi - lo) * 0.618f;
+                if (frame.Cost(Dir(b1, b2, m1), m1) < frame.Cost(Dir(b1, b2, m2), m2))
+                    hi = m2;
+                else
+                    lo = m1;
+            }
+            best = (lo + hi) * 0.5f;
             Vector3 swivel = Dir(b1, b2, best);
             result.Wanted = swivel;
             // Where the best way for the elbow jumps (two ways of holding a hand rolled past what a forearm turns are about
@@ -494,19 +488,6 @@ namespace SpaceEngineersVR.Tracking
             bone.Rotation = Quaternion.CreateFromRotationMatrix(Matrix.Normalize(relative).GetOrientation());
             bone.Translation = relative.Translation;
             bone.ComputeAbsoluteTransform();
-        }
-
-        // ---- the game's own solver, for comparison (HandIK=4) ----
-
-        /// <summary>The game's iterative solver, as it puts hands on items (MyCharacter.CalculateHandIK): no hinge, no hint.</summary>
-        public static bool SolveGame(MyCharacterBone[] bones, Chain c, Matrix target)
-        {
-            if (c == null || !target.IsValid())
-                return false;
-            MatrixD world = MatrixD.Identity; // the solver is handed it and does not read it
-#pragma warning disable CS0612, CS0618 // MyInverseKinematics is marked obsolete, and is what the game still puts its hands on items with
-            return MyInverseKinematics.SolveTwoJointsIkCCD(bones, c.Upper, c.Fore[0], c.Palm, ref target, ref world, bones[c.Palm]);
-#pragma warning restore CS0612, CS0618
         }
 
         // ---- fingers ----

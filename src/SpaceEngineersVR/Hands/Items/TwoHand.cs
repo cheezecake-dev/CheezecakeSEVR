@@ -29,7 +29,7 @@ namespace SpaceEngineersVR.Hands
     /// <remarks>
     /// <para>Grab: a grip pressed with the other hand hovering at the tool's front grip (<see cref="SupportZone"/>, after
     /// ColbyJack1134's: within <see cref="GrabReach"/> of it, and not nearer the magazine), claimed through
-    /// <see cref="GripClaim"/> at <see cref="ClaimPriority"/>, ahead of the helmet, floating items, grab to use
+    /// <see cref="GripClaim"/> at <see cref="GripPriority.TwoHand"/>, ahead of the helmet, floating items, grab to use
     /// and hulls: the hand is on the tool it holds, the one thing it is surely reaching for. At the magazine the grip reloads
     /// (<see cref="Reload"/>); anywhere else the claim declines and the grip keeps its old meaning (the toolbar wheel on
     /// foot). A light tick on the other hand marks it coming into either zone; the grab is a tick on both hands.</para>
@@ -76,9 +76,6 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>The name the grip is claimed under (<see cref="GripClaim"/>).</summary>
         public const string ClaimName = "TwoHand";
-
-        /// <summary>Asked before the helmet (10): a hand on the tool's own grip is reaching for the tool, not the helmet behind it.</summary>
-        public const int ClaimPriority = 5;
 
         /// <summary>A grip this close to the tool's grip (metres, from the other controller's grip) takes it (<see cref="GrabTolerance.Spot"/>; a hand already at it keeps <see cref="GrabTolerance.Held"/> more).</summary>
         internal const double GrabReach = GrabTolerance.Spot;
@@ -192,11 +189,11 @@ namespace SpaceEngineersVR.Hands
         {
             try
             {
-                GripClaim.Register(ClaimName, ClaimPriority, Take);
+                GripClaim.Register(ClaimName, GripPriority.TwoHand, Take);
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(TwoHand), nameof(AfterSimulation)) { priority = Priority.High });
                 hooked = true;
-                Log.Info($"Two-handed tools: hooked (grip claim at priority {ClaimPriority}, reach {GrabReach * 100:0} cm, release {ReleaseOff * 100:0} cm off the grip line)");
+                Log.Info($"Two-handed tools: hooked (grip claim at priority {(int)GripPriority.TwoHand}, reach {GrabReach * 100:0} cm, release {ReleaseOff * 100:0} cm off the grip line)");
             }
             catch (Exception e)
             {

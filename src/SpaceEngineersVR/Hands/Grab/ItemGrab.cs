@@ -56,9 +56,6 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The name the grip is claimed under (<see cref="GripClaim"/>).</summary>
         public const string Name = "Items";
 
-        /// <summary>Asked after the helmet, before grab-to-use and the hull.</summary>
-        public const int Priority = 20;
-
         /// <summary>Debug: no grabbing (<see cref="Rendering.RenderDebug"/> GrabItems=0).</summary>
         public static bool Off { get; set; }
 
@@ -213,7 +210,7 @@ namespace SpaceEngineersVR.Hands
             {
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(ItemGrab), nameof(AfterSimulation)));
-                GripClaim.Register(Name, Priority, Take);
+                GripClaim.Register(Name, GripPriority.ItemGrab, Take);
                 hooked = true;
                 Log.Info("Items: floating items can be grabbed, thrown and put away by hand");
             }

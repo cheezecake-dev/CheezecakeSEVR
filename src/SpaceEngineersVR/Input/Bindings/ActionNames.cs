@@ -91,5 +91,11 @@ namespace SpaceEngineersVR.Input.Bindings
 
         /// <inheritdoc cref="BindingNames.Describe"/>
         public static string Describe(VRAction action, bool mirrored = false) => Now.Describe(action, mirrored);
+
+        /// <summary>
+        /// For a log line: what is pressed for the action now (<see cref="Name"/>), or the action said to be unbound, so a log
+        /// names the control the player's bindings have rather than the default's.
+        /// </summary>
+        public static string ForLog(VRAction action) => Name(action) ?? action + " (not bound)";
     }
 }

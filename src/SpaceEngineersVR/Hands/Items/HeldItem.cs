@@ -42,7 +42,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The game's own distance for the crosshair point (MyCharacterWeaponPositionComponent.UpdateLogicalWeaponPosition).</summary>
         private const double CrosshairDistance = 2000.0;
 
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(HeldItem));
 
         /// <summary>Shots logged since the item in hand was taken: the first three are.</summary>
         private static int shootCalls;
@@ -109,20 +109,13 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// Debug (<see cref="Rendering.RenderDebug"/> ToolGrasp=0): place the item by the game's palm bone spot (its RightHand
-        /// translation, at the wrist) instead of the middle of the hand. The wrist is about 9 cm from the palm's middle, so
-        /// the tool then sits that far out of the hand, toward the fingers.
-        /// </summary>
-        public static bool WristGrasp { get; set; }
-
-        /// <summary>
         /// Where a hand closes on an item, in the item's own space: the middle of the closed hand
         /// (<see cref="Tracking.HandGrip.HandleInPalm"/>) through the palm bone's spot the item definition gives that hand
         /// (<paramref name="palmInItem"/>, its RightHand or LeftHand). That is where the controller's grip goes. The palm
         /// bone's own spot is the wrist, 9 cm from it; the item placed by the wrist sat out of the hand toward the fingers.
         /// </summary>
         internal static Vector3 GraspInItem(in Matrix palmInItem, bool left) =>
-            WristGrasp ? palmInItem.Translation : Vector3.Transform(Tracking.HandGrip.HandleInPalm(left), palmInItem);
+            Vector3.Transform(Tracking.HandGrip.HandleInPalm(left), palmInItem);
 
         /// <summary>
         /// The weapon's world matrix for a hand: forward and up from the hand's aim, and placed so the point where the
@@ -140,14 +133,15 @@ namespace SpaceEngineersVR.Hands
 
         private static void AfterUpdate(MyCharacterWeaponPositionComponent __instance)
         {
+            if (!guard.On)
+                return;
             try
             {
                 Place(__instance, null);
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not place the held item");
+                guard.Failed(e, "Hand tools could not place the held item");
             }
         }
 
@@ -158,7 +152,7 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         internal static bool PlaceForArms(MyCharacter character, in MatrixD trackingToModel)
         {
-            if (errors >= 3 || character?.WeaponPosition == null)
+            if (!guard.On || character?.WeaponPosition == null)
                 return false;
             try
             {
@@ -166,8 +160,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not place the held item for the arms");
+                guard.Failed(e, "Hand tools could not place the held item for the arms");
                 return false;
             }
         }
@@ -236,7 +229,7 @@ namespace SpaceEngineersVR.Hands
         }
 
         private static MyHandItemDefinition noted;
-        private static bool notedWrist, notedMirrored;
+        private static bool notedMirrored;
         private static long notedAt;
 
         /// <summary>
@@ -247,18 +240,17 @@ namespace SpaceEngineersVR.Hands
         {
             long now = Stopwatch.GetTimestamp(), last = notedAt;
             notedAt = now;
-            if (ReferenceEquals(item, noted) && notedWrist == WristGrasp && notedMirrored == ItemSpots.Mirrored
+            if (ReferenceEquals(item, noted) && notedMirrored == ItemSpots.Mirrored
                 && now - last < Stopwatch.Frequency / 2)
                 return;
             noted = item;
             shootCalls = 0;
-            notedWrist = WristGrasp;
             notedMirrored = ItemSpots.Mirrored;
             Vector3D wrist = Vector3D.Transform((Vector3D)ItemSpots.Tool(item).Translation, world);
             // The cube placer (the build and colour tools) is a type with no subtype.
             string name = string.IsNullOrEmpty(item.Id.SubtypeName) ? item.Id.TypeId.ToString().Replace("MyObjectBuilder_", "") : item.Id.SubtypeName;
             Log.Info($"Hand tools: the {name} is held in the {ItemSpots.ToolHand.ToString().ToLowerInvariant()} hand " +
-                     $"{(WristGrasp ? "by the game's wrist spot (ToolGrasp=0)" : "by the middle of the hand")}{(ItemSpots.Mirrored ? ", the game's spots mirrored" : "")}; " +
+                     $"by the middle of the hand{(ItemSpots.Mirrored ? ", the game's spots mirrored" : "")}; " +
                      $"the astronaut's wrist is {Vector3D.Distance(wrist, grip.Translation) * 100:0.0} cm from the controller's grip");
         }
 

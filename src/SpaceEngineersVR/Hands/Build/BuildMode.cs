@@ -107,7 +107,7 @@ namespace SpaceEngineersVR.Hands
         private static AccessTools.FieldRef<MyGridClipboard, float> pasteAngleRef, dragDistanceRef;
         private static AccessTools.FieldRef<MySessionComponentVoxelHand, float> voxelDistanceRef;
         private static MethodInfo currentGridGetter, symmetryModeGetter;
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(BuildMode));
 
         // The turn. A paste's turns the pasted grids' orientation (pasteTurn), as a block off a grid turns its own.
         private static bool turning, dynamicTurn, pasteTurn;
@@ -179,6 +179,8 @@ namespace SpaceEngineersVR.Hands
             Closer = Further = SymmetryTap = SymmetryCycle = false;
             CubeSize = NextStage = PrevStage = false;
             frameSeconds = seconds;
+            if (!guard.On)
+                return;
             try
             {
                 FrameNow(context, blocked, seconds);
@@ -187,8 +189,7 @@ namespace SpaceEngineersVR.Hands
             {
                 Active = Pasting = VoxelHand = Modifier = false;
                 EndTurn("an error");
-                if (errors++ < 3)
-                    Log.Error(e, "Build mode failed this frame");
+                guard.Failed(e, "Build mode failed this frame");
             }
         }
 
@@ -313,9 +314,10 @@ namespace SpaceEngineersVR.Hands
                 return;
             }
             MyGridClipboard grids = clipboard.Clipboard;
+            string modifier = ActionNames.ForLog(VRAction.BuildModifier);
             Log.Info(grids != null && grids.IsActive
-                ? $"Paste: pending, {grids.CopiedGrids.Count} grid{(grids.CopiedGrids.Count == 1 ? string.Empty : "s")} ({grids.CopiedGridsName}), {PasteDistance(grids):F1} m out; left stick click + right hand turns it, left stick click + right stick up/down farther and nearer"
-                : "Paste: pending, not grids (a floating object or voxels); left stick click + right stick up/down farther and nearer");
+                ? $"Paste: pending, {grids.CopiedGrids.Count} grid{(grids.CopiedGrids.Count == 1 ? string.Empty : "s")} ({grids.CopiedGridsName}), {PasteDistance(grids):F1} m out; {modifier} + right hand turns it, {modifier} + right stick up/down farther and nearer"
+                : $"Paste: pending, not grids (a floating object or voxels); {modifier} + right stick up/down farther and nearer");
         }
 
         /// <summary>The game's own test for creative building (MyCubeBuilder.HandleAdminAndCreativeInput): it moves the block nearer and farther only then.</summary>

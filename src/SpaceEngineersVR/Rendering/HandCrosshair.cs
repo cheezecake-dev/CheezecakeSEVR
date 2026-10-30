@@ -31,9 +31,6 @@ namespace SpaceEngineersVR.Rendering
     /// </remarks>
     internal static class HandCrosshair
     {
-        /// <summary>Debug: the game's crosshair in the middle of the panel (<see cref="RenderDebug"/> HandCrosshair=0).</summary>
-        public static bool Off { get; set; }
-
         /// <summary>How far the aim is cast for what it meets (metres); past that the crosshair is on the aim's far end.</summary>
         private const double CastReach = 300.0;
 
@@ -56,7 +53,7 @@ namespace SpaceEngineersVR.Rendering
         private static bool BeforeDraw(MyHudCrosshair __instance)
         {
             restore = false;
-            if (Off || !guard.On || !StereoPatches.VRPicture || !VRInput.Layout)
+            if (!guard.On || !StereoPatches.VRPicture || !VRInput.Layout)
                 return true;
             try
             {

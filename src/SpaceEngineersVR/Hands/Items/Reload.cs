@@ -43,11 +43,12 @@ namespace SpaceEngineersVR.Hands
     /// (<see cref="GripName"/>), so it never opens the tools wheel. The trigger does nothing else while a hand weapon is held
     /// (its secondary, the iron sight, is aiming down the sights: <see cref="IronSight"/>), so a pull that misses costs
     /// nothing. Either counts where it starts (<see cref="Pull"/>, <see cref="GripClaim"/>).</para>
-    /// <para>The button: B is the jetpack on foot, so the gun hand's stick click (<see cref="ButtonHandIn"/>). The right one does
-    /// nothing on foot otherwise (and with a hand pointing at a container, or on one, it is the Build Planner's production, or
-    /// its deposit with the right grip held: <see cref="QuickInventory"/>). Left-handed, the left click reloads and sprint moves
-    /// to the right click while a hand weapon that reloads is held (<see cref="SprintHand"/>); on the jetpack with zero-g pitch
-    /// and roll on, the left click is held for that roll, so reload stays on the right there.</para>
+    /// <para>The button: B is the jetpack on foot, so the gun hand's stick click. The right one does nothing on foot otherwise
+    /// (and with a hand pointing at a container, or on one, it is the Build Planner's production, or its deposit with the right
+    /// grip held: <see cref="QuickInventory"/>). Which hand's control it is, the binding layer decides from the bindings in use
+    /// (<see cref="ControllerBindings.ActiveForPlayer(VRAction)"/>): left-handed the left click reloads and sprint moves to the
+    /// right click while a hand weapon that reloads is held, except where a held mode is on the left click (zero-g pitch and roll
+    /// on the jetpack), where reload keeps the right.</para>
     /// <para>With <see cref="VRSettings.PhysicalReload"/> on, the press drops the magazine and the new one is put in by hand
     /// (Reload.Magazine.cs).</para>
     /// </remarks>
@@ -59,24 +60,11 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Debug: a log line every frame the other hand is near a held weapon's magazine (<see cref="Rendering.RenderDebug"/> ReloadTrace=1).</summary>
         public static bool Trace { get; set; }
 
-        /// <summary>The reload button on foot and on the jetpack, while a hand weapon is held: a stick click (<see cref="ButtonHandIn"/>).</summary>
-        internal const VRButtons Button = VRButtons.StickClick;
-
         /// <summary>
-        /// The hand whose stick click reloads in a control set: the gun hand's, except left-handed on the jetpack with zero-g
-        /// pitch and roll on, where the left click is held for the roll (<see cref="VRControls.ZeroGHeld"/>) and reload keeps the right.
+        /// The weapon in hand reloads (the game's own Reloadable): reload can be used, and its bindings are refused without one
+        /// (ControllerBindings), so a left-handed player's sprint keeps its click then (<see cref="BindingMirror.Moves"/>).
         /// </summary>
-        internal static Hand ButtonHandIn(VRContext where) =>
-            VRSettings.DominantHand == Hand.Left && !(where == VRContext.Jetpack && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff) ? Hand.Left : Hand.Right;
-
-        /// <summary>
-        /// The hand whose stick click sprints: the left, or the right while the left click reloads a hand weapon held, so a
-        /// left-handed player's clicks are mirrored rather than both on one stick.
-        /// </summary>
-        internal static Hand SprintHandIn(VRContext where) =>
-            ButtonHandIn(where) == Hand.Left && (MySession.Static?.LocalCharacter?.CurrentWeapon?.Reloadable ?? false) ? Hand.Right : Hand.Left;
-
-        internal static Hand SprintHand => SprintHandIn(VRControls.Context);
+        internal static bool GunReloads => MySession.Static?.LocalCharacter?.CurrentWeapon?.Reloadable ?? false;
 
         /// <summary>The other hand's trigger pulled this close to the magazine's box (metres, from its controller's grip pose) reloads: generous, the player cannot see under the weapon well.</summary>
         internal const double MagazineReach = 0.08;
@@ -95,9 +83,6 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>The name the other hand's grip at the magazine is claimed under (<see cref="GripClaim"/>).</summary>
         public const string GripName = "Reload";
-
-        /// <summary>Asked just after the two-handed hold (5): the zones tell the front grip and the magazine apart.</summary>
-        public const int GripPriority = 6;
 
         /// <summary>The trace logs the other hand this near the magazine (metres).</summary>
         private const double TraceNear = 0.25;
@@ -191,7 +176,7 @@ namespace SpaceEngineersVR.Hands
                 }
                 PatchMagazine(harmony);
                 PatchAnimation(harmony);
-                GripClaim.Register(GripName, GripPriority, hand => hand == TwoHand.OffHand && AtMagazine(hand, "grip closed"));
+                GripClaim.Register(GripName, GripPriority.Reload, hand => hand == TwoHand.OffHand && AtMagazine(hand, "grip closed"));
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(Reload), nameof(AfterSimulation)));
                 hooked = true;
@@ -227,9 +212,9 @@ namespace SpaceEngineersVR.Hands
                     magazinePull.Release();
                     return false;
                 }
-                // Reload (the gun hand's stick click, by default: mirrored left-handed). A press the Build Planner's production
-                // or deposit has (QuickInventory) is not reload (ControllerBindings).
-                bool button = ControllerBindings.IsActive(VRAction.Reload, ButtonHandIn(VRControls.Context) == Hand.Left);
+                // Reload (the gun hand's stick click, by default), on the hand the binding layer says. A press the Build
+                // Planner's production or deposit has (QuickInventory) is not reload (ControllerBindings).
+                bool button = ControllerBindings.ActiveForPlayer(VRAction.Reload);
                 magazinePull.Update(OffTrigger, () => AtMagazine(TwoHand.OffHand, "trigger pulled"));
                 bool gesture = magazinePull.Held || GripClaim.Holds(TwoHand.OffHand, GripName);
                 bool want = button || gesture;
@@ -353,18 +338,19 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// <paramref name="point"/> (in the world) is at the held weapon's magazine, within its reach times
-        /// <paramref name="scale"/>; <paramref name="toCentre"/> is its distance from the magazine's middle. A pistol
-        /// ColbyJack1134 measured (<see cref="GunProfile"/>) is reached for only below its magazine's base, so the support hand
-        /// cupping its grip is not at its magazine; any other weapon by its magazine's box (<see cref="TryZone"/>).
+        /// <paramref name="scale"/>; <paramref name="toCentre"/> is its distance from the magazine's middle. A pistol with a
+        /// magazine subpart (<see cref="GunProfile.Magazine"/>) is reached for only below its magazine's base, as ColbyJack1134's
+        /// zone, so the support hand cupping its grip is not at its magazine; any other weapon by its magazine's box
+        /// (<see cref="TryZone"/>).
         /// </summary>
         internal static bool MagazineAt(MyCharacter character, MyEntity weapon, GunProfile profile, Vector3D point, float scale, out double toCentre)
         {
             toCentre = double.PositiveInfinity;
             if (Off || !hooked || weapon == null || weapon.Closed || !TryGun(character, out _, out MyEntity held) || !ReferenceEquals(held, weapon))
                 return false;
-            if (profile != null && profile.Kind == GunKind.Pistol)
+            if (profile != null && profile.IsPistol && profile.Magazine.HasValue)
             {
-                Vector3D d = Vector3D.Transform(point, weapon.PositionComp.WorldMatrixNormalizedInv) - (Vector3D)profile.Magazine;
+                Vector3D d = Vector3D.Transform(point, weapon.PositionComp.WorldMatrixNormalizedInv) - (Vector3D)profile.Magazine.Value;
                 toCentre = d.Length();
                 return Math.Abs(d.X) < 0.075 * scale && Math.Abs(d.Z) < 0.08 * scale && d.Y < 0.012 * scale && d.Y > -0.12 * scale;
             }

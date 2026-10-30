@@ -8,6 +8,7 @@ This page is the whole reference. With it you can:
 - add **controller actions** the player binds on the bindings page, and be told when they are used;
 - put **items on the actions wheel and the wrist panel**, which the player points at and uses;
 - show **your own GUI screens** on the VR panel, at the off hand if you like;
+- give **your hand guns a sight** to aim down, and **your cockpits** the VR controls of the game's cockpit they are built on;
 - read where the player's **hands and head** are, and what the **trigger, grip and stick** are doing;
 - **buzz the controllers**;
 - be told when VR comes on or goes off, and when the main hand, the place the player is in, the HUD or the bindings change.
@@ -24,6 +25,8 @@ Contents:
 - [Controller actions](#controller-actions)
 - [Menu items](#menu-items)
 - [Panel screens](#panel-screens)
+- [Guns and cockpits](#guns-and-cockpits)
+- [Grip claims](#grip-claims)
 - [State, poses and haptics](#state-poses-and-haptics)
 - [Events](#events)
 - [Lifetime](#lifetime)
@@ -125,6 +128,8 @@ the file's first lines give its version.
 | `ActionHeld(id)`, `ActionStarted(id)`, `ActionEnded(id)`, `ActionHoldProgress(id)`, `ActionLabel(id)` | [Polling and labels](#polling-and-labels) | `false`, `false`, `false`, `-1`, `""` (`ActionLabel` without the VR plugin; with it, see [Polling and labels](#polling-and-labels)) |
 | `RegisterMenuItem(menu, id, label, icon, run, canUse, state, parent, stayOpen)`, `UnregisterMenuItem(menu, id)` | [Menu items](#menu-items); `stayOpen` is the `StaysOpen` option | `false` |
 | `RegisterPanelScreen(type, options)`, `UnregisterPanelScreen(type)` | [Panel screens](#panel-screens), by the type's `FullName` | `false` |
+| `RegisterGunSight(item, sight, direction)`, `UnregisterGunSight(item)`, `RegisterCockpit(subtype, like)`, `UnregisterCockpit(subtype)` | [Guns and cockpits](#guns-and-cockpits) | `false` |
+| `RegisterGripClaim(id, take, released)`, `UnregisterGripClaim(id)` | [Grip claims](#grip-claims), the hand as a `SevrHand`; `UnregisterGripClaim` is `UnregisterId` | `false` |
 | `Subscribe(event, handler)`, `Unsubscribe(event)` | [Events](#events) | `false` |
 | `Unregister()`, `OwnerEnabled` | [Lifetime](#lifetime), [the guard](#when-your-code-throws-the-guard) | `false` |
 | `DominantHand`, `Context` | [State](#state-poses-and-haptics) | `SevrHand.Right`, `SevrContext.None` |
@@ -144,8 +149,9 @@ Suggested bindings stay text ([Binding text](#binding-text)): `"Right.ButtonUppe
 
 Everything else on this page holds as written: the thread rule, refusals and their log lines, the guard, lifetimes. The
 client adds lines of its own to the game's log (`SpaceEngineers*.log`), each starting `SevrClient: {owner}:`; see
-[Troubleshooting](#troubleshooting). The sample plugin ([samples/plugin](samples/plugin/)) is written on it and uses every
-kind of member.
+[Troubleshooting](#troubleshooting). The sample plugin ([samples/plugin](samples/plugin/)) is written on it and uses
+actions, polling and labels, menu items, events, state, poses and haptics; not panel screens, gun sights, cockpits or grip
+claims.
 
 ### Plugins: reflection
 
@@ -420,17 +426,20 @@ it (their binding, the item's place). This is what a reloaded plugin does.
 | What | Limit |
 |---|---|
 | Owner id | 1 to 64 ASCII letters, digits, `_`, `.`, `-` |
-| Action id, menu item id | 1 to 64 ASCII letters, digits, `_`, `-` (no `.`) |
+| Action id, menu item id, grip claim id | 1 to 64 ASCII letters, digits, `_`, `-` (no `.`) |
 | Actions per owner | 64. Label: 80 characters. Suggested bindings: 4 |
 | Owner name (`SetOwnerName`) | 48 characters |
 | Menu items per owner | 64 over all menus; 4 on a menu's top ring; 15 on a page; pages 3 rings deep |
 | Menu item label / state text / icon path | 40 / 60 / 260 characters |
 | Panel screens per owner | 32. Type name: 512 characters |
+| Gun sights per owner, cockpits per owner | 64 each |
+| Grip claims per owner | 16 |
+| Item or block subtype id (`RegisterGunSight`, `RegisterCockpit`) | 1 to 128 characters, no control characters, no space at either end; matched exactly |
 
 ## Versions
 
 - `Version` is an `int`, now 2. Version 1 had the HUD members; version 2 added actions, hand hints, menu items, panel
-  screens, events, state, poses and haptics.
+  screens, events, state, poses and haptics, then gun sights, cockpits and grip claims.
 - A member's name, type and meaning never change. Members are only ever added: a member present in version N is present in
   every version after it. A member whose meaning had to change would be a new member under a new name.
 - Code against it by **asking for the member** you use: `TryGetValue`, then `as` the delegate type you expect. If it is
@@ -464,6 +473,11 @@ dictionary and the type is the delegate to cast it to. "P" is plugins, "M" mods,
 | `UnregisterMenuItem` | `Func<string owner, string menu, string id, bool>` | [Menu items](#unregistermenuitem) | P M |
 | `RegisterPanelScreen` | `Func<string owner, string screenType, string options, bool>` | [Panel screens](#registerpanelscreen) | P M |
 | `UnregisterPanelScreen` | `Func<string owner, string screenType, bool>` | [Panel screens](#unregisterpanelscreen) | P M |
+| `RegisterGunSight` | `Func<string owner, string item, Vector3D sight, Vector3D direction, bool>` | [Guns](#registergunsight) | P M |
+| `UnregisterGunSight` | `Func<string owner, string item, bool>` | [Guns](#unregistergunsight) | P M |
+| `RegisterCockpit` | `Func<string owner, string subtype, string like, bool>` | [Cockpits](#registercockpit) | P M |
+| `UnregisterCockpit` | `Func<string owner, string subtype, bool>` | [Cockpits](#unregistercockpit) | P M |
+| `RegisterGripClaim` | `Func<string owner, string id, Func<int hand, bool> take, Action<int hand> released, bool>` | [Grip claims](#registergripclaim) | P M |
 | `Subscribe` | `Func<string owner, string eventName, Action handler, bool>` | [Events](#events) | P M |
 | `Unsubscribe` | `Func<string owner, string eventName, bool>` | [Events](#events) | P M |
 | `Unregister` | `Func<string owner, bool>` | [Lifetime](#lifetime) | P M |
@@ -802,6 +816,108 @@ practice, though it is on both routes.
 
 `Func<string owner, string screenType, bool>`. Takes the owner's registration of the type away. True when it had one.
 
+## Guns and cockpits
+
+A mod's hand gun and cockpit work in VR from their own definitions and models, as the game's do. These members give what a
+model does not carry. They work with or without a headset, so register once, at load (a mod in `LoadData` or when the API
+arrives, a plugin in `Init`).
+
+**What a hand gun gets with no registration.** A hand gun is a hand item of the game's gun type
+(`MyObjectBuilder_AutomaticRifle`), whatever its physical item. The plugin reads, as the game does:
+
+| What | From |
+|---|---|
+| Its kind | The hand item's `WeaponType`. `Pistol` is held as a pistol: the other hand cups the grip, and its magazine is reached for below its base. `Rifle`, `RocketLauncher` and none are held as long guns, by the front grip, the magazine reached for at its box. |
+| Its muzzle | The model's first dummy whose name contains `muzzle_projectile` or `muzzle_missile` (any case), or the weapon item's own muzzle dummy name, where the game fires from; with none, the hand item's `MuzzlePosition`. |
+| Its magazine | The subpart `magazine` at the model's dummy `subpart_magazine` (its `file` names the magazine's model, beside the gun's), where the game puts it: dropped, reached for, pushed in. A model without the dummy reloads with the other hand under the gun, between the grips. |
+| Its sight | Not in the model: register it (below). Without one the gun works in every other way, but the player does not aim down its sights. |
+
+### RegisterGunSight
+
+`Func<string owner, string item, Vector3D sight, Vector3D direction, bool>`. Returns true when registered, false when
+refused.
+
+| Argument | Meaning |
+|---|---|
+| `item` | The gun's physical item subtype id (`PhysicalItems.sbc`, the `Id`'s `SubtypeId`: "MyRifleItem"). |
+| `sight` | The sight's aim point, in the gun model's space, metres: the peep, notch, red dot or reticle the eye looks through. Within 2 m of the model's origin. |
+| `direction` | Which way the sight line runs through it, in the same space: `Vector3D.Zero` for along the bore (the gun fires along `-Z`, `Vector3D.Forward`). Give one only where the sight line is not parallel to the bore; it must point forward (`Z` below zero), and it is made a unit vector. |
+
+With a sight, the player aims down the gun as down the game's: holding the gun so the eye is on the line through the aim
+point (within 9 cm of it, 14 cm once aiming, and 12 to 110 cm behind the muzzle) puts the character in the game's own iron
+sight, with its tighter spread and slower walk, and a tick on the gun hand. To find the aim point, read in your modelling
+tool the point the eye lines up (for iron sights, the top of the front post as seen through the rear notch).
+
+- The game's own guns keep their measured sights. A registration for one of the game's items is used only while that item has
+  another model (a mod that replaces the game's rifle model registers its sight under `AutomaticRifleItem`).
+- Two owners registering one item: the first by owner id (ordinal) is used. Registering the same owner and item again
+  replaces its sight.
+- A refused call is logged once with its reason (an item that is not a subtype id, a point not a number or too far out, a
+  direction too short or pointing back).
+
+### UnregisterGunSight
+
+`Func<string owner, string item, bool>`. Takes the owner's sight for that item away. True when it had one.
+
+### RegisterCockpit
+
+`Func<string owner, string subtype, string like, bool>`. Returns true when registered, false when refused.
+
+The VR cockpit controls (from ColbyJack1134's SpaceEngineersVR: the flight sticks, switches, levers, handles and buttons the
+player takes in hand) are measured on the game's own cockpit meshes. A mod's cockpit block built on one of those cockpits
+(the same model, or the same interior model, with its own stats, name or toolbar) can have them:
+
+| Argument | Meaning |
+|---|---|
+| `subtype` | Your cockpit block's subtype id (`CubeBlocks.sbc`, the `Id`'s `SubtypeId`). Not one of the game's cockpits below. |
+| `like` | The game's cockpit it is built on, by its block subtype id: one of `LargeBlockCockpit`, `LargeBlockCockpitSeat`, `LargeBlockModularBridgeCockpit`, `LargeBlockCockpitIndustrial`, `OpenCockpitLarge`, `LargeBlockOpenSlopedCockpit`, `LargeBlockClosedSlopedCockpit`, `LargeBlockStandingCockpit`, `LargeBlockSuspendedControlSeat`, `LargeBlockSuspendedControlSeatB`, `SmallBlockCockpit`, `DBSmallBlockFighterCockpit`, `SmallBlockCockpitIndustrial`, `SmallBlockFlushCockpit`, `SmallBlockCapCockpit`, `OpenCockpitSmall`, `CockpitOpen`, `SmallBlockOpenSlopedCockpit`, `SmallBlockClosedSlopedCockpit`, `SmallBlockStandingCockpit`, `SmallBlockSuspendedControlSeat`, `SmallBlockSuspendedControlSeatB`, `RoverCockpit`, `BuggyCockpit`, `SpeederCockpit`, `SpeederCockpitCompact`. |
+
+- The controls are that cockpit's, where its model has them, and kept for your block: the player's switch assignments, covers
+  and seat fit are your block's own.
+- **The model must be that cockpit's.** When the player sits, the block's interior model (or its model, with none) is checked
+  against the model of the cockpit `like` names; another model gets no VR controls, and the log says so once:
+  `[WARN] SEVR API: the cockpit {subtype} is registered as built on the game's cockpit with the model {model}, but its model is {model}; the controls are measured on that model, so it has no VR controls (docs/MOD_API.md, Cockpits)`.
+  A cockpit with a model of its own cannot join yet: its controls would have to be measured on its mesh, and there is no
+  format for giving them.
+- Two owners registering one subtype: the first by owner id (ordinal) is used. Registering the same owner and subtype again
+  replaces what it is like.
+
+### UnregisterCockpit
+
+`Func<string owner, string subtype, bool>`. Takes the owner's registration of the cockpit away. True when it had one.
+
+## Grip claims
+
+A grip that closes in the world is offered to the plugin's own interactions first: the held tool's second grip, the reload,
+the holsters, the helmet, the ship model, the external view screen, floating items, ColbyJack1134's cockpit controls, and use
+objects (doors, seats, terminals). A grip none of them takes is offered to the grip claims, and only after them to the hull and
+ladders and to what the grip does in empty air (Use on the right hand, the tools wheel on the left on foot). A claim is how an
+interaction of your own, a lever on your block or a handle, takes a press of the grip.
+
+### RegisterGripClaim
+
+`Func<string owner, string id, Func<int, bool> take, Action<int> released, bool>`. Returns true when registered, false when
+refused.
+
+| Argument | Meaning |
+|---|---|
+| `id` | 1 to 64 letters, digits, `_` or `-`, unique within the owner. Registering the same owner and id again replaces the claim. At most 16 per owner. |
+| `take` | Asked as a grip closes, with the hand (`0` left, `1` right): `true` makes that press yours. Decide from where the hand is now (`HandGripPose`) and your own state, and answer fast. Not null. |
+| `released` | Called once, with the hand, when the grip you took opens, or VR stops. Null for no word. |
+
+- Claims are asked by owner id and then id (ordinal), so load order never decides it. The first `true` takes the press; the
+  later claims are not asked.
+- While the press is yours the plugin does nothing with that grip: no Use, no tools wheel, no hull grab. What it does is your
+  code. `HandSqueeze` and `HandGripPose` give the grip and the hand meanwhile; `released` says when it ends.
+- Asked once a press, only while VR is active, and only in the world: on a GUI screen the grip is the right mouse button
+  ([Panel screens](#panel-screens)).
+- `take` and `released` run under your [guard](#when-your-code-throws-the-guard): while it has your callbacks off, or when
+  `take` throws, your claims do not take the grip.
+- Taken away by `Unregister`, and by `UnregisterId`: an id names your action and your grip claim alike, and both go. A claim
+  taken away while it holds a grip is not told; that grip then does nothing until it opens.
+- Fair to flat players: `take` is given the hand and nothing else, and a claim tells you only that the player closed their own
+  grip, as `HandSqueeze` does.
+
 ## State, poses and haptics
 
 These describe the player's own head, hands and controllers, in the world, in the game's units (metres). When VR is not
@@ -855,13 +971,13 @@ refused. Nothing is raised for the state the game is in when you subscribe: read
 | | Plugin route | Mod route |
 |---|---|---|
 | A registration lasts | Until you take it away or the game closes: across worlds, the main menu, and a headset coming on or off | Until you take it away or **the world unloads** |
-| Taken away by | `Unregister`, `UnregisterId`, `UnregisterMenuItem`, `UnregisterPanelScreen`, `Unsubscribe` | The same, and by the plugin when the world changes; the log says so |
+| Taken away by | `Unregister`, `UnregisterId`, `UnregisterMenuItem`, `UnregisterPanelScreen`, `UnregisterGunSight`, `UnregisterCockpit`, `Unsubscribe` | The same, and by the plugin when the world changes; the log says so |
 
 - **`Unregister(owner)`**, `Func<string, bool>`: takes away everything the owner registered (actions, event handlers, menu
-  items, panel screens). True when there was anything. The player's bindings for the actions are kept.
-- **`UnregisterId(owner, id)`**, `Func<string, string, bool>`: takes away the owner's action `id`; true when it was
-  registered. The player's binding is kept for when it is registered again. An id never names a menu item, a screen or an
-  event: those have their own members.
+  items, panel screens, gun sights, cockpits, grip claims). True when there was anything. The player's bindings for the actions are kept.
+- **`UnregisterId(owner, id)`**, `Func<string, string, bool>`: takes away the owner's action `id`, and its grip claim `id`;
+  true when either was registered. The player's binding is kept for when it is registered again. An id never names a menu item, a screen, a gun, a cockpit or
+  an event: those have their own members.
 - **Player bindings** for `owner.id` are saved with the player's settings, and kept even when your plugin is not installed in
   a later run, so a player who removes and reinstalls you finds their bindings.
 - **A world unload** takes away what a mod registered in it, at the next frame. A mod should still call `Unregister` in
@@ -916,6 +1032,9 @@ something about the game that a flat-screen player could not learn.
 - **No raw buttons, no input injection.** You cannot read the controller's buttons directly, nor press anything for the
   player. Actions are the player's to bind, and what an action does is your code, with the powers it has from a key.
 - **Menu items and screens** follow the same reach and visibility rules as the plugin's own.
+- **Gun sights and cockpits** give a mod's gun and cockpit what the game's have in VR, nothing more: aiming down a sight puts
+  the character in the game's own iron sight, which a flat player has too, and the cockpit controls use what the cockpit's
+  toolbar and the game's flight controls already do.
 - **Nothing here changes the player's settings or the plugin's behaviour.** Registering adds to what the player can bind and
   point at; the player can take any of it away.
 - **Local only.** Nothing is sent over the network.
@@ -1186,9 +1305,20 @@ camera goes through `HudToWorld`, and sizes through `HudTangents` and `HudDepth`
 
 ## Mods that do not use the API
 
-A HUD drawn the way Text HUD API and Rich HUD Framework draw theirs, as billboards just ahead of the camera, already shows
-on the VR HUD without the mod changing anything. While VR is active, each eye takes the game frame's billboards that are all
-of these:
+**Use the API.** A mod or plugin that draws a HUD places it with `HudToWorld` and hides it while `HudVisible` is false
+([HUD members](#hud-members-version-1), [Drawing a HUD with it](#drawing-a-hud-with-it)): that is the way into VR, and the only one that is kept. What follows is a compatibility shim,
+`ModHudBillboards`, for the HUD frameworks that do not call it yet. It is for these, and nothing is added to the list:
+
+| Framework | Steam Workshop | What the shim does for it |
+|---|---|---|
+| Text HUD API | 758597413 | Moves its HUD messages and the mods drawing through it onto the VR HUD |
+| Rich HUD Framework | 1965654081 | Moves its HUD (windows, menus, and the mods drawing through it) onto the VR HUD |
+
+A framework on the list that calls `HudToWorld` is left alone by the shim (its HUD is then at least 50 cm out), so the
+list shrinks as they do; a mod drawing through one of them needs no change of its own.
+
+A HUD drawn the way those frameworks draw theirs, as billboards just ahead of the camera, shows on the VR HUD without the
+mod changing anything. While VR is active, each eye takes the game frame's billboards that are all of these:
 
 - drawn after post-processing (`BlendTypeEnum.PostPP`, those frameworks' default for HUD elements);
 - given in world space, as quads, triangles or points (not lines, not given in an object's space, not with their own
@@ -1231,6 +1361,8 @@ before it stays as `SpaceEngineersVR.prev.log`. Each line starts with the time a
 | An action is registered but nothing happens | It starts unbound when its suggestion clashed (see [Suggested bindings](#suggested-bindings)): the player binds it under Options > VR > Controller. Or `available` returns false, or the player is not in one of its contexts (a wheel or the wrist panel is a place of its own). |
 | A callback stopped being called | Your owner was switched off by the guard: look for `switched off` in the log; `OwnerEnabled` says false. |
 | A menu item is greyed out | `canUse` returns false, or your owner is switched off. |
+| A mod's gun is never aimed down its sights | No sight is registered for its item (the log's `Iron sight: ... in hand` line ends `its sight is not known`), or the eye is not on the line through it: check the point is in the gun model's space. |
+| A mod's cockpit has no VR controls | It is not registered, its model is not the model of the cockpit it names (the `[WARN] SEVR API: the cockpit ...` line), or the player's **Cockpit sticks** setting is off. |
 | A mod's action or item vanished after a world change | A mod's registrations end with its world. Register again when the API arrives in the new world. |
 | `IsActive` is false in a headset | The headset's session is not running (asleep, or the runtime is closing it), or the plugin has not found the headset yet. |
 | `HudToWorld` returns (0, 0, 0) | There is no camera yet. Skip drawing that frame. |

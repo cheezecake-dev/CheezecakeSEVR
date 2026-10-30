@@ -29,10 +29,9 @@ namespace SpaceEngineersVR.Cockpits
             // His pieces were posed again after physics, from his character component's UpdateAfterSimulation: the pilot's, here.
             harmony.Patch(AccessTools.Method(typeof(MyCharacter),nameof(MyCharacter.UpdateAfterSimulation)),
                 postfix:new HarmonyMethod(typeof(CockpitRenderPatch),nameof(AfterSimulation)));
-            // Ahead of GrabUse (30): a grip that starts by one of his sticks takes the stick.
-            Hands.GripClaim.Register(CockpitControls.ClaimName,29,CockpitControls.Take);
-            // Ahead of the sticks: a grip that starts with the fingertip on one of his switches works the switch.
-            Hands.GripClaim.Register(CockpitTouch.ClaimName,28,CockpitTouch.Take);
+            // A grip that starts by one of his sticks takes the stick, and one with the fingertip on a switch the switch.
+            Hands.GripClaim.Register(CockpitControls.ClaimName,Hands.GripPriority.CockpitControls,CockpitControls.Take);
+            Hands.GripClaim.Register(CockpitTouch.ClaimName,Hands.GripPriority.CockpitTouch,CockpitTouch.Take);
             Patched=true;
         }
 

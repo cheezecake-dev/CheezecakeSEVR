@@ -51,8 +51,9 @@ namespace SpaceEngineersVR.Input
             {
                 return Resolve(out _, out _, out _);
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                OnceLog.Error("VRControls.CurrentContext", e, "The control set for a prompt could not be worked out; the last frame's is used");
                 return last;
             }
         }
@@ -73,9 +74,9 @@ namespace SpaceEngineersVR.Input
                 return false;
             if (intent == Intent.Sprint && asked != VRContext.OnFoot)
                 return false;
-            // The right grip pulling a tool or gun out of the inventory is the pull's, not the game's USE, which closes the
-            // terminal (MyGuiScreenTerminal.HandleUnhandledInput) as the grip closes on the item.
-            if (intent == Intent.Use && InventoryPull.OwnsGrip(Hand.Right))
+            // The right grip a menu feature holds (pulling a tool or gun out of the inventory) is not the game's USE, which
+            // closes the terminal (MyGuiScreenTerminal.HandleUnhandledInput) as the grip closes on the item.
+            if (intent == Intent.Use && Hands.GripClaim.MenuOwner(Hand.Right) != null)
                 return false;
             // The colour tool's controls that share an intent: the brush chosen at the pull, the colour's or the skin's cycle.
             if (intent == Intent.Paint && control != Hands.PaintMode.BrushControl)

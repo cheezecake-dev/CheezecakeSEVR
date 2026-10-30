@@ -20,10 +20,12 @@ namespace SpaceEngineersVR.Input
     /// The hands on a radial menu. The wheel the hands open is the toolbar's slots (<see cref="SlotWheelScreen"/>, the
     /// game's radial menu screen filled with the toolbar the player has now: the character's on foot and on the jetpack,
     /// the seat's in a seat); the game's own system radial (dampeners, lights, helmet and the like) is one stick click away.
-    /// The game's radial screens read the selection from the pad's stick (MyInput.GetJoystickPositionForGameplay),
-    /// activate it on GUI SHIFT_RIGHT, close on GUI CANCEL, turn their pages on SWITCH_GUI_LEFT/RIGHT, and close by
-    /// themselves the moment the pad is not the last device used. This class opens, steers and closes them from the
-    /// controllers, through those same questions.
+    /// The slot wheel takes its highlight from this class (<see cref="TryStick"/>) and closes when this class stops driving it
+    /// (<see cref="DrivesSlots"/>). The game's own radial screens read the selection from the pad's stick
+    /// (MyInput.GetJoystickPositionForGameplay), activate it on GUI SHIFT_RIGHT, close on GUI CANCEL, turn their pages on
+    /// SWITCH_GUI_LEFT/RIGHT, and close by themselves on any frame the pad is not the last device used; this class steers
+    /// them through those same questions, and only while such a screen is updating is the pad said to be in use
+    /// (<see cref="Patch"/>).
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
@@ -57,9 +59,6 @@ namespace SpaceEngineersVR.Input
 
         /// <summary>ToolbarWheel=1, the default: the toolbar's slots, with the system radial a stick click away.</summary>
         public const int ModeSlots = 1;
-
-        /// <summary>ToolbarWheel=2: the game's system radial only, without the slot wheel (a fallback if the slot screen misbehaves in the game).</summary>
-        public const int ModeSystem = 2;
 
         /// <summary>ToolbarWheel=3: the game's block palette (TOOLBAR_RADIAL_MENU) instead of the system radial; to look at.</summary>
         public const int ModePalette = 3;
@@ -193,6 +192,9 @@ namespace SpaceEngineersVR.Input
         /// <summary>Which wheel it is driving (Slots, System or Palette), for the log and the checks.</summary>
         internal static string Showing => kind.ToString();
 
+        /// <summary>The slot wheel is the screen being driven: while it is not, an open slot wheel closes itself (<see cref="SlotWheelScreen"/>).</summary>
+        internal static bool DrivesSlots => Capturing && kind == Kind.Slots;
+
         /// <summary>The right stick is held down on the slot wheel's external view switch: the switch shows the wheel's highlight.</summary>
         internal static bool ViewSwitchHeld => viewPressed && phase == Phase.Open && kind == Kind.Slots;
 
@@ -291,7 +293,7 @@ namespace SpaceEngineersVR.Input
 
         private static void Begin(Gesture how, double seconds, Vector2 leftStick)
         {
-            kind = Mode == ModePalette ? Kind.Palette : Mode == ModeSystem ? Kind.System : Kind.Slots;
+            kind = Mode == ModePalette ? Kind.Palette : Kind.Slots;
             toolbar = null;
             if (kind == Kind.Slots)
             {
@@ -315,7 +317,7 @@ namespace SpaceEngineersVR.Input
             heldDirection = held ? leftStick : Vector2.Zero;
             if (held)
                 Log.Info("Toolbar wheel: the left stick was already out when the wheel opened; it chooses nothing until it is let go or turned");
-            string gestureName = how == Gesture.Grip ? "left grip" : "Y tap";
+            string gestureName = how == Gesture.Grip ? ActionNames.Name(VRAction.ToolsWheel) : ActionNames.Name(VRAction.SeatToolsWheel) + " tapped";
             if (kind == Kind.Slots)
             {
                 try
@@ -568,10 +570,10 @@ namespace SpaceEngineersVR.Input
             // The VR actions wheel takes the hands from here; this wheel keeps them from the game until the grip is let go.
             if (Gui.ActionsWheel.Enabled && Gui.ActionsWheel.Open(Hand.Left, gesture == Gesture.Grip))
             {
-                Finish("left stick click, handed to the VR actions wheel");
+                Finish(ActionNames.Name(VRAction.OpenActionsWheel) + ", handed to the VR actions wheel");
                 return;
             }
-            Log.Info("Toolbar wheel: left stick click, swapping to the game's system menu");
+            Log.Info($"Toolbar wheel: {ActionNames.Name(VRAction.OpenActionsWheel)}, swapping to the game's system menu");
             phase = Phase.Opening;
             openedAt = seconds;
             pageHeld = 0;
@@ -641,7 +643,7 @@ namespace SpaceEngineersVR.Input
             }
         }
 
-        /// <summary>The stick the radial menu reads, if the wheel is steering it (x right, y down); false to leave the game's own reading.</summary>
+        /// <summary>The stick the radial menu reads, if the wheel is steering it (x right, y down, as a pad's); false when it chooses nothing.</summary>
         internal static bool TryStick(out Vector3 value)
         {
             value = new Vector3(pick.X, pick.Y, 0f);
@@ -700,30 +702,51 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// The radial menu closes itself on any frame the pad was not the last device used (MyGuiControlRadialMenuBase.Update),
-        /// and takes its choice from the pad's stick. While the wheel runs it is told the pad is in use and given the stick.
-        /// Each patch on its own, as <see cref="InputPatches"/> does.
+        /// The game's radial menu (the system radial, the block palette) closes itself on any frame the pad was not the last
+        /// device used, and takes its choice from the pad's stick (MyGuiControlRadialMenuBase.Update). For the length of that
+        /// Update, on a game radial this wheel drives, the pad is said to be the last used and the stick is the hands'; nothing
+        /// else in the game is told so. The slot wheel does not run that Update (<see cref="SlotWheelScreen"/>). All three or
+        /// none: the pad alone would leave the radial up with no choice, the stick alone would see it close at once.
         /// </summary>
         public static void Patch(Harmony harmony)
         {
-            Hook(harmony, "pad last used", AccessTools.PropertyGetter(typeof(MyVRageInput), nameof(MyVRageInput.IsJoystickLastUsed)), nameof(LastUsed));
-            Hook(harmony, "radial stick",
-                AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.GetJoystickPositionForGameplay), new[] { typeof(RequestedJoystickAxis) }),
-                nameof(Position));
+            PatchRegistry.Apply("game radial", () =>
+            {
+                harmony.Patch(AccessTools.DeclaredMethod(typeof(MyGuiControlRadialMenuBase), nameof(MyGuiControlRadialMenuBase.Update), new[] { typeof(bool) })
+                        ?? throw new MissingMethodException(nameof(MyGuiControlRadialMenuBase), "Update"),
+                    prefix: new HarmonyMethod(typeof(ToolbarWheel), nameof(BeforeRadial)),
+                    finalizer: new HarmonyMethod(typeof(ToolbarWheel), nameof(AfterRadial)));
+                harmony.Patch(AccessTools.PropertyGetter(typeof(MyVRageInput), nameof(MyVRageInput.IsJoystickLastUsed))
+                        ?? throw new MissingMethodException(nameof(MyVRageInput), "IsJoystickLastUsed"),
+                    postfix: new HarmonyMethod(typeof(ToolbarWheel), nameof(LastUsed)));
+                harmony.Patch(AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.GetJoystickPositionForGameplay), new[] { typeof(RequestedJoystickAxis) })
+                        ?? throw new MissingMethodException(nameof(MyVRageInput), "GetJoystickPositionForGameplay"),
+                    postfix: new HarmonyMethod(typeof(ToolbarWheel), nameof(Position)));
+            }, "Toolbar wheel (game radial) could not be hooked; the game's system radial will not follow the hands");
         }
 
-        private static void Hook(Harmony harmony, string what, MethodBase target, string postfix) =>
-            PatchRegistry.Hook(harmony, typeof(ToolbarWheel), "Toolbar wheel", "the radial menu will not follow the hands", what, target, postfix: postfix);
+        /// <summary>A game radial this wheel drives is in its Update on this thread.</summary>
+        [ThreadStatic]
+        private static bool steering;
+
+        private static void BeforeRadial(MyGuiControlRadialMenuBase __instance) =>
+            steering = Capturing && kind != Kind.Slots && !(__instance is SlotWheelScreen);
+
+        private static Exception AfterRadial(Exception __exception)
+        {
+            steering = false;
+            return __exception;
+        }
 
         private static void LastUsed(ref bool __result)
         {
-            if (Capturing)
+            if (steering)
                 __result = true;
         }
 
         private static void Position(ref Vector3 __result)
         {
-            if (__result == Vector3.Zero && TryStick(out Vector3 value))
+            if (steering && __result == Vector3.Zero && TryStick(out Vector3 value))
                 __result = value;
         }
     }

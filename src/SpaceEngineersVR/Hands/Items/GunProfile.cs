@@ -1,85 +1,112 @@
 // Adapted from ColbyJack1134's SpaceEngineersVR (Player/Shared/WeaponPose.cs: WeaponProfile's guns, their kind, muzzle,
-// sight and magazine, measured on the game's meshes), with his permission.
+// sight and magazine, measured on the game's meshes), with his permission. What the model carries is now read from it
+// (GunModel); his sights stay, and his muzzle where the game's differs (no game state; tests/GameModelTests runs it).
 using System;
-using Sandbox.Game.Entities.Character;
-using VRage.Game.Entity;
+using VRage.Game;
 using VRageMath;
 
 namespace SpaceEngineersVR.Hands
 {
-    internal enum GunKind { Rifle, Pistol, Launcher }
-
     /// <summary>
-    /// ColbyJack1134's measurements of the game's own hand weapons, in the weapon model's space (the space of the weapon
-    /// entity's world matrix): where the muzzle is, where the sight's aim point is (peep, notch, reflex dot or reticle) and
-    /// which way the sight line runs, and where the magazine's base is. Only the game's weapons are measured; a mod's weapon
-    /// has no profile (<see cref="Of"/> is null), so it is never aimed down the sights (<see cref="IronSight"/>) and its
-    /// magazine is reached for by the model's own box (<see cref="Reload"/>).
+    /// What the plugin knows of a hand weapon, in the weapon model's space (the space of the weapon entity's world matrix):
+    /// its kind, where the muzzle is, where the magazine's base is, and where the sight's aim point is (peep, notch, reflex dot
+    /// or reticle) and which way the sight line runs. The kind, the muzzle and the magazine come from the gun's own definition
+    /// and model (<see cref="GunModel"/>), so a mod's gun has them as the game's do; a model carries no sight, so the game's
+    /// guns have ColbyJack1134's measured ones (<see cref="Vanilla"/>) and a mod's gun the one its mod registers through
+    /// SevrApi (<c>RegisterGunSight</c>, <see cref="Api.ApiGuns"/>), or none, and then it is never aimed down the sights
+    /// (<see cref="IronSight"/>).
     /// </summary>
-    internal sealed class GunProfile
+    internal sealed partial class GunProfile
     {
-        internal readonly string Item, Model;
-        internal readonly GunKind Kind;
-        internal readonly Vector3 Muzzle, Magazine;
+        internal readonly MyItemWeaponType Kind;
+        internal readonly Vector3 Muzzle;
 
-        /// <summary>The sight's aim point; the sight line runs through it along <see cref="SightDirection"/>.</summary>
+        /// <summary>The magazine's base; null for a model without a magazine subpart (<see cref="Reload"/> then reaches for a zone under the gun).</summary>
+        internal readonly Vector3? Magazine;
+
+        /// <summary>The sight's aim point; the sight line runs through it along <see cref="SightDirection"/>. Null: no sight known.</summary>
         internal readonly Vector3? Sight;
 
-        /// <summary>The sight line's direction where it is not parallel to the bore (the flare gun's post sits above its rear block).</summary>
-        internal readonly Vector3 SightDirection = Vector3.Forward;
+        /// <summary>The sight line's direction, a unit vector: along the bore unless the sight says otherwise (the flare gun's post sits above its rear block).</summary>
+        internal readonly Vector3 SightDirection;
 
-        private GunProfile(string item, string model, GunKind kind, Vector3 muzzle, Vector3 magazine, Vector3? sight, Vector3? sightDirection = null)
+        internal bool IsPistol => Kind == MyItemWeaponType.Pistol;
+
+        private GunProfile(MyItemWeaponType kind, Vector3 muzzle, Vector3? magazine, Vector3? sight, Vector3 sightDirection)
         {
-            Item = item;
-            Model = "Models/Weapons/" + model + ".mwm";
             Kind = kind;
             Muzzle = muzzle;
             Magazine = magazine;
             Sight = sight;
-            if (sightDirection.HasValue)
-                SightDirection = Vector3.Normalize(sightDirection.Value);
+            SightDirection = sightDirection;
         }
 
-        internal static readonly GunProfile[] All =
+        /// <summary>
+        /// A gun's profile from what its definition and model give (<paramref name="kind"/>, <paramref name="muzzle"/>,
+        /// <paramref name="magazine"/>, from <see cref="GunModel"/>), the game's own gun it is (<paramref name="vanilla"/>,
+        /// <see cref="Vanilla.Find"/>, null for any other), and the sight a mod registered for its item
+        /// (<paramref name="registered"/>, null for none). The game's gun keeps its measured sight and, where it has one, its
+        /// measured muzzle, so nothing a mod registers changes it.
+        /// </summary>
+        internal static GunProfile Make(MyItemWeaponType kind, Vector3 muzzle, Vector3? magazine, Vanilla vanilla, Api.ApiGuns.Sight? registered)
         {
-            new GunProfile("AutomaticRifleItem", "AutomaticRifle", GunKind.Rifle, new Vector3(0.00000013f, 0.04812809f, -0.31885853f), new Vector3(0f, -0.10668955f, -0.07233407f), new Vector3(0, .1121f, -.0107f)),
-            new GunProfile("PreciseAutomaticRifleItem", "PreciseAutomaticRifle", GunKind.Rifle, new Vector3(0.00000013f, 0.04812809f, -0.31885853f), new Vector3(0f, -0.09042368f, -0.06554391f), new Vector3(0, .11f, -.0109f)),
-            new GunProfile("RapidFireAutomaticRifleItem", "RapidFireAutomaticRifle", GunKind.Rifle, new Vector3(0.00000013f, 0.04812809f, -0.31885853f), new Vector3(0f, -0.19320688f, -0.07912423f), new Vector3(0, .1121f, -.0107f)),
-            new GunProfile("UltimateAutomaticRifleItem", "UltimateAutomaticRifle", GunKind.Rifle, new Vector3(0.00000013f, 0.04812809f, -0.31885853f), new Vector3(0f, -0.12747202f, -0.07080819f), new Vector3(0, .11f, -.0109f)),
-            new GunProfile("SemiAutoPistolItem", "Pistol_Warfare", GunKind.Pistol, new Vector3(0f, 0.067419f, -0.17239414f), new Vector3(0f, -0.09267507f, 0.06955369f), new Vector3(0, .0881f, .083f)),
-            new GunProfile("FullAutoPistolItem", "Pistol_FullAuto_Warfare", GunKind.Pistol, new Vector3(0f, 0.06741901f, -0.17239273f), new Vector3(0f, -0.16958985f, 0.08965235f), new Vector3(0, .0881f, .083f)),
-            new GunProfile("ElitePistolItem", "Pistol_Elite_Warfare", GunKind.Pistol, new Vector3(0f, 0.06741901f, -0.17239273f), new Vector3(0f, -0.09287956f, 0.0760093f), new Vector3(0, .0981f, .04f)),
-            new GunProfile("FlareGunItem", "Pistol_FlareGun", GunKind.Pistol, new Vector3(0f, 0.06341899f, -0.10469195f), new Vector3(0f, -0.09649658f, 0.08415222f), new Vector3(0, .0931f, .0553f), new Vector3(0, .0041f, -.1386f)),
-            new GunProfile("BasicHandHeldLauncherItem", "RocketLauncher_Regular", GunKind.Launcher, new Vector3(0.00000014f, 0.16771293f, -0.41278997f), new Vector3(-0.00001526f, -0.03022767f, -0.20481059f), new Vector3(-.1635f, .1681f, -.068f)),
-            new GunProfile("AdvancedHandHeldLauncherItem", "RocketLauncher_Precision", GunKind.Launcher, new Vector3(-0.00000004f, 0.16770662f, -0.41881937f), new Vector3(-0.00001526f, -0.0294178f, -0.20481059f), new Vector3(-.163f, .1682f, -.1217f)),
-        };
-
-        internal static GunProfile Find(string item, string model)
-        {
-            if (item == null || model == null)
-                return null;
-            string path = model.Replace('\\', '/');
-            foreach (GunProfile p in All)
-                if (item == p.Item && path.EndsWith(p.Model, StringComparison.OrdinalIgnoreCase))
-                    return p;
-            return null;
+            if (vanilla != null)
+                return new GunProfile(kind, vanilla.Muzzle ?? muzzle, magazine, vanilla.Sight, vanilla.SightDirection);
+            if (registered.HasValue)
+                return new GunProfile(kind, muzzle, magazine, registered.Value.Point, registered.Value.Direction);
+            return new GunProfile(kind, muzzle, magazine, null, Vector3.Forward);
         }
 
-        private static MyEntity lastWeapon;
-        private static GunProfile lastProfile;
-
-        /// <summary>The profile of the weapon in the character's hand, or null (nothing in hand, a tool, a mod's weapon). Game thread.</summary>
-        internal static GunProfile Of(MyCharacter character)
+        /// <summary>
+        /// ColbyJack1134's measurements of the game's own guns that their models do not carry: each sight, and the Elite rocket
+        /// launcher's muzzle (its model's muzzle dummy, "Dummy_Muzzle", is not one the game's gun base reads, so the game fires
+        /// it from the hand item's MuzzlePosition, 9 cm lower and 2 cm further forward; the sight test keeps his).
+        /// </summary>
+        internal sealed class Vanilla
         {
-            MyEntity weapon = character?.CurrentWeapon as MyEntity;
-            if (weapon == null)
-                return null;
-            if (!ReferenceEquals(weapon, lastWeapon))
+            internal readonly string Item, Model;
+            internal readonly Vector3 Sight;
+            internal readonly Vector3 SightDirection = Vector3.Forward;
+
+            /// <summary>Null: the muzzle the game uses (<see cref="GunModel.Muzzle"/>).</summary>
+            internal readonly Vector3? Muzzle;
+
+            private Vanilla(string item, string model, Vector3 sight, Vector3? sightDirection = null, Vector3? muzzle = null)
             {
-                lastWeapon = weapon;
-                lastProfile = Find(character.CurrentWeapon.PhysicalObject?.SubtypeName, weapon.Model?.AssetName);
+                Item = item;
+                Model = "Models/Weapons/" + model + ".mwm";
+                Sight = sight;
+                if (sightDirection.HasValue)
+                    SightDirection = Vector3.Normalize(sightDirection.Value);
+                Muzzle = muzzle;
             }
-            return lastProfile;
+
+            internal static readonly Vanilla[] All =
+            {
+                new Vanilla("AutomaticRifleItem", "AutomaticRifle", new Vector3(0, .1121f, -.0107f)),
+                new Vanilla("PreciseAutomaticRifleItem", "PreciseAutomaticRifle", new Vector3(0, .11f, -.0109f)),
+                new Vanilla("RapidFireAutomaticRifleItem", "RapidFireAutomaticRifle", new Vector3(0, .1121f, -.0107f)),
+                new Vanilla("UltimateAutomaticRifleItem", "UltimateAutomaticRifle", new Vector3(0, .11f, -.0109f)),
+                new Vanilla("SemiAutoPistolItem", "Pistol_Warfare", new Vector3(0, .0881f, .083f)),
+                new Vanilla("FullAutoPistolItem", "Pistol_FullAuto_Warfare", new Vector3(0, .0881f, .083f)),
+                new Vanilla("ElitePistolItem", "Pistol_Elite_Warfare", new Vector3(0, .0981f, .04f)),
+                new Vanilla("FlareGunItem", "Pistol_FlareGun", new Vector3(0, .0931f, .0553f), new Vector3(0, .0041f, -.1386f)),
+                new Vanilla("BasicHandHeldLauncherItem", "RocketLauncher_Regular", new Vector3(-.1635f, .1681f, -.068f)),
+                new Vanilla("AdvancedHandHeldLauncherItem", "RocketLauncher_Precision", new Vector3(-.163f, .1682f, -.1217f),
+                    muzzle: new Vector3(-0.00000004f, 0.16770662f, -0.41881937f)),
+            };
+
+            /// <summary>The game's gun whose item is <paramref name="item"/> and whose model is <paramref name="model"/>, or null (a mod's gun, or a mod's model on the game's item).</summary>
+            internal static Vanilla Find(string item, string model)
+            {
+                if (item == null || model == null)
+                    return null;
+                string path = model.Replace('\\', '/');
+                foreach (Vanilla v in All)
+                    if (item == v.Item && path.EndsWith(v.Model, StringComparison.OrdinalIgnoreCase))
+                        return v;
+                return null;
+            }
         }
     }
 }

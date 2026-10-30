@@ -803,7 +803,7 @@ namespace SpaceEngineersVR
         /// <summary>On foot, the head is held within reach of the character's head (<see cref="Tracking.BodyGuard"/>).</summary>
         public static bool HeadLock => headLock.Value;
 
-        /// <summary>On foot, how far forward the head can go from the character's head, metres; sideways is four fifths of it, back is the body's (<see cref="Tracking.BodyVolume.LockHead"/>).</summary>
+        /// <summary>On foot, how far forward the head can go from the character's head, metres; sideways is four fifths of it, back is the body's (<see cref="Tracking.BodyVolume.PushEdge"/>).</summary>
         public static float HeadReach => headReach.Value;
 
         /// <summary>How far one flick of the right stick turns the character, degrees.</summary>

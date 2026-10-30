@@ -46,7 +46,7 @@ namespace SpaceEngineersVR.Tracking
     /// within 0.1-0.3 s, and both arms with it. Held, it gives way to the lowest the head goes and stays there.
     /// The head matrix is built before the bones are moved in a frame as well as after (the aim, the use ray), so the
     /// push-out reckons from this frame's distance, not from where last frame's move left the bones.
-    /// RenderDebug BodyForward=0 draws the body where the game puts it; BodyForwardMm=n sets another distance.
+    /// RenderDebug BodyForwardMm=n sets another distance (0 draws the body where the game puts it).
     /// </remarks>
     internal static class BodyShift
     {
@@ -65,8 +65,8 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>The most the head's pitch moves the body in a simulation frame, metres (0.3 m/s: the whole distance in 0.4 s).</summary>
         private const float Slide = 0.3f / 60f;
 
-        /// <summary>The most the body comes forward again after giving way, in a simulation frame, metres (0.25 m/s; 0.4 m/s with RenderDebug BodyForwardHold=0).</summary>
-        private const float Return = 0.25f / 60f, ReturnUnheld = 0.4f / 60f;
+        /// <summary>The most the body comes forward again after giving way, in a simulation frame, metres (0.25 m/s).</summary>
+        private const float Return = 0.25f / 60f;
 
         /// <summary>
         /// After the room has made the body give way, the simulation frames it stays back before it comes forward again
@@ -81,16 +81,10 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>The room coming back to within this of where the body is held, metres, holds it again (<see cref="HoldFrames"/>).</summary>
         private const float Touch = 0.003f;
 
-        /// <summary>RenderDebug BodyForwardHold=0: the body comes forward again as soon as there is room, at 0.4 m/s.</summary>
-        public static bool HoldOff { get; set; }
-
         /// <summary>The simulation frame the room last made the body give way (<see cref="ulong.MaxValue"/>: not since it was last drawn ahead).</summary>
         private static ulong gaveWayFrame = ulong.MaxValue;
 
-        /// <summary>RenderDebug BodyForward=0: the body where the game puts it.</summary>
-        public static bool Off { get; set; }
-
-        /// <summary>RenderDebug BodyForwardMm=n: this many millimetres instead of <see cref="Forward"/> (null: not set).</summary>
+        /// <summary>RenderDebug BodyForwardMm=n: this many millimetres instead of <see cref="Forward"/> (null: not set; 0: the body where the game puts it).</summary>
         public static int? DebugMm { get; set; }
 
         /// <summary>The character the bones were last moved for, by how much, and the head bone's model-space z right after.</summary>
@@ -112,7 +106,7 @@ namespace SpaceEngineersVR.Tracking
         private static bool earlyNoted;
 
         /// <summary>The distance asked for with the head level, metres (0: off).</summary>
-        public static float Distance => Off ? 0f : DebugMm.HasValue ? Math.Max(0, Math.Min(300, DebugMm.Value)) / 1000f : Forward;
+        public static float Distance => DebugMm.HasValue ? Math.Max(0, Math.Min(300, DebugMm.Value)) / 1000f : Forward;
 
         /// <summary>The distance the body was drawn ahead by this frame, metres: <see cref="Distance"/>, less the head's pitch and what it gave way to the head.</summary>
         public static float Applied => shifted != null ? shiftedBy : 0f;
@@ -186,8 +180,6 @@ namespace SpaceEngineersVR.Tracking
             roomTook = pitched - by;
             if (!was)
                 gaveWayFrame = ulong.MaxValue;
-            else if (HoldOff)
-                by = Math.Min(by, drawn + ReturnUnheld);
             else
             {
                 // The room is what holds the body here (it gave way, or came back to within a touch of where the body is):

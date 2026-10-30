@@ -177,8 +177,13 @@ namespace SpaceEngineersVR.Hands
                 nameof(AfterDrillUpdate));
         }
 
+        private static readonly FeatureGuard toolGuard = new FeatureGuard(nameof(Haptics) + " welder and grinder");
+        private static readonly FeatureGuard drillGuard = new FeatureGuard(nameof(Haptics) + " hand drill");
+
         private static void AfterToolUpdate(MyEngineerToolBase __instance, MyCharacter ___Owner, MyShootActionEnum? ___EffectAction)
         {
+            if (!toolGuard.On)
+                return;
             try
             {
                 if (!__instance.IsShooting || __instance.IsHeatingUp || !IsLocal(___Owner))
@@ -191,12 +196,14 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "welder and grinder");
+                toolGuard.Failed(e, "Haptics (welder and grinder) failed");
             }
         }
 
         private static void AfterDrillUpdate(MyHandDrill __instance, bool ___m_objectInDrillingRange, MyDrillBase ___m_drillBase)
         {
+            if (!drillGuard.On)
+                return;
             try
             {
                 if (!IsLocal(__instance.Owner))
@@ -210,7 +217,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "hand drill");
+                drillGuard.Failed(e, "Haptics (hand drill) failed");
             }
         }
     }

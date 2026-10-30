@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
+using HarmonyLib;
 using Sandbox;
 using Sandbox.Game;
 using Sandbox.Game.Screens.Helpers;
@@ -25,9 +28,14 @@ namespace SpaceEngineersVR.Gui
     /// <list type="bullet">
     /// <item>The items: a section for each page of the toolbar, nine items for a page's nine slots, each reading the
     /// toolbar's item live (<see cref="SlotWheelItem"/>). The tabs along the top are the pages.</item>
-    /// <item>Nine sectors where the base has eight (<see cref="GenerateIcons"/>, <see cref="UpdateHighlight"/>): the base
-    /// builds its sectors in its constructor and works out which one a stick points at from how many it built, so
-    /// swapping them for nine of 40 degrees makes the stock selection code pick the slots.</item>
+    /// <item>Nine sectors where the base has eight (<see cref="GenerateIcons"/>, <see cref="UpdateHighlight"/>), each of 40
+    /// degrees, the sectors <see cref="SlotWheel.IndexAt"/> divides the stick into.</item>
+    /// <item>Its own Update (<see cref="Update"/>): the base's reads the pad (it closes the screen unless the pad was the last
+    /// device used, and takes the highlight from the pad's stick), and this wheel is the hands'. The highlight is the slot
+    /// <see cref="ToolbarWheel"/> would activate, from the same stick, with the base's highlight, tooltip and sound; the screen
+    /// closes when ToolbarWheel no longer drives it (<see cref="ToolbarWheel.DrivesSlots"/>). The rest of the base's Update is
+    /// its page carousel, which this screen does not run (the page follows the toolbar), and new-content marks on block
+    /// palette items, which slots do not have. The screen's own Update is the base screen's, called past the radial's.</item>
     /// <item>The page follows the toolbar (<see cref="Update"/>): <see cref="ToolbarWheel"/> pages the toolbar with the
     /// game's own <c>SwitchToPage</c> and this screen shows whatever page the toolbar is on, so the HUD's toolbar and the
     /// wheel always agree. The carousel's own paging controls are not answered.</item>
@@ -360,7 +368,49 @@ namespace SpaceEngineersVR.Gui
                     UpdateIcon();
             }
             RefreshViewSwitch();
-            return base.Update(hasFocus);
+            if (!ToolbarWheel.DrivesSlots)
+            {
+                if (State != MyGuiScreenState.CLOSING && State != MyGuiScreenState.CLOSED)
+                    CloseScreen();
+            }
+            else
+                Select(ToolbarWheel.TryStick(out Vector3 stick) ? SlotWheel.IndexAt(new Vector2(stick.X, stick.Y)) : -1);
+            return screenUpdate(this, hasFocus);
+        }
+
+        /// <summary>MyGuiScreenBase.Update, called past MyGuiControlRadialMenuBase's (see the remarks).</summary>
+        private static readonly Func<MyGuiScreenBase, bool, bool> screenUpdate = BaseUpdate();
+
+        /// <summary>
+        /// MyGuiScreenBase.Update as a plain call (not a virtual one, which would come back to this screen's own Update), in IL
+        /// of its own. Harmony's MethodDelegate with virtualCall false threw here in the game ("Cannot bind to the target method
+        /// because its signature is not compatible with that of the delegate type"), and as this is a static field of the
+        /// screen, the screen could not be made at all and the tools wheel fell back to the game's system radial.
+        /// </summary>
+        private static Func<MyGuiScreenBase, bool, bool> BaseUpdate()
+        {
+            MethodInfo update = AccessTools.DeclaredMethod(typeof(MyGuiScreenBase), nameof(MyGuiScreenBase.Update), new[] { typeof(bool) })
+                                ?? throw new MissingMethodException(nameof(MyGuiScreenBase), "Update");
+            var method = new DynamicMethod("MyGuiScreenBase.Update, not virtual", typeof(bool), new[] { typeof(MyGuiScreenBase), typeof(bool) },
+                typeof(SlotWheelScreen), skipVisibility: true);
+            ILGenerator il = method.GetILGenerator();
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Call, update);
+            il.Emit(OpCodes.Ret);
+            return (Func<MyGuiScreenBase, bool, bool>)method.CreateDelegate(typeof(Func<MyGuiScreenBase, bool, bool>));
+        }
+
+        /// <summary>Highlights a slot, or the middle for -1, as the base's Update does when its stick moves to another one.</summary>
+        private void Select(int index)
+        {
+            if (index == m_selectedButton || (index == -1 && m_cancelButton == null))
+                return;
+            UpdateHighlight(m_selectedButton, index);
+            m_selectedButton = index;
+            UpdateTooltip();
+            RegenerateBlockHints();
+            MyGuiSoundManager.PlaySound(GuiSounds.MouseOver);
         }
 
         protected override void OnClosed()

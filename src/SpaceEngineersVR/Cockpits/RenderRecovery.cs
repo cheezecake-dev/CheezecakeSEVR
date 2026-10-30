@@ -33,10 +33,5 @@ namespace SpaceEngineersVR.Cockpits
             failing=false;
             Log.Info(name+" recovered");
         }
-        internal static void Quietly(Action action)
-        {
-            try { action(); }
-            catch { }
-        }
     }
 }

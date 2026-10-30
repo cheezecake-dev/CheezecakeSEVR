@@ -41,14 +41,14 @@ namespace SpaceEngineersVR.Hands
         }
 
         private static Flash flash = new Flash { Started = double.NegativeInfinity };
-        private static int drawErrors;
+        private static readonly FeatureGuard drawGuard = new FeatureGuard(nameof(Ping) + " drawing");
 
         private static double FlashClock() => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
         /// <summary>Postfix of MySession.DrawSync, as the hand ray's: billboards added here are drawn in both eyes this frame.</summary>
         private static void Draw()
         {
-            if (drawErrors >= 3 || !MyTransparentGeometry.HasCamera || !VRInput.Active)
+            if (!drawGuard.On || !MyTransparentGeometry.HasCamera || !VRInput.Active)
                 return;
             try
             {
@@ -77,8 +77,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (drawErrors++ < 3)
-                    Log.Error(e, "Ping: the laser or the flash could not be drawn");
+                drawGuard.Failed(e, "Ping: the laser or the flash could not be drawn");
             }
         }
     }

@@ -110,8 +110,9 @@ namespace SpaceEngineersVR.Gui
                     {
                         return Item != null ? Item.Enabled() : CanUse == null || CanUse();
                     }
-                    catch
+                    catch (Exception e)
                     {
+                        OnceLog.Error("ActionsWheel.Entry.Enabled", e, "Actions wheel: an entry's availability could not be read; it is greyed out", Name);
                         return false;
                     }
                 }
@@ -129,8 +130,9 @@ namespace SpaceEngineersVR.Gui
                         string state = Item.Label.State;
                         return string.IsNullOrEmpty(state) ? string.Empty : MyTexts.GetString(state);
                     }
-                    catch
+                    catch (Exception e)
                     {
+                        OnceLog.Error("ActionsWheel.Entry.State", e, "Actions wheel: an entry's state line could not be read; it is left empty", Name);
                         return string.Empty;
                     }
                 }

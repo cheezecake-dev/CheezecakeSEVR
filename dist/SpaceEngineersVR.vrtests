@@ -87,8 +87,9 @@ give AmmoMagazine/$2 3
 toolbar 1 PhysicalGunObject/$1
 log SpaceEngineersVR.log
 expect session focused within 60
-# out in the open, nothing within 40 m: the one shot below hits no block, so the world is kept for the next test
-goto open 40
+# the open ground ahead of the starter base, nothing built within 40 m (measured): the one shot below hits no
+# block, so the world is kept for the next test
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 
 # ---- The gun into the right hand: the tools wheel's first slot ---------------------------------------------------------------
 
@@ -128,6 +129,44 @@ wait 0.5
 expect no log magazine dropped
 include gun-load.inc
 expect no log Exception
+end
+
+define seat-wrist-panel.inc
+# The wrist panel opened from a seat: in a seat Y is the tools wheel, so Y tapped with the wrist down opens the tools wheel,
+# the left stick click turns it into the actions wheel, and the left stick on "Quick actions" and the right trigger take it:
+# the panel opens on its seated page. The stick's angle assumes the actions wheel's 18 entries in a seat, 20 degrees a
+# sector, "Quick actions" the 14th (13 x 20 = 260 degrees clockwise from up). The hands as the including test puts them:
+# the left hand up in front of the shoulder, where the wheels open.
+press left b
+wait 0.2
+release left b
+wait 1
+press left stick
+wait 0.2
+release left stick
+wait 1
+read screen
+expect type == ActionsWheelScreen
+stick left -0.985 -0.174
+wait 0.7
+press right trigger
+wait 0.2
+release right trigger
+stick left 0 0
+wait 1
+read screen
+expect type == QuickActionsScreen within 2
+end
+
+define seat-wrist-tile.inc
+# A seated wrist panel tile pressed: the panel opened from the seat (seat-wrist-panel.inc), the tile clicked by its control
+# name, and the panel closes at the press.
+#   include seat-wrist-tile.inc Lights
+# $1 the tile's label without spaces (QuickAction + it names the tile).
+include seat-wrist-panel.inc
+click QuickAction$1
+read screen
+expect type == MyGuiScreenGamePlay within 2
 end
 
 define vr-option.inc
@@ -361,9 +400,8 @@ world game:Green Station
 switch GravityGenerator off
 switch GravityGeneratorSphere off
 admin creativeTools
-# out of the station into open space, nothing built within 10 m, to build there
-goto open
-build LargeBlockArmorBlock 3 as Test hull
+# out of the station in open space (nothing built within 10 m; measured), then one teleport to it
+build LargeBlockArmorBlock at -438.49 126.75 -103.87 facing -439.05 126.75 -106.81 as Test hull
 # stand with the near face 45 cm ahead (the cube is 2.5 m: its centre 1.7 m away)
 goto Test hull 1.7
 log SpaceEngineersVR.log
@@ -538,7 +576,7 @@ wait 0.5
 stick right 0 0
 release left stick
 wait 0.5
-expect log Zero-g pitch and roll: left stick click held within 5
+expect log held, the right stick pitches and rolls within 5
 expect log Zero-g smooth roll right within 5
 read character
 expect up moved > 0.5
@@ -596,12 +634,12 @@ test body-ladder
 plugin SpaceEngineersVR
 world game:Earth Planet
 admin creativeTools
-# open ground: room to walk, nothing in the way
-goto open
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
 # three shafts, one on another: the game climbs only where there is ladder above the head
-build LadderShaft 3 5
-build LadderShaft 3 2.5
-build LadderShaft 3 as Test ladder
+build LadderShaft at 53549.86 -26748.49 11845.92 5 facing 53549.85 -26744.44 11855.07
+build LadderShaft at 53549.86 -26748.49 11845.92 2.5 facing 53549.85 -26744.44 11855.07
+build LadderShaft at 53549.86 -26748.49 11845.92 facing 53549.85 -26744.44 11855.07 as Test ladder
 # its near face 35 cm ahead (the cell is 2.5 m: its centre 1.6 m away)
 goto Test ladder 1.6
 log SpaceEngineersVR.log
@@ -807,8 +845,8 @@ test body-sprint
 # short and the second goes back the way the first came, so the start base has room for them.
 plugin SpaceEngineersVR
 world game:Earth Planet
-# open ground: room to walk, nothing in the way
-goto open
+# the open ground ahead of the starter base, nothing built within 40 m (measured): one teleport
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 log SpaceEngineersVR.log
 expect session focused within 60
 
@@ -947,7 +985,8 @@ plugin SpaceEngineersVR
 world game:Earth Planet
 log SpaceEngineersVR.log
 expect session focused within 60
-goto open 20
+# the open ground ahead of the starter base, nothing built within 40 m (measured): one teleport
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 helmet on
 read character
 expect helmet == true within 5
@@ -1012,7 +1051,8 @@ plugin SpaceEngineersVR
 world game:Earth Planet
 log SpaceEngineersVR.log
 expect session focused within 60
-goto open 20
+# the open ground ahead of the starter base, nothing built within 40 m (measured): one teleport
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 helmet on
 read character
 expect helmet == true within 5
@@ -1077,7 +1117,8 @@ plugin SpaceEngineersVR
 world game:Earth Planet
 log SpaceEngineersVR.log
 expect session focused within 60
-goto open 20
+# the open ground ahead of the starter base, nothing built within 40 m (measured): one teleport
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 helmet on
 read character
 expect helmet == true within 5
@@ -1262,8 +1303,8 @@ test body-walk
 # Needs: Earth Planet (survival, on foot, in gravity). Each leg is about one second, so the start base has room for it.
 plugin SpaceEngineersVR
 world game:Earth Planet
-# open ground: room to walk, nothing in the way
-goto open
+# the open ground ahead of the starter base, nothing built within 40 m (measured): one teleport
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 log SpaceEngineersVR.log
 expect session focused within 60
 
@@ -1384,7 +1425,7 @@ wait 0.7
 read character
 expect up moved > 0.4
 expect forward moved < 0.2
-expect log Zero-g pitch and roll: left stick click held within 5
+expect log held, the right stick pitches and rolls within 5
 expect log Zero-g pitch and roll: let go within 5
 
 # the click held, the right stick up for 0.4 s: pitched about 48 degrees (the forward vector moves by about 0.8)
@@ -1407,7 +1448,9 @@ press left stick
 wait 0.1
 release left stick
 wait 0.5
-expect log Zero-g pitch and roll: left stick click tapped within 5
+# the press itself logs "held" (it is not yet a tap as it goes down); the tap is the line that keeps it on as the click
+# is let go, which names how long the press was
+expect log '/Zero-g pitch and roll: .*tapped [(][0-9]+ ms[)]/' within 5
 expect log kept on until the next press within 5
 expect no log Zero-g pitch and roll: let go
 headset zerog-tap.png
@@ -1491,7 +1534,7 @@ release left stick
 wait 0.7
 read character
 expect up moved > 0.4
-expect log Zero-g pitch and roll: left stick click held within 5
+expect log held, the right stick pitches and rolls within 5
 expect no log not here
 
 # back to zero g for the snap case
@@ -1537,6 +1580,66 @@ cleanup
 switch GravityGenerator on
 switch GravityGeneratorSphere on
 include vr-option.inc zeroGTurn {was_zeroGTurn} selectedIndex _
+
+test hands-actions-wheel-remote-access
+# Hands: the actions wheel's Remote access. On the wheel's Menu page, beside the game's other screens, "Remote access" opens
+# the game's remote access screen at the pick, as the game's key for it does. With the tools wheel up (the left grip held),
+# a click of the left stick turns it into the actions wheel; the right trigger on "Menu >" opens its page; letting go of the
+# grip on "Remote access" uses it.
+# World: Earth Planet (survival, on foot, in gravity). Nothing is built. The angles below assume the wheel's 20 entries on
+# foot ("Menu >" the 11th, 10 x 18 = 180 degrees, straight down) and the Menu page's 9 (Back first, "Remote access" last,
+# 8 x 40 = 320 degrees clockwise from up): the "Actions wheel: opened" and "Actions wheel: page" lines list them in order.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.2 -0.3
+wait 1
+
+# ---- The Menu page: straight down, taken with the right trigger -------------------------------------------------------
+press left grip
+wait 1
+press left stick
+wait 0.2
+release left stick
+wait 1
+read screen
+expect type == ActionsWheelScreen
+expect log /Actions wheel: opened .*SystemDefault, 20 entries [(].*, Toggle Broadcasting, Blueprint Actions >, Menu >,/ within 5
+stick left 0 -1
+wait 0.7
+press right trigger
+wait 0.2
+release right trigger
+# a page takes the stick only once it has come back to the centre
+stick left 0 0
+wait 1
+expect log /Actions wheel: page Menu [(]Back, Open Admin Menu, Open Blueprints Screen, Open Progression Tree, Open Spawn Menu, Respawn, Open Players Screen, Open Chat, Remote access[)]/ within 5
+
+# ---- Remote access: the page's last entry; the grip let go on it opens the game's remote access screen -------------------
+stick left -0.643 0.766
+wait 0.7
+release left grip
+wait 0.3
+stick left 0 0
+wait 1.5
+expect log Actions wheel: picked Remote access within 5
+read screen
+# the game's remote access screen is its terminal screen, opened on the remote access list
+expect type == MyGuiScreenTerminal within 3
+# the game hands a button only to a screen that is fully open
+expect state == OPENED within 5
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay within 5
+expect no log Exception
 
 test hands-actions-wheel
 # Hands: choosing from the actions wheel. With the tools wheel up, a click of the left stick turns it into the actions wheel
@@ -1644,12 +1747,9 @@ world game:Earth Planet
 
 admin creativeTools
 toolbar 1 CubeBlock/LargeBlockArmorBlock
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
-# Before anything is built: no large armor block within 8 m of the astronaut (Earth Planet's starter base has none there).
-read nearby LargeBlockArmorBlock 8
-expect result == []
-build LargeBlockArmorBlock 3 as Test base
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build LargeBlockArmorBlock at 53557.44 -26735.61 11840.22 facing 53557.43 -26731.56 11849.36 as Test base
 # 5.5 m from its middle: the block placed on its near face (4.25 m ahead) is clear of the astronaut
 goto Test base 5.5
 log SpaceEngineersVR.log
@@ -1743,9 +1843,9 @@ world game:Earth Planet
 # ---- What the world needs: a button panel (a large block, 2.5 m, with one button) in front of the character ----------------
 
 admin creativeTools
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
-build LargeButtonPanelPedestal 3 as Test panel
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build LargeButtonPanelPedestal at 53546.07 -26754.94 11848.77 facing 53546.07 -26750.89 11857.92 as Test panel
 # the panel keeps the astronaut 1.3 m from the block's middle (any nearer and the game pushes it off), with the button
 # 77 cm ahead and 33 cm below the eyes: past the arm's reach until the player leans in
 goto Test panel 1.3
@@ -1783,8 +1883,8 @@ expect no log Exception
 # it; the head is behind it. The hand is put down out of reach of any button first, so that line comes when it is raised.
 hand right 0.25 1.0 -0.3
 wait 1
-goto open
-build ButtonPanelLarge 3 0.8 as Test wall panel
+# a panel of its own, on its own spot: the test's second place
+build ButtonPanelLarge at 53561.22 -26729.16 11837.37 0.8 facing 53561.21 -26725.11 11846.51 as Test wall panel
 goto Test wall panel 0.3 front
 # only what happens from here on counts
 log SpaceEngineersVR.log
@@ -1812,9 +1912,9 @@ world game:Earth Planet
 # ---- What the world needs: a small cargo container (a large block, 2.5 m) in front of the character -------------------------
 
 admin creativeTools
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
-build LargeBlockSmallContainer 3 as Test cargo
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build LargeBlockSmallContainer at 53549.89 -26740.42 11864.22 facing 53549.89 -26736.37 11873.36 as Test cargo
 goto Test cargo 1.7
 log SpaceEngineersVR.log
 expect session focused within 60
@@ -1911,9 +2011,9 @@ world game:Earth Planet
 # ---- What the world needs: a slide door in front of the character --------------------------------------------------------------
 
 admin creativeTools
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
-build LargeBlockSlideDoor 3 as Test door
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build LargeBlockSlideDoor at 53546.11 -26746.86 11867.07 facing 53546.10 -26742.81 11876.22 as Test door
 # the door's use box is the doorway's middle, about the closed door: standing in the doorway, 1.2 m from the block's
 # middle, its near side is 37 cm ahead, under the hand
 goto Test door 1.2
@@ -2124,6 +2224,93 @@ test hands-gun-reload-full-auto-pistol
 # World: Earth Planet (survival, on foot, in gravity). Reload by hand on (the default).
 include gun-reload.inc FullAutoPistolItem FullAutoPistolMagazine
 
+test hands-gun-reload-left-handed-jetpack
+# Hands: left-handed, the reload on the jetpack. Left-handed, the gun is in the left hand and the reload is the left stick
+# click (the gun hand's), except on the jetpack while zero-g pitch and roll holds that click: there the reload stays on the
+# right stick click. With zero-g pitch and roll switched off, the left stick click is the reload on the jetpack too.
+# World: Green Station (survival; an asteroid base; the astronaut starts on foot in it, the station's gravity on). The gun is
+# drawn in gravity, then the station's gravity is switched off and the jetpack on.
+# Sets Options > VR > Controls > Left-handed on and Zero-g pitch and roll Off for the second half, and puts both back.
+
+plugin SpaceEngineersVR
+world game:Green Station
+
+# ---- What the world needs: the rifle in toolbar slot 1 and magazines in the inventory ----------------------------------------
+
+give PhysicalGunObject/AutomaticRifleItem
+give AmmoMagazine/AutomaticRifleGun_Mag_20rd 3
+toolbar 1 PhysicalGunObject/AutomaticRifleItem
+log SpaceEngineersVR.log
+expect session focused within 60
+include vr-option.inc leftHanded true isChecked was_leftHanded
+include vr-option.inc zeroGTurn 0 selectedIndex was_zeroGTurn
+
+# ---- The rifle into the left hand (the dominant one): the tools wheel's first slot -----------------------------------------
+
+head 0 1.6 0
+hand left -0.25 1.3 -0.4 0 -5 0
+hand right 0.25 1.2 -0.3
+wait 1
+press left grip
+wait 1
+stick left 0 1
+wait 0.5
+release left grip
+wait 0.3
+stick left 0 0
+wait 2
+read character
+expect weapon.item contains AutomaticRifleItem
+# drawn empty: the game loads it on its own timer
+expect log /Reload: done after .*[(]magazine [1-9]/ within 15
+
+# ---- Zero g, the jetpack on --------------------------------------------------------------------------------------------------
+
+switch GravityGenerator off
+switch GravityGeneratorSphere off
+wait 2
+press right b
+wait 0.15
+release right b
+wait 1
+read character
+expect jetpack == true
+
+# ---- Zero-g pitch and roll on (Smooth, the default): the left stick click is pitch and roll, the reload the right click -----
+
+log SpaceEngineersVR.log
+# held past a tap (0.35 s), so it lets go on release
+press left stick
+wait 0.6
+release left stick
+wait 1
+expect log held, the right stick pitches and rolls within 5
+expect log Zero-g pitch and roll: let go within 5
+expect no log pressed RELOAD
+log SpaceEngineersVR.log
+press right stick
+wait 0.2
+release right stick
+expect log /Reload: the button pressed RELOAD/ within 2
+wait 4
+
+# ---- Zero-g pitch and roll Off: the left stick click is the reload on the jetpack --------------------------------------------
+
+include vr-option.inc zeroGTurn 2 selectedIndex _
+log SpaceEngineersVR.log
+press left stick
+wait 0.2
+release left stick
+expect log /Reload: the button pressed RELOAD/ within 2
+expect no log Zero-g pitch and roll
+expect no log Exception
+
+cleanup
+switch GravityGenerator on
+switch GravityGeneratorSphere on
+include vr-option.inc zeroGTurn {was_zeroGTurn} selectedIndex _
+include vr-option.inc leftHanded {was_leftHanded} isChecked _
+
 test hands-gun-reload-loose-seat
 # Hands: reloading the MR-20 rifle by hand with the new magazine brought up 6 cm off the well: the guide lines it up and it
 # seats (see gun-load-loose.inc; the magazine seats within 7 cm of the well, and the guide pulls it from 16 cm).
@@ -2139,8 +2326,9 @@ give AmmoMagazine/AutomaticRifleGun_Mag_20rd 3
 toolbar 1 PhysicalGunObject/AutomaticRifleItem
 log SpaceEngineersVR.log
 expect session focused within 60
-# out in the open, nothing within 40 m: the one shot below hits no block, so the world is kept for the next test
-goto open 40
+# the open ground ahead of the starter base, nothing built within 40 m (measured): the one shot below hits no
+# block, so the world is kept for the next test
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 
 # ---- The gun into the right hand: the tools wheel's first slot ---------------------------------------------------------------
 
@@ -2228,7 +2416,7 @@ expect no log /Hand hints: Left hand.s labels shown/
 # Raised before the face, in the gaze and well within a metre: the left hand's plate fades in.
 hand left -0.05 1.55 -0.45
 wait 2
-expect log Hand hints: texture made within 10
+# No check for the plate's texture being made: it is made once a game, so in a world kept from an earlier test it already is.
 expect log /Hand hints: Left hand.s labels shown .*controller .+ [(]/ within 10
 headset labels-left-hand.png
 expect headset changed 2
@@ -2249,8 +2437,9 @@ test hands-paint
 # Hands: the colour tool. Chosen from the actions wheel ("Select Color Tool"), it paints the block the right hand points at
 # with the right trigger and takes up that block's colour with the left trigger.
 # World: Earth Planet (survival, on foot, in gravity). A large armor block is built ahead as the thing to paint. The angle of
-# the "Select Color Tool" entry below is for Earth Planet's 19 entries (it is the fifth, 4 x 18.9 = 75.8 degrees clockwise
-# from up): the "Actions wheel: opened" line lists the entries in order.
+# the "Select Color Tool" entry below is for Earth Planet's 20 entries on foot (Inventory and G menu first, so it is the
+# sixth, 5 x 18 = 90 degrees clockwise from up): the "Actions wheel: opened" line lists the entries in order. With 19 it
+# was the fifth; at that old angle the stick now lands on Toggle HUD, which hid the HUD for the tests after this one.
 
 plugin SpaceEngineersVR
 world game:Earth Planet
@@ -2258,11 +2447,11 @@ world game:Earth Planet
 # ---- What the world needs: a block to paint, and a build colour that is not the block's own ----------------------------------------
 
 admin creativeTools
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
 # the block is built in the selected colour, which the game keeps from world to world: first one unlike the paint
 color 0.1 0.5 0.5
-build LargeBlockArmorBlock 2.2 as Test block
+build LargeBlockArmorBlock at 53561.25 -26721.08 11855.66 facing 53561.25 -26717.03 11864.81 as Test block
 goto Test block 2.2
 color 0.6 0.3 0.2
 log SpaceEngineersVR.log
@@ -2284,7 +2473,7 @@ press left stick
 wait 0.2
 release left stick
 wait 1
-stick left 0.969 0.245
+stick left 1 0
 wait 0.7
 release left grip
 wait 0.3
@@ -2312,6 +2501,80 @@ wait 1
 expect log Paint: took the colour of the block pointed at within 5
 expect no log Exception
 
+test hands-quick-inventory
+# Hands: quick take, dump and production at a container, the game's middle mouse in VR. With the right hand resting on a
+# cargo container (empty, and nothing in it), the left stick click is the game's withdraw of the Build Planner's components
+# (middle mouse), the right stick click puts the planner in production (Shift + middle mouse), and the right stick click
+# with the right grip held deposits what the suit holds (Alt + middle mouse). Each is the game's own operation, at the
+# click, with the game's own notice; the grip's Use waits for the grip, and a deposit meanwhile drops it, so the
+# container's inventory does not open under a dump.
+# World: Earth Planet (survival, on foot, in gravity). A small cargo container is built on its own spot and the
+# character stands 1.7 m from it, as in hands-grab-use-cargo, the right palm on its near face. The planner starts empty, so the take and the production give the
+# game's "planner empty" notice: that is the game's answer, and the test reads that the game answered.
+
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# ---- What the world needs: a small cargo container in front of the character, and ore in the suit --------------------------
+
+admin creativeTools
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build LargeBlockSmallContainer at 53557.47 -26727.53 11858.52 facing 53557.46 -26723.48 11867.66 as Test cargo
+goto Test cargo 1.7
+give Ore/Iron 50
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.25 1.0 -0.2
+# The right palm on the container's near face, 45 cm ahead (hands-grab-use-cargo).
+hand right 0.1 1.25 -0.45
+wait 1
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- Dump: the right grip held, the right stick click deposits at once; the grip's Use is dropped -------------------------
+
+press right grip
+wait 1
+expect log Grab use: right hand took hold of within 5
+press right stick
+wait 0.2
+release right stick
+# at the click, not later: the game's deposit and its notice
+expect log '/Quick dump at .*Test cargo.*[)]: /' within 1
+expect no log ): not done
+release right grip
+wait 1.5
+expect log was held back, dropped for a deposit within 5
+# the inventory did not open: the grip's Use was dropped for the deposit
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- Take: the left stick click, the grip open: the game's withdraw answers at once ----------------------------------------
+
+log SpaceEngineersVR.log
+press left stick
+wait 0.2
+release left stick
+expect log '/Quick take at .*Test cargo.*[)]: /' within 1
+expect no log ): not done
+read screen
+expect type == MyGuiScreenGamePlay
+
+# ---- Production: the right stick click, the grip open: the game's put-to-production answers at once ---------------------
+
+log SpaceEngineersVR.log
+press right stick
+wait 0.2
+release right stick
+expect log '/Quick production at .*Test cargo.*[)]: /' within 1
+expect no log ): not done
+read screen
+expect type == MyGuiScreenGamePlay
+expect no log Exception
+
 test hands-tool-grinder
 # Hands: the angle grinder in the right hand. The right trigger grinds what the hand points at: the character is shooting
 # while it is pulled, and a small armor block ground long enough is gone.
@@ -2326,10 +2589,10 @@ world game:Earth Planet
 admin creativeTools
 give PhysicalGunObject/AngleGrinderItem
 toolbar 1 PhysicalGunObject/AngleGrinderItem
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
 # 1 m up, at the hand's height (a static block holds there; the game builds none into the ground)
-build SmallBlockArmorBlock 2 1 as Test block
+build SmallBlockArmorBlock at 53542.31 -26753.30 11869.92 1 facing 53542.31 -26749.25 11879.07 as Test block
 # 1.1 m before the block, facing it: its near side 85 cm ahead, clear of the grinder's muzzle, where the game's ray starts
 goto Test block 1.1
 log SpaceEngineersVR.log
@@ -3212,6 +3475,171 @@ read screen
 expect type == MyGuiScreenGamePlay
 expect no log Exception
 
+test screens-wrist-tiles
+# Screens: the wrist panel's tiles on foot act at the press. Y opens the panel; a tile pressed does what the game's key for it
+# does, there and then, and the panel closes. Helmet takes the helmet off and puts it on, Relative turns the dampeners on,
+# Heal uses a medkit, Colour opens the colour picker, HUD steps the game's HUD through its three modes; Lights and
+# Broadcast switch and switch back (the log says the game read each press), each pressed twice so the world is left as it
+# was; Symmetry, as N on foot with no block in hand, is not read by the game and switches nothing.
+# World: Earth Planet (survival, on foot), creative tools on. The hands as in
+# screens-wrist-panel.
+plugin SpaceEngineersVR
+world game:Earth Planet
+admin creativeTools
+log SpaceEngineersVR.log
+expect session focused within 60
+
+head 0 1.6 0
+hand left -0.2 1.1 -0.35
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+
+# ---- Helmet: off at the press, and on again --------------------------------------------------------------------------
+helmet on
+read character
+expect helmet == true
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+click QuickActionHelmet
+read character
+expect helmet == false within 1
+read screen
+expect type == MyGuiScreenGamePlay within 2
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+click QuickActionHelmet
+read character
+expect helmet == true within 1
+
+# ---- Relative: the dampeners on at the press, matched to what the head looked at as the panel opened --------------------
+dampeners off
+read character
+expect dampeners == false
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+click QuickActionRelative
+read character
+expect dampeners == true within 1
+read screen
+expect type == MyGuiScreenGamePlay within 2
+
+# ---- Lights, Broadcast: each switched at the press, and back; Symmetry: as N, nothing with no block in hand ----------
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionLights
+expect log '/Wrist panel: .Lights. read by the game/' within 1
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionLights
+expect log '/Wrist panel: .Lights. read by the game/' within 1
+
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionBroadcast
+expect log '/Wrist panel: .Broadcast. read by the game/' within 1
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionBroadcast
+expect log '/Wrist panel: .Broadcast. read by the game/' within 1
+
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionSymmetry
+# as N on foot with no block in hand: the game's builder does not read it, and nothing switches
+expect log '/Wrist panel: .Symmetry. not read by the game: .*no block in hand/' within 1
+
+# ---- Colour: the game's colour picker opens at the press; B closes it ----------------------------------------------------
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+click QuickActionColour
+read screen
+expect type == MyGuiScreenColorPicker within 2
+# the game hands a button only to a screen that is fully open: B pressed while it is still opening is lost
+expect state == OPENED within 5
+press right b
+wait 0.2
+release right b
+wait 1.5
+read screen
+expect type == MyGuiScreenGamePlay within 5
+
+# ---- HUD: each press steps the game's HUD to its next mode; three presses go round the three and back ---------------------
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionHUD
+remember hud1 log '/Wrist panel: .HUD. stepped the HUD to mode ([0-9])/' within 1
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionHUD
+remember hud2 log '/Wrist panel: .HUD. stepped the HUD to mode ([0-9])/' within 1
+log SpaceEngineersVR.log
+press left b
+wait 0.2
+release left b
+wait 1
+click QuickActionHUD
+remember hud3 log '/Wrist panel: .HUD. stepped the HUD to mode ([0-9])/' within 1
+expect number {hud1} != {hud2}
+expect number {hud2} != {hud3}
+expect number {hud3} != {hud1}
+
+# ---- Heal: a medkit from the inventory, used at the press --------------------------------------------------------------
+log SpaceEngineersVR.log
+hurt 30
+give ConsumableItem/Medkit
+read character
+expect health <= 71 within 2
+press left b
+wait 0.2
+release left b
+wait 1
+read screen
+expect type == QuickActionsScreen
+click QuickActionHeal
+expect log '/Wrist panel: .Heal. read by the game/' within 1
+read character
+expect health > 71 within 10
+read screen
+expect type == MyGuiScreenGamePlay within 2
+expect no log Exception
+
 test screens-wrist-top-row
 # Screens: the wrist panel's top row and its Controls page. Across the top of the wrist panel are the game menu, the Controls
 # page, the VR settings and the HUD; the Controls page has a tab for each situation (on foot, jetpack, building, seat, turret,
@@ -3296,7 +3724,8 @@ test seats-actions-wheel-g-menu
 # a tap of Y opens the tools wheel and a click of the left stick turns it into the actions wheel; the left stick picks an
 # entry and a trigger takes it. The first entry, straight up, is Inventory and the second, one sector clockwise, the G menu.
 # Drill Ship Atmosphere mk.1 from Earth Planet (a ship that stands high on its landing gear; the game's Use sits the player in
-# its cockpit). The angle below assumes the wheel's 19 entries, 19 degrees a sector (see the "Actions wheel: opened" line).
+# its cockpit). The angle below assumes the wheel's 18 entries, 20 degrees a sector (see the "Actions wheel: opened" line;
+# it was 19 while the G menu was on it twice).
 plugin SpaceEngineersVR
 world game:Earth Planet
 
@@ -3338,8 +3767,8 @@ expect log /Actions wheel: opened .*[(]Inventory, G menu/ within 5
 headset seated-actions-wheel.png
 expect headset changed 1
 
-# ---- The G menu: one sector clockwise of the top (19 degrees), taken with the right trigger -> the game's G screen opens ------------------
-stick left 0.325 0.946
+# ---- The G menu: one sector clockwise of the top (20 degrees), taken with the right trigger -> the game's G screen opens ------------------
+stick left 0.342 0.940
 wait 0.7
 press right trigger
 wait 0.2
@@ -3487,9 +3916,9 @@ world game:Earth Planet
 
 # ---- Setup: a pilot's seat of our own, built before the character ---------------------------------------------
 admin creativeTools
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
-build LargeBlockCockpitSeat 3 as TestClampSeat
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build LargeBlockCockpitSeat at 53565.04 -26714.64 11852.81 facing 53565.03 -26710.59 11861.96 as TestClampSeat
 goto TestClampSeat 1.0
 wait 2
 log SpaceEngineersVR.log
@@ -3710,9 +4139,9 @@ world game:Earth Planet
 
 # ---- Setup: a PassengerSeatLarge of our own, built before the character (Earth Planet ships none standing free) --------
 admin creativeTools
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
-build PassengerSeatLarge 3 as TestPassengerSeat
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build PassengerSeatLarge at 53538.53 -26759.75 11872.77 facing 53538.52 -26755.70 11881.92 as TestPassengerSeat
 # Stand inside the block's cell, facing it. A large seat's centre is below the eyes, so the hand reaches down-forward.
 goto TestPassengerSeat 0.2
 wait 2
@@ -3761,9 +4190,9 @@ world game:Earth Planet
 
 # ---- Setup: a LargeBlockCockpitSeat of our own, built before the character (Earth Planet ships none standing free) --------
 admin creativeTools
-# out of the starter base, where nothing is built within 10 m, to build there
-goto open
-build LargeBlockCockpitSeat 3 as TestPilotSeat
+# its own spot on the open ground ahead of the starter base (nothing built within 40 m; measured), then one
+# teleport to it
+build LargeBlockCockpitSeat at 53568.82 -26708.19 11849.96 facing 53568.81 -26704.14 11859.10 as TestPilotSeat
 # Stand inside the block's cell, facing it. A large seat's centre is below the eyes, so the hand reaches down-forward.
 goto TestPilotSeat 1.0
 wait 2
@@ -3976,13 +4405,13 @@ expect log Forced view: on (the view is a turret within 5
 # ---- A zooms in while held, B zooms out ---------------------------------------------------------------------------------
 press right a
 wait 1
-expect log Turret: A / B: zoom in (CAMERA_ZOOM_IN) held within 5
+expect log Turret: zoom buttons: zoom in (CAMERA_ZOOM_IN) held within 5
 release right a
 wait 0.5
-expect log Turret: A / B: zoom let go within 5
+expect log Turret: zoom buttons: zoom let go within 5
 press right b
 wait 1
-expect log Turret: A / B: zoom out (CAMERA_ZOOM_OUT) held within 5
+expect log Turret: zoom buttons: zoom out (CAMERA_ZOOM_OUT) held within 5
 release right b
 wait 0.5
 
@@ -3995,6 +4424,112 @@ expect log Forced view: over within 5
 expect log VR controls: on foot within 5
 read character
 expect controlledEntity == null
+
+test seats-wrist-tiles
+# Seats: the wrist panel's seated tiles act at the press. In a seat Y is the tools wheel, so the panel opens from the actions
+# wheel's "Quick actions" entry; a tile pressed does what the game's key for it does from that seat, there and then, and the
+# panel closes. Lights switches the ship's spotlights, Broadcast its antennas' broadcasting, Power the grid's power, Park its
+# landing gear, Dampeners and Relative its dampeners, Helmet the pilot's helmet. Each switch is pressed twice (Relative after
+# Dampeners), so the ship is left as it was.
+# Drill Ship Atmosphere mk.1 from Earth Planet: two spotlights (off), an antenna (off until switched on below), landing gear
+# ready to lock, dampeners on (see seats-ship-switches). The wheel's angle in seat-wrist-panel.inc assumes its 18 entries in
+# a seat, 20 degrees a sector, "Quick actions" the 14th (13 x 20 = 260 degrees clockwise from up): the "Actions wheel:
+# opened" line lists them.
+# The ship has no wheels, so the Handbrake tile's effect cannot be seen here.
+plugin SpaceEngineersVR
+world game:Earth Planet
+
+# The panel opens from the actions wheel and each tile is pressed by seat-wrist-tile.inc (with seat-wrist-panel.inc).
+
+# ---- Setup: the ship's cockpit, and sit in it -----------------------------------------------------------------------
+admin creativeTools
+own Drill Ship Atmosphere mk.1
+switch Drill Ship Antenna on
+log SpaceEngineersVR.log
+expect session focused within 60
+head 0 1.6 0
+hand left -0.3 0.9 -0.1
+hand right 0.3 0.9 -0.1
+wait 1
+control Cockpit on Drill Ship Atmosphere mk.1
+wait 3
+read character
+expect state == sitting
+# the head looks down at the hands and the left hand comes up in front of the shoulder, where the wheels open
+head 0 1.6 0 0 -30
+hand left -0.25 1.2 -0.3
+hand right 0.25 1.0 -0.3 0 -60
+wait 1
+
+# ---- Lights: the ship's spotlights on at the press, and off -------------------------------------------------------------
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == false
+include seat-wrist-tile.inc Lights
+# the wheel had the entries the angle above is for, and the panel opened on its seated page
+expect log /Actions wheel: opened .*SystemShip, 18 entries [(].*Next camera, Quick actions,/
+expect log /Wrist panel: opened in a seat [(]actions wheel; /
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == true within 1
+include seat-wrist-tile.inc Lights
+read block Spotlight 1 on Drill Ship Atmosphere mk.1
+expect enabled == false within 1
+
+# ---- Broadcast: the antenna's broadcasting off at the press, and on -----------------------------------------------------
+read block "Drill Ship Antenna on Drill Ship Atmosphere mk.1" EnableBroadCast
+expect value == true
+include seat-wrist-tile.inc Broadcast
+read block "Drill Ship Antenna on Drill Ship Atmosphere mk.1" EnableBroadCast
+expect value == false within 1
+include seat-wrist-tile.inc Broadcast
+read block "Drill Ship Antenna on Drill Ship Atmosphere mk.1" EnableBroadCast
+expect value == true within 1
+
+# ---- Dampeners off at the press; Relative turns them on again ----------------------------------------------------------
+read block "Cockpit on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == true
+include seat-wrist-tile.inc Dampeners
+read block "Cockpit on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == false within 1
+include seat-wrist-tile.inc Relative
+read block "Cockpit on Drill Ship Atmosphere mk.1" DampenersOverride
+expect value == true within 1
+
+# ---- Park: the landing gear touching the ground locks at the press, and lets go -------------------------------------------
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == ReadyToLock
+include seat-wrist-tile.inc Park
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == Locked within 2
+include seat-wrist-tile.inc Park
+read block Landing Gear 1 on Drill Ship Atmosphere mk.1
+expect saved.LockMode == ReadyToLock within 2
+
+# ---- Power: the grid's power off at the press (the antenna stops working), and on ----------------------------------------
+read block Drill Ship Antenna on Drill Ship Atmosphere mk.1
+expect isWorking == true
+include seat-wrist-tile.inc Power
+read block Drill Ship Antenna on Drill Ship Atmosphere mk.1
+expect isWorking == false within 1
+include seat-wrist-tile.inc Power
+read block Drill Ship Antenna on Drill Ship Atmosphere mk.1
+expect isWorking == true within 2
+
+# ---- Helmet: the pilot's helmet off at the press, and on ------------------------------------------------------------
+helmet on
+read character
+expect helmet == true
+include seat-wrist-tile.inc Helmet
+read character
+expect helmet == false within 1
+include seat-wrist-tile.inc Helmet
+read character
+expect helmet == true within 1
+
+read character
+expect state == sitting
+expect no log Exception
+
+cleanup
 
 test suit-power-hud
 # Suit power failing: as the suit's battery runs low, the HUD on the visor flickers and dims, and at zero it and the
@@ -4013,7 +4548,8 @@ plugin SpaceEngineersVR
 world game:Earth Planet
 log SpaceEngineersVR.log
 expect session focused within 60
-goto open 20
+# the open ground ahead of the starter base, nothing built within 40 m (measured): one teleport
+goto 53553.68 -26732.76 11864.11 facing 53553.96 -26740.99 11845.88
 helmet on
 read character
 expect helmet == true within 5

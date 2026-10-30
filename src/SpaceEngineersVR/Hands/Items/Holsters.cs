@@ -50,9 +50,6 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The name the grip is claimed under (<see cref="GripClaim"/>).</summary>
         public const string ClaimName = "Holster";
 
-        /// <summary>Before the helmet (10), after a hand on the held tool's own grip (5).</summary>
-        public const int ClaimPriority = 7;
-
         /// <summary>The places a holster can be, in the order of the settings' choices; 0 is none.</summary>
         public static readonly string[] PlaceNames =
         {
@@ -109,11 +106,11 @@ namespace SpaceEngineersVR.Hands
         {
             try
             {
-                GripClaim.Register(ClaimName, ClaimPriority, Take);
+                GripClaim.Register(ClaimName, GripPriority.Holsters, Take);
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(Holsters), nameof(AfterSimulation)));
                 hooked = true;
-                Log.Info($"Holsters: hooked (grip claim at priority {ClaimPriority}: the tool hand's grip within {Reach * 100:0} cm of a holster)");
+                Log.Info($"Holsters: hooked (grip claim at priority {(int)GripPriority.Holsters}: the tool hand's grip within {Reach * 100:0} cm of a holster)");
             }
             catch (Exception e)
             {

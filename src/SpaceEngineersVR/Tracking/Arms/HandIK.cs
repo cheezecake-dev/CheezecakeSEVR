@@ -24,13 +24,12 @@ namespace SpaceEngineersVR.Tracking
     /// every bone again, so an arm that is not solved in a frame goes back to the animation by itself.
     /// Which arms: both. The one that holds an item (the dominant one) is solved onto the item's spot for that hand (the
     /// RightHand spot, mirrored left-handed: <see cref="Hands.ItemSpots"/>), which follows the hand, as the game's own IK for
-    /// it does not stretch and leaves the glove short of the tool (RenderDebug HandIKHeld=0 leaves the right-handed one to
-    /// the game's).
+    /// it does not stretch and leaves the glove short of the tool.
     /// The hands are placed in the body's own space by the head matrix this frame's camera is built from
     /// (<see cref="HandWorld.TryGetTrackingToBody"/>), so they ride with the body at any speed. Not covered: the bones
     /// are fixed when the simulation ticks, from the controllers as last read, and the renderer's late head correction
     /// (<see cref="CameraHeadLink"/>) does not reach them. The headset's controllers are therefore read predicted for when
-    /// the frame drawn from them is shown, by the lead XrInput measures (RenderDebug HandIKLead=0 turns that off);
+    /// the frame drawn from them is shown, by the lead XrInput measures;
     /// <see cref="HandResidual"/> measures what is left.
     /// </remarks>
     internal static partial class HandIK
@@ -53,8 +52,8 @@ namespace SpaceEngineersVR.Tracking
         // ---- RenderDebug (HandIK...=) ----
 
         /// <summary>
-        /// 0 off, 1 everything, 2 without finger curl, 3 the elbow from the body's hint only (not from the hand's twist
-        /// and bend), 4 the game's own iterative solver (no hinge, no hint, no reach handling, no curl), for comparison.
+        /// 0 off, 1 everything, 2 without finger curl. (A test build also has the game's own iterative solver, for comparison:
+        /// <c>TestAidsGameSolver</c>.)
         /// </summary>
         public static int Mode { get; private set; } = 1;
 
@@ -64,21 +63,8 @@ namespace SpaceEngineersVR.Tracking
 
         private static ArmSolver.Settings settings = ArmSolver.Settings.Default;
 
-        /// <summary>
-        /// The arm that holds a tool is solved here too, onto the tool's RightHand spot, with the stretch and the collarbone
-        /// the other arm has, instead of by the game's own IK, which does not stretch (RenderDebug HandIKHeld=0: the game's).
-        /// </summary>
-        private static bool solveHeld = true;
-
         /// <summary>RenderDebug HandIKReach=1: each arm's reach logged every 2 s, in reach or not (for the body's place and the collarbone).</summary>
         private static bool reachLog;
-
-        /// <summary>
-        /// A hand on a tool stays on it: the hand that holds the tool, and the other hand drawn on its second grip
-        /// (<see cref="ArmSolver.Settings.Pin"/>); past the stretch the arm lengthens on instead of the hand sliding along the
-        /// handle as the shoulder sways (RenderDebug HandIKPin=0: it stops short).
-        /// </summary>
-        private static bool pinOnTool = true;
 
         private const bool SteadyByDefault = true;
 
@@ -276,58 +262,50 @@ namespace SpaceEngineersVR.Tracking
         /// The arm that holds an item: the game's IK (MyCharacter.UpdateHandBones) has put the right palm on the item's RightHand
         /// spot as far as the arm reaches, and it does not stretch: past that the arm points straight at the tool and the glove
         /// stops short of it: 4 to 6 cm with the hand at the waist 30 cm ahead, as the shoulder sits 21 to 27 cm behind the
-        /// eyes. So the arm is solved here instead, onto the same spot, with the stretch and the collarbone of the other arm;
-        /// with RenderDebug HandIKHeld=0 the game's arm stays, and how far short it stops is logged. Left-handed the game has
+        /// eyes. So the arm is solved here instead, onto the same spot, with the stretch and the collarbone of the other arm.
+        /// A hand on a tool stays on it: past the stretch the arm lengthens on instead of the hand sliding along the handle as
+        /// the shoulder sways (<see cref="ArmSolver.Settings.Pin"/>). Left-handed the game has
         /// no arm for it (its left hand is on the item's LeftHand spot), so the left arm is always solved, onto the RightHand
         /// spot mirrored, and its fingers close on the item as the animation closes the right hand's (<see cref="MirrorFingers"/>).
         /// </summary>
         private static void Held(MyCharacter character, MyCharacterBone[] bones, Hand hand, ArmSolver.Chain chain, in MatrixD trackingToModel)
         {
             NoteHeld(hand, chain, trackingToModel);
-            if (chain == null || !(character.CurrentWeapon is MyEntity weapon) || character.HandItemDefinition == null || Mode == 4)
+            if (chain == null || !(character.CurrentWeapon is MyEntity weapon) || character.HandItemDefinition == null || TestAidsGameSolver())
                 return;
             Matrix target = (Matrix)((MatrixD)Hands.ItemSpots.Tool(character.HandItemDefinition) * weapon.WorldMatrix * character.PositionComp.WorldMatrixNormalizedInv);
             if (Hands.HeldTrace.On)
                 Hands.HeldTrace.Held(character, weapon, target, trackingToModel);
             string item = character.HandItemDefinition.Id.SubtypeName;
-            if (solveHeld || hand == Hand.Left)
+            bool fresh = frame - chain.SolvedFrame > 2;
+            if (fresh)
+                chain.Forget();
+            chain.SolvedFrame = frame;
+            HeldSway = steadyShoulder ? SteadyShoulder(bones, chain, fresh) : 0f;
+            swayValid &= steadyShoulder;
+            Vector3 shoulder = ArmSolver.Origin(bones[chain.Upper]);
+            ArmSolver.Settings use = settings;
+            ArmSpan.Apply(ref use);
+            use.Pin = 1f;
+            bool solved = ArmSolver.Solve(bones, chain, target, hand == Hand.Left ? -1 : 1, use, out ArmSolver.Result result);
+            HeldStretch = solved ? result.Stretch : float.NaN;
+            if (solved && hand == Hand.Left)
+                MirrorFingers(bones);
+            HandState state = VRInput.Get(hand);
+            if (solved && ArmJump.On && state.Tracked)
             {
-                bool fresh = frame - chain.SolvedFrame > 2;
-                if (fresh)
-                    chain.Forget();
-                chain.SolvedFrame = frame;
-                HeldSway = steadyShoulder ? SteadyShoulder(bones, chain, fresh) : 0f;
-                swayValid &= steadyShoulder;
-                Vector3 shoulder = ArmSolver.Origin(bones[chain.Upper]);
-                ArmSolver.Settings use = settings;
-                ArmSpan.Apply(ref use);
-                use.Pin = pinOnTool ? 1f : 0f;
-                bool solved = ArmSolver.Solve(bones, chain, target, hand == Hand.Left ? -1 : 1, use, out ArmSolver.Result result);
-                HeldStretch = solved ? result.Stretch : float.NaN;
-                if (solved && hand == Hand.Left)
-                    MirrorFingers(bones);
-                HandState state = VRInput.Get(hand);
-                if (solved && ArmJump.On && state.Tracked)
-                {
-                    Matrix palm = PalmTarget(hand, state);
-                    ArmJump.Solved(character, bones, hand, frame, chain, palm, (Matrix)((MatrixD)palm * trackingToModel), target, shoulder,
-                        trackingToModel, result, 0f, true);
-                }
-                if (solved)
-                    NoteReach(hand, $"{hand} hand holding the {item}", result, bones, chain, trackingToModel);
-                if (solved && result.OutOfReach && NoteDue())
-                    Note($"Hand IK: {hand} hand holding the {item} {result.Distance:F2} m from the shoulder, the arm reaches {result.Reach:F2} m " +
-                         $"(stretched x{result.Stretch:F2}, collarbone {result.Shrug:F0} deg), {result.Short * 100f:F0} cm short{Shoulder(bones, chain, trackingToModel)}");
-                else if (solved && result.Stretch > 1f + use.Stretch + 0.005f && NoteDue())
-                    Note($"Hand IK: {hand} hand kept on the {item} {result.Distance:F2} m from the shoulder: the arm stretched x{result.Stretch:F2}, " +
-                         $"past x{1f + use.Stretch:F2} (collarbone {result.Shrug:F0} deg){Shoulder(bones, chain, trackingToModel)}");
-                return;
+                Matrix palm = PalmTarget(hand, state);
+                ArmJump.Solved(character, bones, hand, frame, chain, palm, (Matrix)((MatrixD)palm * trackingToModel), target, shoulder,
+                    trackingToModel, result, 0f, true);
             }
-            HeldStretch = float.NaN;
-            float distance = (target.Translation - ArmSolver.Origin(bones[chain.Upper])).Length();
-            if (distance > chain.Reach && NoteDue())
-                Note($"Hand IK: Right hand holding the {item} {distance:F2} m from the shoulder, the arm reaches {chain.Reach:F2} m: " +
-                     $"the game's arm stops {(distance - chain.Reach) * 100f:F0} cm short of the tool{Shoulder(bones, chain, trackingToModel)}");
+            if (solved)
+                NoteReach(hand, $"{hand} hand holding the {item}", result, bones, chain, trackingToModel);
+            if (solved && result.OutOfReach && NoteDue())
+                Note($"Hand IK: {hand} hand holding the {item} {result.Distance:F2} m from the shoulder, the arm reaches {result.Reach:F2} m " +
+                     $"(stretched x{result.Stretch:F2}, collarbone {result.Shrug:F0} deg), {result.Short * 100f:F0} cm short{Shoulder(bones, chain, trackingToModel)}");
+            else if (solved && result.Stretch > 1f + use.Stretch + 0.005f && NoteDue())
+                Note($"Hand IK: {hand} hand kept on the {item} {result.Distance:F2} m from the shoulder: the arm stretched x{result.Stretch:F2}, " +
+                     $"past x{1f + use.Stretch:F2} (collarbone {result.Shrug:F0} deg){Shoulder(bones, chain, trackingToModel)}");
         }
 
         /// <summary>
@@ -459,20 +437,19 @@ namespace SpaceEngineersVR.Tracking
             if (!onStick && Cockpits.CockpitTouch.PalmTarget(hand, body, ref target, out bool onBar))
                 onStick = onBar;
 
-            if (Mode == 4)
+            if (TestAidsGameSolver())
             {
-                ArmSolver.SolveGame(bones, chain, target);
+                TestAidsSolveGame(bones, chain, target);
                 return;
             }
             ArmSolver.Settings use = settings;
             ArmSpan.Apply(ref use);
-            use.HandSwivel = Mode != 3;
-            use.Pin = pinOnTool ? onTool : 0f;
+            use.Pin = onTool;
             use.PinAt = onTool > 0f ? grip : (Vector3?)null;
             if (other)
             {
                 // Taking or letting go of a grip, and until the arm has caught up after: the stretch moves a step a frame.
-                bool moving = pinOnTool && onTool > 0f && onTool < 1f;
+                bool moving = onTool > 0f && onTool < 1f;
                 use.EaseFrom = (moving || easing) && frame - drawnFrame <= 2 && drawn > 0f ? drawn : 0f;
                 use.EaseStep = EaseStep;
             }

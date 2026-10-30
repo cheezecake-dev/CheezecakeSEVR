@@ -48,7 +48,9 @@ namespace SpaceEngineersVR.Hands
     /// </remarks>
     internal static class HandUse
     {
-        private static int errors;
+        private static readonly FeatureGuard lineGuard = new FeatureGuard(nameof(HandUse) + " line sight");
+        private static readonly FeatureGuard sweepGuard = new FeatureGuard(nameof(HandUse) + " sweep reach");
+        private static readonly FeatureGuard handGuard = new FeatureGuard(nameof(HandUse) + " hand ray");
 
         public static bool Hooked { get; private set; }
 
@@ -58,8 +60,7 @@ namespace SpaceEngineersVR.Hands
             // transpiler swaps those reads for the hand's pose, and the read of the use distance for the length that keeps the
             // end within the game's reach of the head (TranspileLine); in the sweep's, for the eye turned towards what the hand
             // aims at (TranspileSweep). Without them use stays on the head.
-            Type closest = AccessTools.TypeByName("Sandbox.Game.Entities.Character.Components.MyCharacterClosestDetectorComponent")
-                           ?? throw new MissingMemberException("MyCharacterClosestDetectorComponent");
+            Type closest = DetectorAnswer.Closest;
             allCorners = AccessTools.DeclaredMethod(closest, "RaycastAllCorners");
             allCornersFloating = AccessTools.DeclaredMethod(closest, "RaycastAllCornersFloating");
             useObjectSetter = AccessTools.PropertySetter(typeof(MyCharacterDetectorComponent), nameof(MyCharacterDetectorComponent.UseObject))
@@ -88,6 +89,12 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         private static void LineSight(MyCharacterRaycastDetectorComponent __instance)
         {
+            // Switched off, the find is dropped as when the check fails: what the eye cannot be shown to see is not used.
+            if (!lineGuard.On)
+            {
+                DropFind(__instance);
+                return;
+            }
             try
             {
                 IMyUseObject found = __instance.UseObject;
@@ -101,18 +108,21 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not hold the use line's find to what the eye sees");
+                lineGuard.Failed(e, "Hand tools could not hold the use line's find to what the eye sees");
                 // Unchecked is not seen: drop the find, as when the eye cannot see it.
-                try
-                {
-                    useObjectSetter?.Invoke(__instance, new object[] { null });
-                }
-                catch (Exception clear)
-                {
-                    if (errors++ < 3)
-                        Log.Error(clear, "Hand tools could not drop the use line's unchecked find");
-                }
+                DropFind(__instance);
+            }
+        }
+
+        private static void DropFind(MyCharacterRaycastDetectorComponent detector)
+        {
+            try
+            {
+                useObjectSetter?.Invoke(detector, new object[] { null });
+            }
+            catch (Exception clear)
+            {
+                lineGuard.Failed(clear, "Hand tools could not drop the use line's unchecked find");
             }
         }
 
@@ -262,6 +272,9 @@ namespace SpaceEngineersVR.Hands
         public static float SweepDistance(MyCharacterDetectorComponent detector)
         {
             float native = MyConstants.DEFAULT_INTERACTIVE_DISTANCE;
+            // Switched off, as when the check fails: unchecked is not in reach, a sweep of no length.
+            if (!sweepGuard.On)
+                return 0f;
             try
             {
                 MyCharacter character = detector?.Character;
@@ -275,8 +288,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not hold the use sweep within reach of the head");
+                sweepGuard.Failed(e, "Hand tools could not hold the use sweep within reach of the head");
                 // Unchecked is not in reach: a sweep of no length.
                 return 0f;
             }
@@ -395,6 +407,8 @@ namespace SpaceEngineersVR.Hands
         private static bool TryHand(MyCharacter character, out Vector3D origin, out Vector3D forward, out Vector3D up)
         {
             origin = forward = up = Vector3D.Zero;
+            if (!handGuard.On)
+                return false;
             try
             {
                 // The detectors run for the controlled character only (UpdateAfterSimulation10 returns otherwise). Once the hands'
@@ -406,8 +420,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not take the use ray from the hand");
+                handGuard.Failed(e, "Hand tools could not take the use ray from the hand");
                 return false;
             }
         }

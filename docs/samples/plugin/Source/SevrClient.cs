@@ -6,7 +6,7 @@
 //     SevrClient.RegisterAction("scan", "Scan around", SevrContext.OnFoot | SevrContext.Jetpack,
 //         "Left.ButtonUpper.Hold@0.8", on => { if (on) Scan(); });
 //
-// Version 1.0. Plugins only: a mod uses the mod channel (docs/MOD_API.md, "Mods: the handshake").
+// Version 1.1: version 1.0's members, and RegisterGunSight, RegisterCockpit and RegisterGripClaim. Plugins only: a mod uses the mod channel (docs/MOD_API.md, "Mods: the handshake").
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -111,6 +111,13 @@ namespace SevrIntegration
         private static Func<string, string, string, bool> unregisterMenuItem;
         private static Func<string, string, string, bool> registerPanelScreen;
         private static Func<string, string, bool> unregisterPanelScreen;
+        // Guns and cockpits
+        private static Func<string, string, Vector3D, Vector3D, bool> registerGunSight;
+        private static Func<string, string, bool> unregisterGunSight;
+        private static Func<string, string, string, bool> registerCockpit;
+        private static Func<string, string, bool> unregisterCockpit;
+        // Grip claims
+        private static Func<string, string, Func<int, bool>, Action<int>, bool> registerGripClaim;
         // Events and lifetime
         private static Func<string, string, Action, bool> subscribe;
         private static Func<string, string, bool> unsubscribe;
@@ -275,6 +282,61 @@ namespace SevrIntegration
             return unregisterPanelScreen != null && screen != null && unregisterPanelScreen(owner, screen.FullName);
         }
 
+        // ---- Guns and cockpits -------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// The sight of your hand gun (its physical item subtype), in the gun model's space, metres, the gun firing along -Z:
+        /// the aim point the eye looks through, and the sight line's direction (Vector3D.Zero for along the bore). With it the
+        /// player aims down the gun's sights by looking along them. Works without VR too, so register once.
+        /// </summary>
+        public static bool RegisterGunSight(string item, Vector3D sight, Vector3D direction)
+        {
+            return registerGunSight != null && registerGunSight(owner, item, sight, direction);
+        }
+
+        public static bool UnregisterGunSight(string item)
+        {
+            return unregisterGunSight != null && unregisterGunSight(owner, item);
+        }
+
+        /// <summary>
+        /// Your cockpit block (its subtype) is built on the game's cockpit <paramref name="like"/> (the same model) and gets its
+        /// VR controls. Works without VR too, so register once.
+        /// </summary>
+        public static bool RegisterCockpit(string subtype, string like)
+        {
+            return registerCockpit != null && registerCockpit(owner, subtype, like);
+        }
+
+        public static bool UnregisterCockpit(string subtype)
+        {
+            return unregisterCockpit != null && unregisterCockpit(owner, subtype);
+        }
+
+        // ---- Grip claims -------------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Takes a press of the grip in the world for an interaction of your own (a lever, a handle). As a grip closes that the
+        /// VR plugin's own interactions leave, <paramref name="take"/> is asked with the hand: true makes the press yours, and the
+        /// VR plugin does nothing with that grip until it opens. <paramref name="released"/>, null for none, is told the hand
+        /// once that grip opens, or VR stops.
+        /// </summary>
+        public static bool RegisterGripClaim(string id, Func<SevrHand, bool> take, Action<SevrHand> released = null)
+        {
+            if (registerGripClaim == null)
+                return false;
+            Func<int, bool> asked = null;
+            if (take != null)
+                asked = hand => take((SevrHand)hand);
+            Action<int> told = null;
+            if (released != null)
+                told = hand => released((SevrHand)hand);
+            return registerGripClaim(owner, id, asked, told);
+        }
+
+        /// <summary>Takes the grip claim away, and an action with the same id: one id names both.</summary>
+        public static bool UnregisterGripClaim(string id) { return unregisterId != null && unregisterId(owner, id); }
+
         // ---- Events and lifetime -----------------------------------------------------------------------------------------
 
         /// <summary>Calls <paramref name="handler"/> on the game thread when the event happens. Replaces an earlier handler.</summary>
@@ -366,6 +428,11 @@ namespace SevrIntegration
             unregisterMenuItem = Need<Func<string, string, string, bool>>(found, "UnregisterMenuItem", absent);
             registerPanelScreen = Need<Func<string, string, string, bool>>(found, "RegisterPanelScreen", absent);
             unregisterPanelScreen = Need<Func<string, string, bool>>(found, "UnregisterPanelScreen", absent);
+            registerGunSight = Need<Func<string, string, Vector3D, Vector3D, bool>>(found, "RegisterGunSight", absent);
+            unregisterGunSight = Need<Func<string, string, bool>>(found, "UnregisterGunSight", absent);
+            registerCockpit = Need<Func<string, string, string, bool>>(found, "RegisterCockpit", absent);
+            unregisterCockpit = Need<Func<string, string, bool>>(found, "UnregisterCockpit", absent);
+            registerGripClaim = Need<Func<string, string, Func<int, bool>, Action<int>, bool>>(found, "RegisterGripClaim", absent);
             subscribe = Need<Func<string, string, Action, bool>>(found, "Subscribe", absent);
             unsubscribe = Need<Func<string, string, bool>>(found, "Unsubscribe", absent);
             unregister = Need<Func<string, bool>>(found, "Unregister", absent);

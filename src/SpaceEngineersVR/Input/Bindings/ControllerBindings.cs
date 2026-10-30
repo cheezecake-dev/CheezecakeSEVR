@@ -16,7 +16,7 @@ namespace SpaceEngineersVR.Input.Bindings
     /// Every button the game is driven by is read here; the hands' grips and triggers, which grab, hold and point, are read
     /// from <see cref="VRInput"/> where the hand is what counts.
     /// <list type="bullet">
-    /// <item>Bindings are kept per OpenXR interaction profile (the path without <c>/interaction_profiles/</c>): the profile's
+    /// <item>Bindings are kept per OpenXR interaction profile (its key, <see cref="OpenXR.InteractionProfile.Key"/>): the profile's
     /// defaults (<see cref="DefaultBindings"/>) with the player's changes made to them. Only the changes are saved, in the
     /// settings file's <c>controllerBindings</c> as <c>profile:changes</c> entries separated by <c>|</c>
     /// (<see cref="BindingText.WriteChanges"/>), so a default added in a later version reaches a player who changed others.</item>
@@ -39,11 +39,32 @@ namespace SpaceEngineersVR.Input.Bindings
         }
 
         /// <summary>
-        /// The game would refuse the action here, or an outside action's owner says it is not available now
-        /// (<see cref="Api.ApiActions.Refuses"/>), so its controls are the place's under it (BindingEngine.Refuses).
+        /// The action cannot be used now, so its controls are the place's under it (BindingEngine.Refuses): the player's settings
+        /// switch it off (<see cref="SwitchedOff"/>), the game would refuse it here (the container's production with a hand weapon
+        /// that reloads, reload without one), or an outside action's owner says it is not available now (<see cref="Api.ApiActions.Refuses"/>).
         /// </summary>
-        private static bool Refused(int action) =>
-            action == (int)VRAction.QuickProduction ? !QuickInventory.ProductionFree() : Api.ApiRuntime.Actions.Refuses(action);
+        private static bool Refused(int action)
+        {
+            switch (action)
+            {
+                case (int)VRAction.QuickProduction:
+                    return !QuickInventory.ProductionFree();
+                case (int)VRAction.Reload:
+                    return !Reload.GunReloads;
+                default:
+                    return SwitchedOff(action) || Api.ApiRuntime.Actions.Refuses(action);
+            }
+        }
+
+        /// <summary>
+        /// The player's settings switch the action off: zero-g pitch and roll set to Off. Its bindings do nothing, and as a held
+        /// mode it holds no control, so a hand-following action may move onto it (<see cref="BindingMirror.Moves"/>).
+        /// </summary>
+        internal static bool SwitchedOff(int action) => action == (int)VRAction.ZeroGTurn && VRSettings.ZeroGTurn == VRSettings.ZeroGTurnOff;
+
+        // Refused and SwitchedOff as the hand rule asks them (BindingMirror.Moves), made delegates once.
+        private static readonly Func<int, bool> usableNow = action => !Refused(action), usableAsSet = action => !SwitchedOff(action);
+
         private static readonly ControlFrame frame = new ControlFrame();
 
         // The profile each hand is on, from the render thread (XrInput reads the profiles there); null for none.
@@ -89,21 +110,37 @@ namespace SpaceEngineersVR.Input.Bindings
         public static double HoldProgress(VRAction action) => engine.HoldProgress((int)action);
 
         /// <summary>
-        /// The action numbered <paramref name="action"/> is on this frame on the hand the player uses it with: by its left-handed
-        /// bindings (<see cref="BindingMirror"/>) when it follows the hand (<see cref="VRActionInfo.FollowsHand"/>) and the player is
-        /// left-handed, else by its bindings. The binding layer decides this, so a caller never chooses the mirror. Outside actions
-        /// are delivered by it; the plugin's own still choose per caller where a rule of their own applies (Hands.Reload).
+        /// The action numbered <paramref name="action"/> is on this frame on the hand the player uses it with here: by its
+        /// left-handed bindings (<see cref="BindingMirror"/>) where it moves (<see cref="Mirrors"/>), else by its bindings. The
+        /// binding layer decides this for every action, the plugin's own and outside ones, so a caller never chooses the mirror.
         /// </summary>
         public static bool ActiveForPlayer(int action) => Mirrors(action) ? mirror.IsActive(action) : engine.IsActive(action);
+
+        /// <summary>As <see cref="ActiveForPlayer(int)"/>, for one of the plugin's own actions.</summary>
+        public static bool ActiveForPlayer(VRAction action) => ActiveForPlayer((int)action);
 
         // ActiveForPlayer made a delegate once, not each frame.
         private static readonly Func<int, bool> activeForPlayer = ActiveForPlayer;
 
-        /// <summary>As <see cref="HoldProgress"/>, on the hand the player uses the action with (<see cref="ActiveForPlayer"/>).</summary>
+        /// <summary>As <see cref="HoldProgress"/>, on the hand the player uses the action with (<see cref="ActiveForPlayer(int)"/>).</summary>
         public static double HoldProgressForPlayer(int action) => Mirrors(action) ? mirror.HoldProgress(action) : engine.HoldProgress(action);
 
-        /// <summary>The action is used with the other hand's controls now: it follows the hand and the player is left-handed.</summary>
-        public static bool Mirrors(int action) => VRActions.FollowsHand(action) && VRSettings.DominantHand == Hand.Left;
+        /// <summary>
+        /// The action is used with the other hand's controls here and now: the player is left-handed and the hand rule
+        /// (<see cref="BindingMirror.Moves"/>) moves it, from the bindings in use, where the player is this frame, and what can be
+        /// used now. Game thread.
+        /// </summary>
+        public static bool Mirrors(int action) => MirrorsAt(action, contexts);
+
+        /// <summary>
+        /// As <see cref="Mirrors"/>, with the player at <paramref name="where"/> (the wrist panel's Controls page shows the jetpack's
+        /// buttons on foot). Game thread.
+        /// </summary>
+        private static bool MirrorsAt(int action, BindingContext where) =>
+            VRSettings.DominantHand == Hand.Left && BindingMirror.Moves(action, where, engine.Bindings, mirror.Bindings, usableNow);
+
+        /// <summary>As <see cref="MirrorsAt"/>, for one of the plugin's own actions in a control set (<see cref="PlaceOf"/>).</summary>
+        public static bool MirrorsIn(VRAction action, VRContext where) => MirrorsAt((int)action, PlaceOf(where));
 
         /// <summary>Changes whenever the bindings in use change (another controller, the player's changes, an action registered or taken away).</summary>
         public static int BindingsVersion => bindingsVersion;
@@ -172,7 +209,7 @@ namespace SpaceEngineersVR.Input.Bindings
         /// <summary>Any thread: the hand is now on <paramref name="profile"/> (a full OpenXR path, or null for none).</summary>
         public static void SetProfile(Hand hand, string profile)
         {
-            string key = Key(profile);
+            string key = OpenXR.InteractionProfile.Key(profile);
             lock (gate)
                 handProfile[(int)hand] = key;
         }
@@ -186,15 +223,6 @@ namespace SpaceEngineersVR.Input.Bindings
 
         /// <summary>The profile whose bindings apply now, as <see cref="Update"/> chooses it: the left hand's, else the right's; null with no controller.</summary>
         public static string ProfileInHand() => HandProfile(Hand.Left) ?? HandProfile(Hand.Right);
-
-        /// <summary>The profile as bindings name it: the path without <c>/interaction_profiles/</c>; null for none.</summary>
-        public static string Key(string profile)
-        {
-            if (string.IsNullOrEmpty(profile))
-                return null;
-            const string prefix = "/interaction_profiles/";
-            return profile.StartsWith(prefix, StringComparison.Ordinal) ? profile.Substring(prefix.Length) : profile;
-        }
 
         /// <summary>The bindings in force for <paramref name="profile"/>: its defaults with the player's changes. A copy, to change and hand back.</summary>
         public static List<Binding> Bindings(string profile)
@@ -257,11 +285,14 @@ namespace SpaceEngineersVR.Input.Bindings
         }
 
         /// <summary>
-        /// The bindings in <paramref name="list"/> that cannot both work as set (<see cref="BindingEngine.Conflicts"/>); with
-        /// <paramref name="leftHanded"/>, <paramref name="list"/> is the table as it works left-handed (<see cref="BindingMirror.Table"/>).
+        /// The bindings in <paramref name="list"/> (<paramref name="profile"/>'s, as set) that cannot both work
+        /// (<see cref="BindingEngine.Conflicts"/>). With <paramref name="leftHanded"/> they are checked as a left-handed player has
+        /// them, by the hand rule play uses (<see cref="BindingMirror.Conflicts"/>), with what the settings switch off left out;
+        /// each clash names bindings of <paramref name="list"/>.
         /// </summary>
-        public static List<(Binding A, Binding B, string Why)> Conflicts(IReadOnlyList<Binding> list, bool leftHanded = false) =>
-            BindingEngine.Conflicts(list, leftHanded ? (Func<int, int, bool>)VRActions.SameContextLeftHanded : VRActions.SameContext, VRActions.HeldMode);
+        public static List<(Binding A, Binding B, string Why)> Conflicts(string profile, IReadOnlyList<Binding> list, bool leftHanded) =>
+            leftHanded ? BindingMirror.Conflicts(profile, list, usableAsSet)
+                       : BindingEngine.Conflicts(list, VRActions.SameContext, VRActions.HeldMode);
 
         /// <summary>Game thread, once a frame, right after <see cref="VRInput.Update"/>, before anything reads the actions.</summary>
         public static void Update()
@@ -344,10 +375,6 @@ namespace SpaceEngineersVR.Input.Bindings
 
         private static int errors;
 
-        /// <summary>
-        /// Where the player is, from the controls' state as last frame left it: the screen with focus, else the wheel, else what
-        /// is controlled, with building, painting, a container in reach and a ping being aimed on top.
-        /// </summary>
         /// <summary>The kind of screen <paramref name="menu"/> is, for <see cref="ScreenPlace"/>; null is none.</summary>
         internal static FocusedScreen Focused(object menu) =>
             menu == null ? FocusedScreen.None
@@ -356,22 +383,31 @@ namespace SpaceEngineersVR.Input.Bindings
             : menu is MyGuiControlRadialMenuBase ? FocusedScreen.Radial
             : FocusedScreen.Menu;
 
+        /// <summary>The place the bindings give a control set (what is controlled, with nothing on top of it); None for none.</summary>
+        public static BindingContext PlaceOf(VRContext context)
+        {
+            switch (context)
+            {
+                case VRContext.OnFoot: return BindingContext.OnFoot;
+                case VRContext.Jetpack: return BindingContext.Jetpack;
+                case VRContext.Ship: return BindingContext.Seat;
+                case VRContext.Turret: return BindingContext.Turret;
+                case VRContext.Spectator: return BindingContext.Spectator;
+                default: return BindingContext.None;
+            }
+        }
+
+        /// <summary>
+        /// Where the player is, from the controls' state as last frame left it: the screen with focus, else the wheel, else what
+        /// is controlled, with building, painting, a container in reach and a ping being aimed on top.
+        /// </summary>
         private static BindingContext Where()
         {
             BindingContext place = ScreenPlace.Of(Focused(VRControls.FocusedMenu()), ToolbarWheel.Owns);
             if (place != BindingContext.None)
                 return place;
 
-            BindingContext where;
-            switch (VRControls.Context)
-            {
-                case VRContext.OnFoot: where = BindingContext.OnFoot; break;
-                case VRContext.Jetpack: where = BindingContext.Jetpack; break;
-                case VRContext.Ship: where = BindingContext.Seat; break;
-                case VRContext.Turret: where = BindingContext.Turret; break;
-                case VRContext.Spectator: where = BindingContext.Spectator; break;
-                default: where = BindingContext.None; break;
-            }
+            BindingContext where = PlaceOf(VRControls.Context);
             // A seat's or turret's controls stay with it seen through a camera (a turret control block's own camera).
             if (VRControls.CameraView)
                 where = (where & (BindingContext.Seat | BindingContext.Turret)) | BindingContext.CameraView;

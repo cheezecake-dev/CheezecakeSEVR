@@ -19,7 +19,7 @@ namespace SpaceEngineersVR.OpenXR
     internal static class WandLayout
     {
         /// <summary>The interaction profile of the Vive wands.</summary>
-        public const string Profile = "/interaction_profiles/htc/vive_controller";
+        public const string Profile = InteractionProfile.Prefix + Input.Bindings.DefaultBindings.WandProfile;
 
         /// <summary>How far from the middle of a trackpad a click is still its centre, 0 to 1.</summary>
         public const float CentreRadius = 0.4f;

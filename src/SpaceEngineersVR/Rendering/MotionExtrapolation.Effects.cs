@@ -23,14 +23,10 @@ namespace SpaceEngineersVR.Rendering
     /// second (at 6 m/s up to 4 cm), and trailed behind it while emitting. Each emitter is given the same shift at the one moment
     /// it is read for the frame (MyGPUEmitter.Update, as MyGPUEmitters.Gather collects them in the first eye's pass, after
     /// MyRenderParticlesManager.Draw has filled it from the effect's matrix) and put back straight after, so the particles start
-    /// at the drawn tip and its motion between frames (the emitter's PositionDelta) is the drawn tool's. RenderDebug
-    /// ToolEffectsRide=0 leaves them where the game frame put them, for comparison.
+    /// at the drawn tip and its motion between frames (the emitter's PositionDelta) is the drawn tool's.
     /// </remarks>
     internal static partial class MotionExtrapolation
     {
-        /// <summary>RenderDebug ToolEffectsRide=0: the held tool's particle effects are left where the game frame put them, as before.</summary>
-        public static bool EffectsOff { get; set; }
-
         private static readonly AccessTools.FieldRef<MyEngineerToolBase, MyParticleEffect> toolEffect =
             AccessTools.FieldRefAccess<MyEngineerToolBase, MyParticleEffect>("m_toolEffect");
         private static readonly AccessTools.FieldRef<MyEngineerToolBase, MyParticleEffect> toolSecondaryEffect =
@@ -45,8 +41,6 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The render ids of the held tool's particle effects that are running, into the sample.</summary>
         private static void AddEffects(Sample s, MyEntity tool)
         {
-            if (EffectsOff)
-                return;
             if (tool is MyEngineerToolBase engineer)
             {
                 s.AddEffect(toolEffect(engineer));
@@ -95,14 +89,14 @@ namespace SpaceEngineersVR.Rendering
             harmony.Patch(update, prefix: new HarmonyMethod(typeof(MotionExtrapolation), nameof(EmitterRead)),
                 postfix: new HarmonyMethod(typeof(MotionExtrapolation), nameof(EmitterReadDone)));
             effectsHooked = true;
-            Log.Info("Motion extrapolation: the held tool's flames, sparks and dust are moved on with it (RenderDebug ToolEffectsRide=0 leaves them)");
+            Log.Info("Motion extrapolation: the held tool's flames, sparks and dust are moved on with it");
         }
 
         /// <summary>Render thread, in <see cref="Begin"/>: the sample's effects' emitters, to be moved on by <paramref name="shift"/> as they are read.</summary>
         private static void RideEffects(Sample s, in Vector3D shift)
         {
             ridingCount = 0;
-            if (!effectsHooked || effectsFailed || EffectsOff || s.EffectCount == 0)
+            if (!effectsHooked || effectsFailed || s.EffectCount == 0)
                 return;
             try
             {

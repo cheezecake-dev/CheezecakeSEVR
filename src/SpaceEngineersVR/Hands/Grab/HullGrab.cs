@@ -37,13 +37,11 @@ namespace SpaceEngineersVR.Hands
     /// took hold last leads, and the other's anchor follows its hand until it leads in turn. The ladder climbs by the game's
     /// own steps (MyCharacterLadderComponent.ProceedLadderMovementInternal): the hand's pull is banked, and a step up or down is
     /// asked for once half a step is owed. The grip is claimed through <see cref="GripClaim"/> at
-    /// <see cref="Priority"/>, after the helmet, floating items and grab-to-use, so a grip on a door stays the door's.
+    /// <see cref="GripPriority.HullGrab"/>, after the helmet, floating items and grab-to-use, so a grip on a door stays the door's.
     /// </remarks>
     internal static partial class HullGrab
     {
         public const string Name = "HullGrab";
-
-        public const int Priority = 40;
 
         /// <summary>How near the grip's middle has to be to a grid's or an asteroid's collision surface, metres, for a press to take hold (<see cref="GrabTolerance"/>).</summary>
         public const float HullReach = GrabTolerance.Surface;
@@ -176,7 +174,7 @@ namespace SpaceEngineersVR.Hands
                     prefix: new HarmonyMethod(typeof(HullGrab), nameof(BeforePhysics)));
                 harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                     postfix: new HarmonyMethod(typeof(HullGrab), nameof(AfterCharacterSimulation)));
-                GripClaim.Register(Name, Priority, Take);
+                GripClaim.Register(Name, GripPriority.HullGrab, Take);
                 hooked = true;
             }
             catch (Exception e)

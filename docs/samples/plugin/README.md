@@ -26,4 +26,5 @@ Every line it writes to the game's log (`SpaceEngineers*.log`) starts `SevrSampl
   folder `Sandbox.Common`, `Sandbox.Game`, `VRage`, `VRage.Game`, `VRage.Library` and `VRage.Math` (not copied to the
   output). Pulsar does not need one: it compiles `Source/` itself.
 - **To use the API in your own plugin:** copy `Source/SevrClient.cs` into it as it is, and call `SevrClient.Connect` from your
-  plugin's `Init`. `SevrSample.cs` shows each kind of member in use; change the owner id, labels and suggested bindings.
+  plugin's `Init`. `SevrSample.cs` shows actions, menu items, events, state, poses and haptics in use
+  (not panel screens, gun sights, cockpits or grip claims: docs/MOD_API.md has those); change the owner id, labels and suggested bindings.

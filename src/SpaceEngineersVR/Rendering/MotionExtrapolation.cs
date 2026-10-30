@@ -55,15 +55,6 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>RenderDebug MotionExtrapolation=0 turns it off.</summary>
         public static bool On = true;
 
-        /// <summary>RenderDebug LaserRide=0: the lasers are given in the world again, as before (<see cref="AddLine"/>), for comparison.</summary>
-        public static bool RideOff { get; set; }
-
-        /// <summary>RenderDebug ToolPartsRide=0: the held tool's parts are left where the game frame put them again, as before (<see cref="AddTool"/>), for comparison.</summary>
-        public static bool PartsOff { get; set; }
-
-        /// <summary>RenderDebug ColbyCockpitRide=0: ColbyJack1134's cockpit pieces are left where the game frame put them again, as before, for comparison.</summary>
-        public static bool CockpitRideOff { get; set; }
-
         /// <summary>No shift beyond one game step either way, ms.</summary>
         private const double MaxShiftMs = 1000.0 / 60.0;
 
@@ -169,7 +160,7 @@ namespace SpaceEngineersVR.Rendering
                         // ColbyJack1134's cockpit pieces stand in for the seat's own interior, which is a child of its cell's
                         // cull object and so moves with the grid above; his are roots placed in the world, and left out they kept
                         // the game frame's place while the view and the ship were moved on: the whole cockpit lagged behind.
-                        if (!CockpitRideOff && Cockpits.CockpitRender.ActorsIn(seat as MyCockpit) is uint[] pieces)
+                        if (Cockpits.CockpitRender.ActorsIn(seat as MyCockpit) is uint[] pieces)
                             foreach (uint id in pieces)
                                 s.Add(id);
                         if (seat.Pilot != null)
@@ -224,7 +215,6 @@ namespace SpaceEngineersVR.Rendering
 
         private static MyEntity loggedTool;
         private static int loggedParts = -1;
-        private static bool loggedPartsOff;
 
         /// <summary>
         /// The held tool's render objects and its parts': the drill's spike, the grinder's disc, the rifle's magazine. A part
@@ -240,18 +230,14 @@ namespace SpaceEngineersVR.Rendering
         {
             AddRenderObjects(s, tool);
             int before = s.Count;
-            if (!PartsOff)
-                AddParts(s, tool);
+            AddParts(s, tool);
             int parts = s.Count - before;
-            if (ReferenceEquals(tool, loggedTool) && parts == loggedParts && PartsOff == loggedPartsOff)
+            if (ReferenceEquals(tool, loggedTool) && parts == loggedParts)
                 return;
             loggedTool = tool;
             loggedParts = parts;
-            loggedPartsOff = PartsOff;
             string names = tool.Subparts != null && tool.Subparts.Count > 0 ? string.Join(", ", tool.Subparts.Keys) : "none";
-            Log.Info(PartsOff
-                ? $"Motion extrapolation: the held {tool.GetType().Name} moves with the carrier, its parts ({names}) are left where the game frame put them (ToolPartsRide=0)"
-                : $"Motion extrapolation: the held {tool.GetType().Name} moves with the carrier, with {parts} render object(s) of its parts ({names})");
+            Log.Info($"Motion extrapolation: the held {tool.GetType().Name} moves with the carrier, with {parts} render object(s) of its parts ({names})");
         }
 
         /// <summary>The render objects of <paramref name="entity"/>'s parts, and of theirs.</summary>
@@ -314,7 +300,7 @@ namespace SpaceEngineersVR.Rendering
             id = uint.MaxValue;
             worldToLocal = MatrixD.Identity;
             MyCharacter body = MySession.Static?.LocalCharacter;
-            if (!RideOff && body?.PositionComp != null && !body.IsDead && !body.Closed
+            if (body?.PositionComp != null && !body.IsDead && !body.Closed
                 && ((MyEntity)body).Render is MyRenderComponentCharacter render)
                 id = cullRenderId(render);
             if (id != lastRide || !rideLogged)
@@ -323,7 +309,7 @@ namespace SpaceEngineersVR.Rendering
                 rideLogged = true;
                 Log.Info(id != uint.MaxValue
                     ? $"Motion extrapolation: the lasers ride with the local character (cull object {id}), so they move with the carrier"
-                    : $"Motion extrapolation: the lasers are given in the world ({(RideOff ? "LaserRide=0" : "no living local character")})");
+                    : "Motion extrapolation: the lasers are given in the world (no living local character)");
             }
             if (id == uint.MaxValue)
                 return false;

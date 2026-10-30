@@ -72,8 +72,12 @@ namespace SpaceEngineersVR.Hands
         /// click): when the refusal is for no ammunition (a magazine out or none left), a light click in the trigger hand too, at
         /// most every <see cref="DryEverySeconds"/>. The HUD already shows the empty magazine, so it tells nothing new.
         /// </summary>
+        private static readonly FeatureGuard dryGuard = new FeatureGuard(nameof(Haptics) + " empty click");
+
         private static void AfterShootFailed(MyAutomaticRifleGun __instance, object[] __args)
         {
+            if (!dryGuard.On)
+                return;
             try
             {
                 if (__args == null || __args.Length < 2 || !(__args[0] is MyShootActionEnum action) || action != MyShootActionEnum.PrimaryAction
@@ -87,7 +91,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "empty click");
+                dryGuard.Failed(e, "Haptics (empty click) failed");
             }
         }
 

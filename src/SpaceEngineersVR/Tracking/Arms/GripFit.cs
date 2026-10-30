@@ -29,8 +29,6 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>The key of the fit a hand uses before its profile is known, and the desktop hands always.</summary>
         public const string Unknown = "default";
 
-        private const string Prefix = "/interaction_profiles/";
-
         /// <summary>The turn (degrees about the grip's X, Y, Z) and the shift (millimetres along them) for one controller profile.</summary>
         public sealed class Fit
         {
@@ -100,9 +98,7 @@ namespace SpaceEngineersVR.Tracking
         /// </summary>
         public static void SetProfile(Hand hand, string interactionProfile)
         {
-            string key = interactionProfile == null ? null : interactionProfile.StartsWith(Prefix, StringComparison.Ordinal) ? interactionProfile.Substring(Prefix.Length) : interactionProfile;
-            if (string.IsNullOrEmpty(key))
-                key = null;
+            string key = OpenXR.InteractionProfile.Key(interactionProfile);
             string note;
             lock (gate)
             {

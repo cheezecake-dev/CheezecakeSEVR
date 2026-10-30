@@ -15,7 +15,7 @@ namespace SpaceEngineersVR.Api
     /// The registry behind <see cref="SevrApi"/> version 2 (<see cref="ApiCore"/>, its actions and events), one for the
     /// plugin, and what keeps it in step with the game: once a frame (<see cref="Update"/>, from <see cref="Plugin.Update"/>)
     /// the registrations made over the mod channel go when their world unloads, the count of owners' exceptions not written is
-    /// written when its window ends, and the events see what changed.
+    /// written when its window ends, grip claims hear that their grip opened, and the events see what changed.
     /// </summary>
     internal static partial class ApiRuntime
     {
@@ -24,6 +24,13 @@ namespace SpaceEngineersVR.Api
         public static readonly ApiEvents Events = new ApiEvents(Core);
         public static readonly ApiMenus Menus = new ApiMenus(Core, IconExists);
         public static readonly ApiScreens Screens = new ApiScreens(Core);
+        public static readonly ApiGuns Guns = new ApiGuns(Core);
+        public static readonly ApiCockpits Cockpits = new ApiCockpits(Core, SpaceEngineersVR.Cockpits.CockpitRig.HasControls);
+        public static readonly ApiGrips Grips = new ApiGrips(Core);
+
+        /// <summary>An outside claim holds the hand's grip still: VR is on and the grip table has it as theirs.</summary>
+        private static readonly Func<int, bool> outsideHolds = hand => SevrApi.IsActive() && Hands.GripClaim.Holds((Hand)hand, ApiGrips.ClaimName);
+        private static bool gripsAsked;
 
         private static readonly FeatureGuard guard = new FeatureGuard("SEVR API frame");
         private static MySession world;
@@ -55,6 +62,12 @@ namespace SpaceEngineersVR.Api
                 return;
             try
             {
+                if (!gripsAsked)
+                {
+                    // Asked in the grip table's order (Hands.GripPriority.Outside), only while VR is on.
+                    Hands.GripClaim.Register(ApiGrips.ClaimName, Hands.GripPriority.Outside, hand => SevrApi.IsActive() && Grips.Take((int)hand));
+                    gripsAsked = true;
+                }
                 TestAidsFrame();
                 MySession session = MySession.Static;
                 if (!ReferenceEquals(session, world))
@@ -67,6 +80,7 @@ namespace SpaceEngineersVR.Api
                     world = session;
                 }
                 Core.EndExceptionWindows();
+                Grips.Frame(outsideHolds);
                 Vector2D tangents = SevrApi.Tangents();
                 Events.Observe(new ApiEvents.State
                 {

@@ -196,9 +196,9 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         internal static bool ZeroGHeld => (ZeroGClick() || zeroGLocked) && CanPitchAndRoll(out _);
 
-        /// <summary>The left stick click is down on the jetpack, outside a camera block's view, with zero-g pitch and roll not Off (the bindings' Pitch and roll, which building and a container in reach shadow).</summary>
+        /// <summary>The left stick click is down on the jetpack, outside a camera block's view: the bindings' Pitch and roll, which building and a container in reach shadow, and which is off while zero-g pitch and roll is Off (ControllerBindings.SwitchedOff).</summary>
         private static bool ZeroGClick() =>
-            context == VRContext.Jetpack && !cameraView && VRSettings.ZeroGTurn != VRSettings.ZeroGTurnOff && On(VRAction.ZeroGTurn);
+            context == VRContext.Jetpack && !cameraView && On(VRAction.ZeroGTurn);
 
         /// <summary>The action is on this frame, by the player's bindings (<see cref="ControllerBindings"/>).</summary>
         private static bool On(VRAction action) => ControllerBindings.IsActive(action);

@@ -84,10 +84,15 @@ namespace SpaceEngineersVR.Input
             TestAidsRotation(ref __result);
         }
 
-        private static void Roll(ref float __result) => VRControls.AddRoll(ref __result);
+        private static void Roll(ref float __result)
+        {
+            VRControls.AddRoll(ref __result);
+        }
 
         private static void Control(MyStringId context, MyStringId controlId, MyControlStateType type, bool joystickOnly, ref bool __result)
         {
+            if (GameControlCall.Answer(controlId, type, joystickOnly, ref __result))
+                return;
             if (__result || joystickOnly)
                 return;
             bool driven = false;
@@ -115,6 +120,8 @@ namespace SpaceEngineersVR.Input
         /// <summary>A control asked about without a context: the local player's own control set answers. A blocked control (a scenario script's) stays blocked.</summary>
         private static void Direct(MyVRageInput input, MyStringId control, MyControlStateType type, ref bool result)
         {
+            if (GameControlCall.Answer(control, type, false, ref result))
+                return;
             if (result || input.IsControlBlocked(control))
                 return;
             bool driven = false;

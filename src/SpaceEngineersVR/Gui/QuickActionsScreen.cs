@@ -27,10 +27,10 @@ namespace SpaceEngineersVR.Gui
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A button does not do its action itself. The actions are the game's own controls, which the gameplay screen reads
-    /// (MyGuiScreenGamePlay.HandleUnhandledInput, MyCubeBuilder.HandleGameInput) and only acts on while it has the focus,
-    /// so a button closes this screen and presses that control for the game's next gameplay input (<see cref="WristButton.Press"/>).
-    /// What the game then does is exactly what the key does: the same checks, sounds, synchronisation and screens.
+    /// A button is one of the game's own controls, and its press runs the game's own code that reads that control's key
+    /// (MyGuiScreenGamePlay.HandleUnhandledInput, MyCubeBuilder.HandleGameInput) once, with that control the only one pressed
+    /// (<see cref="WristButton.Press"/>): the game does what the key does, with the same checks, sounds, synchronisation and
+    /// screens. Then the screen closes.
     /// </para>
     /// <para>
     /// The look is the game's own menus': its screen background (MyGuiConstants.TEXTURE_SCREEN_BACKGROUND), its caption,
@@ -39,7 +39,6 @@ namespace SpaceEngineersVR.Gui
     /// to the metre the game's 1-pixel borders would be half a headset pixel, so the button frames are drawn
     /// <see cref="BorderScale"/> times over, and the pointed-at button takes the game's selected look (its light blue fill,
     /// dark text), which reads from arm's length, where the game's mouse-over look is only a shade lighter.
-    /// RenderDebug QuickMenuNative=0 gives back the plain panel (<see cref="Plain"/>).
     /// </para>
     /// <para>
     /// Under the actions is the External view tile: it opens a page of its own on the same panel (<see cref="ExternalViewPage"/>)
@@ -212,7 +211,8 @@ namespace SpaceEngineersVR.Gui
 
             // MyGuiScreenGamePlay.cs:679 DAMPING_RELATIVE -> dampeners on, and MyPlayerCollection.SetDampeningEntity: the speed is
             // matched to what the head's ray is on, up to 1 km (MyPlayerCollection.cs:2194). As the button is pressed the head is
-            // turned to the wrist, so the game's ray is given the head as it was when the panel opened (WristButton.OpenedLook).
+            // turned to the wrist, so the game's ray is given the head as it was when the panel opened (WristButton.OpenedLook);
+            // the game runs that pick where it runs the server (single player, the host).
             // Under the name is what it is matched to. As the seated panel's.
             new QuickAction("Relative", MyControlsSpace.DAMPING_RELATIVE, "Ctrl+Z",
                 "Relative dampeners: dampeners on, matching your speed to what you were looking at as you opened this panel (up to 1 km).",
@@ -223,7 +223,7 @@ namespace SpaceEngineersVR.Gui
             new QuickAction("Broadcast", MyControlsSpace.BROADCASTING, "O", "Switches your radio broadcast on or off.", Hud + "ToggleBroadcasting.png",
                 () => Controlled?.EnabledBroadcasting),
 
-            // MyCubeBuilder.cs:2905 USE_SYMMETRY -> ToggleSymmetry() (with a block in hand, looking at a grid)
+            // MyCubeBuilder.cs:2905 USE_SYMMETRY -> ToggleSymmetry, with a block in hand aimed at a grid, in creative or as an admin
             new QuickAction("Symmetry", MyControlsSpace.USE_SYMMETRY, "N", "Switches symmetry on or off while you are building.", Hud + "ToggleSymmetry.png",
                 () => MyCubeBuilder.Static?.UseSymmetry),
 
@@ -419,15 +419,7 @@ namespace SpaceEngineersVR.Gui
                 Run = () => OpenSeated(),
                 StateText = () => "Lights, power, park",
             });
-            // The G menu straight from here too, beside the game's own Inventory entry: one stick click and a choice from the
-            // seat's tools wheel.
-            if (!(seat is MyCryoChamber))
-                top.Add(new ActionsWheel.Entry
-                {
-                    Name = "G menu",
-                    Icon = Hud + "MultiBlockBuilding.png",
-                    Run = () => WristButton.Press(MyControlsSpace.BUILD_SCREEN, "G menu"),
-                });
+            // The G menu is the wheel's own, beside Inventory, on foot and in a seat alike (GameControlEntries).
         }
 
         /// <summary>Game thread: opens the panel in a seat (the actions wheel's way in, or Y tapped at the wrist), on its seated page.</summary>
@@ -459,14 +451,8 @@ namespace SpaceEngineersVR.Gui
             AddOns,
         }
 
-        /// <summary>Debug: the plain panel as it was, a flat background and text-only buttons (<see cref="Rendering.RenderDebug"/> QuickMenuNative=0).</summary>
-        public static bool Plain { get; set; }
-
         /// <summary>The game's button frames are drawn this many times their size: 3 GUI pixels is about 1.5 headset pixels on the wrist.</summary>
         internal const float BorderScale = 3f;
-
-        private const string BlankTexture = GuiTextures.Blank;
-        private static readonly Vector4 PanelColor = new Vector4(0.035f, 0.06f, 0.085f, 1f);
 
         /// <summary>The HUD icons' own light blue (192, 237, 249), for the white glyphs.</summary>
         private static readonly Vector4 IconBlue = new Color(192, 237, 249).ToVector4();
@@ -480,10 +466,6 @@ namespace SpaceEngineersVR.Gui
         // Measures are the GUI's normalised ones: 1.0 is the screen's height, and the 1920x1080 layout is 4/3 wide.
         private const float MarginX = 0.045f, TitleHeight = 0.15f, FootHeight = 0.105f, Gap = 0.022f, Line = 0.003f;
         private const float CaptionScale = 1.45f, LabelScale = 1.65f, StateScale = 1.3f, FootScale = 1.25f;
-
-        // The plain panel's.
-        private const float PlainMarginX = 0.05f, PlainBottomMargin = 0.05f, PlainTitleHeight = 0.16f, PlainGap = 0.03f;
-        private const float PlainTitleScale = 1.6f, PlainButtonTextScale = 1.9f;
 
         /// <summary>The game's rectangular button, drawn for the wrist panel's tiles and the flight settings' buttons (<see cref="Cockpits.FlightSettingsScreen"/>).</summary>
         internal static readonly MyGuiControlButton.StyleDefinition TileStyle = new MyGuiControlButton.StyleDefinition
@@ -501,7 +483,6 @@ namespace SpaceEngineersVR.Gui
         private static bool preloaded;
 
         private MyGuiControlLabel foot;
-        private bool plain;
 
         /// <summary>How many tiles the panel shows now (the External view page's readout in the middle not counted).</summary>
         internal int TileCount { get; private set; }
@@ -522,11 +503,9 @@ namespace SpaceEngineersVR.Gui
 
         /// <param name="externalView">Open on the External view page (from the actions wheel in a seat).</param>
         public QuickActionsScreen(bool externalView)
-            : base(new Vector2(0.5f, 0.5f), Plain ? PanelColor : Vector4.One, FullSize(), false,
-                   Plain ? BlankTexture : MyGuiConstants.TEXTURE_SCREEN_BACKGROUND.Texture)
+            : base(new Vector2(0.5f, 0.5f), Vector4.One, FullSize(), false, MyGuiConstants.TEXTURE_SCREEN_BACKGROUND.Texture)
         {
-            plain = Plain;
-            page = externalView && !plain ? Page.ExternalView : Page.Actions;
+            page = externalView ? Page.ExternalView : Page.Actions;
             // Before anything else: the head is still on what the player looked at as they opened the panel.
             look = WristButton.CaptureLook();
             // No fade in or out: the panel is a wrist watch, and it must be gone the moment a button is pressed, so the
@@ -591,12 +570,6 @@ namespace SpaceEngineersVR.Gui
             Vector2 size = Size ?? FullSize();
             foot = null;
 
-            if (plain)
-            {
-                RecreatePlain(size);
-                return;
-            }
-
             bool viewPage = page == Page.ExternalView, seatPage = page == Page.Seat, controlsPage = page == Page.Controls;
             bool addOnsPage = page == Page.AddOns;
             bool actionsPage = !viewPage && !seatPage && !controlsPage && !addOnsPage;
@@ -655,7 +628,7 @@ namespace SpaceEngineersVR.Gui
                     tiles[Actions.Length] = ExternalViewTile;
                     hint = Hint;
                 }
-                Vector2[] centres = Layout(size, tiles.Length, plain, out Vector2 cell);
+                Vector2[] centres = Layout(size, tiles.Length, out Vector2 cell);
                 for (int i = 0; i < tiles.Length; i++)
                 {
                     if (tiles[i] != null)
@@ -732,18 +705,18 @@ namespace SpaceEngineersVR.Gui
                 Guard("page", () => RecreateControls(false));
                 Log.Info($"Wrist panel: {(page == Page.ExternalView ? "External view page" : page == Page.Seat ? "Cockpit page" : page == Page.Controls ? "Controls page (" + ControlGuide.Title(controlsShown) + ")" : page == Page.AddOns ? AddOnsLogLine() : "back to the actions")}{(seatedLayout ? " (seated)" : string.Empty)}, {TileCount} tiles");
             }
-            else if (!plain && page == Page.Controls && controlsStamp != ControlsStampNow())
+            else if (page == Page.Controls && controlsStamp != ControlsStampNow())
             {
                 // A plugin or mod registered or removed an action (or a binding moved) with the page up: its rows are made again.
                 Guard("controls", () => RecreateControls(false));
                 Log.Info("Wrist panel: Controls page made again (the registered actions or the bindings changed)");
             }
-            else if (!plain && page == Page.Seat && !Cockpits.SeatPage.Available)
+            else if (page == Page.Seat && !Cockpits.SeatPage.Available)
             {
                 // Out of his cockpit (got up, or his cockpit setting turned off) with the seat page up: back to the actions.
                 switchTo = Page.Actions;
             }
-            else if (!plain && page == Page.Actions && seatedLayout != (Seat != null))
+            else if (page == Page.Actions && seatedLayout != (Seat != null))
             {
                 Guard("seat", () => RecreateControls(false));
                 Log.Info($"Wrist panel: {(seatedLayout ? "seated" : "on-foot")} actions now, {TileCount} tiles");
@@ -763,8 +736,9 @@ namespace SpaceEngineersVR.Gui
                 {
                     can = tile.Entry.CanUse();
                 }
-                catch (Exception)
+                catch (Exception e)
                 {
+                    OnceLog.Error("QuickActionsScreen.CanUse", e, "Quick actions: a button's availability could not be read; it is greyed out", tile.Entry.Label);
                     can = false;
                 }
                 if (tile.Enabled != can)
@@ -776,11 +750,11 @@ namespace SpaceEngineersVR.Gui
         /// Where the buttons go on a screen of this size (the controls' positions are from its middle): a grid
         /// <see cref="Columns"/> across between the caption and the foot, the cell size and the middle of each cell, in reading order.
         /// </summary>
-        internal static Vector2[] Layout(Vector2 size, int count, bool old, out Vector2 cell)
+        internal static Vector2[] Layout(Vector2 size, int count, out Vector2 cell)
         {
-            float marginX = old ? PlainMarginX : MarginX, gap = old ? PlainGap : Gap;
-            float topSpace = old ? PlainTitleHeight : TitleHeight + Gap / 2f;
-            float bottomSpace = old ? PlainBottomMargin : FootHeight + Gap;
+            float marginX = MarginX, gap = Gap;
+            float topSpace = TitleHeight + Gap / 2f;
+            float bottomSpace = FootHeight + Gap;
             int rows = (count + Columns - 1) / Columns;
             float width = size.X - 2f * marginX;
             float top = -size.Y / 2f + topSpace;
@@ -796,23 +770,6 @@ namespace SpaceEngineersVR.Gui
                 centres[i] = new Vector2(-width / 2f + cell.X / 2f + column * (cell.X + gap) + shift, top + cell.Y / 2f + row * (cell.Y + gap));
             }
             return centres;
-        }
-
-        private void RecreatePlain(Vector2 size)
-        {
-            var title = new MyGuiControlLabel(new Vector2(0f, -size.Y / 2f + PlainTitleHeight / 2f), null, "Quick actions", null, PlainTitleScale, "White",
-                MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_CENTER, isAutoEllipsisEnabled: true, size.X - 2f * PlainMarginX, isAutoScaleEnabled: true);
-            Controls.Add(title);
-
-            Vector2[] centres = Layout(size, Actions.Length, plain, out Vector2 cell);
-            TileCount = Actions.Length;
-            for (int i = 0; i < Actions.Length; i++)
-            {
-                QuickAction action = Actions[i];
-                Controls.Add(new MyGuiControlButton(centres[i], MyGuiControlButtonStyleEnum.Rectangular, cell, null, MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_CENTER,
-                    action.Tooltip + " (" + action.DefaultKey + ")", new StringBuilder(action.Label), PlainButtonTextScale, MyGuiDrawAlignEnum.HORISONTAL_CENTER_AND_VERTICAL_CENTER,
-                    MyGuiControlHighlightType.WHEN_CURSOR_OVER, sender => Guard(action.Label, () => Choose(action)), isAutoscaleEnabled: true, isEllipsisEnabled: true));
-            }
         }
 
         /// <summary>The foot says what the pointed-at button does, and how to use the panel while none is.</summary>
@@ -832,8 +789,7 @@ namespace SpaceEngineersVR.Gui
         /// </summary>
         private void Choose(QuickAction action)
         {
-            if (!plain)
-                Hands.Haptics.Pulse(VRSettings.DominantHand, PressAmplitude, PressSeconds);
+            Hands.Haptics.Pulse(VRSettings.DominantHand, PressAmplitude, PressSeconds);
             if (action == ExternalViewTile)
             {
                 switchTo = Page.ExternalView;
@@ -894,9 +850,10 @@ namespace SpaceEngineersVR.Gui
             {
                 on = action.State?.Invoke();
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 // A switch whose state cannot be read this frame is drawn as a plain button.
+                OnceLog.Error("QuickActionsScreen.State", e, "Quick actions: a switch's state could not be read; it is drawn as a plain button", action.Label);
             }
             string words = null;
             if (action.StateText != null)
@@ -905,9 +862,10 @@ namespace SpaceEngineersVR.Gui
                 {
                     words = action.StateText();
                 }
-                catch (Exception)
+                catch (Exception e)
                 {
                     // Words that cannot be worked out this frame are left off.
+                    OnceLog.Error("QuickActionsScreen.StateText", e, "Quick actions: a button's words could not be worked out; they are left off", action.Label);
                 }
             }
             if (words == null && on.HasValue)
@@ -921,8 +879,9 @@ namespace SpaceEngineersVR.Gui
             {
                 return action.CanUse == null || action.CanUse();
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                OnceLog.Error("QuickActionsScreen.Usable", e, "Quick actions: a button's availability could not be read; it counts as unusable", action.Label);
                 return false;
             }
         }

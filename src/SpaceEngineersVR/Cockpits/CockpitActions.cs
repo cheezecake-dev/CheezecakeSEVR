@@ -47,7 +47,7 @@ namespace SpaceEngineersVR.Cockpits
         internal static bool ReadAnalog(int slot,out float position,out string label)
         {
             position=0; label=null;
-            if(toolbar==null || owner==null || editing || !AnalogControl.IsHandle(owner.BlockDefinition.Id.SubtypeName,slot)) return false;
+            if(toolbar==null || owner==null || editing || !Handle(slot)) return false;
             if(CockpitTouch.Now>=nextAnalog[slot])
             {
                 nextAnalog[slot]=CockpitTouch.Now+.2;
@@ -196,7 +196,7 @@ namespace SpaceEngineersVR.Cockpits
             return stateful && desired.HasValue ? CockpitSwitchState.Set(item,desired.Value) : toolbar.ActivateItemAtIndex(slot);
         }
         private static readonly List<Sandbox.ModAPI.Ingame.IMyTerminalBlock> rankBlocks=new List<Sandbox.ModAPI.Ingame.IMyTerminalBlock>();
-        private static bool Handle(int slot) => owner!=null && AnalogControl.IsHandle(owner.BlockDefinition.Id.SubtypeName,slot);
+        private static bool Handle(int slot) => owner!=null && CockpitRig.Find(owner.BlockDefinition.Id.SubtypeName)?.IsHandle(slot)==true;
         private static bool AllBlocks(MyToolbarItemActions item,Predicate<Sandbox.ModAPI.Ingame.IMyTerminalBlock> test)
         {
             rankBlocks.Clear();
@@ -248,7 +248,7 @@ namespace SpaceEngineersVR.Cockpits
         private static void Notify(string text)
         {
             try { MyAPIGateway.Utilities?.ShowNotification(text,2000); }
-            catch(Exception) { }
+            catch(Exception ex) { OnceLog.Error("CockpitActions.Notify",ex,"ColbyCockpit: a notification could not be shown",text); }
         }
 
         // ---- His local record: CockpitMemory.Record's toolbar and covers, and his Config.CockpitActions/CockpitStates ----

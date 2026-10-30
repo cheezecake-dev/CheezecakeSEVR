@@ -34,7 +34,7 @@ namespace SpaceEngineersVR.OpenXR
                     SetWand(h, state.InteractionProfile == viveProfile);
                     // The controls are reported by their own names (ControllerControls) and bound per profile; the labels by the
                     // hands and the Controls page name this controller's own buttons.
-                    profileKey[h] = Input.Bindings.ControllerBindings.Key(state.InteractionProfile == 0 ? null : profile);
+                    profileKey[h] = InteractionProfile.Key(state.InteractionProfile == 0 ? null : profile);
                     Input.Bindings.ControllerBindings.SetProfile((Hand)h, profileKey[h]);
                     // The grip fit (the palm's turn and shift on the grip) is kept per profile; its failure leaves the bindings be.
                     try

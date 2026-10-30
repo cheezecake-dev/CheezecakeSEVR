@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using Sandbox;
 using Sandbox.Game.Entities;
@@ -85,7 +86,10 @@ namespace SpaceEngineersVR.Hands
         private static readonly HandTouch[] hands = { new HandTouch(), new HandTouch() };
         private static readonly Hand[] bothHands = { Hand.Left, Hand.Right };
         private static readonly List<ScreenGlass.ScreenKey> stale = new List<ScreenGlass.ScreenKey>();
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(ScreenTouch));
+
+        /// <summary>One guard per handler, so a handler that keeps failing is switched off alone and the others keep the touch.</summary>
+        private static readonly ConditionalWeakTable<Delegate, FeatureGuard> handlerGuards = new ConditionalWeakTable<Delegate, FeatureGuard>();
 
         public static void Patch(Harmony harmony)
         {
@@ -111,14 +115,16 @@ namespace SpaceEngineersVR.Hands
                 return;
             foreach (Delegate d in handlers.GetInvocationList())
             {
+                FeatureGuard handlerGuard = handlerGuards.GetValue(d, key => new FeatureGuard($"{nameof(ScreenTouch)} handler {key.Method.DeclaringType?.Name}.{key.Method.Name}"));
+                if (!handlerGuard.On)
+                    continue;
                 try
                 {
                     ((TouchHandler)d)(block, surfaceIndex, pixel, phase, hand);
                 }
                 catch (Exception e)
                 {
-                    if (errors++ < 6)
-                        Log.Error(e, $"Screen touch: a handler of the {phase} on {ScreenGlass.Describe(block)} failed");
+                    handlerGuard.Failed(e, $"Screen touch: a handler of the {phase} on {ScreenGlass.Describe(block)} failed");
                 }
             }
         }
@@ -133,6 +139,13 @@ namespace SpaceEngineersVR.Hands
             try
             {
                 TestAidsFrame(__instance);
+                // Switched off, the hands lift whatever they hold down (an Up is raised) and touch nothing.
+                if (!guard.On)
+                {
+                    foreach (Hand hand in bothHands)
+                        Step(hand, __instance, false);
+                    return;
+                }
                 bool live = !ScreenGlass.Off && VRInput.Active && !__instance.IsDead && !__instance.Closed && __instance.PositionComp != null;
                 object focused = live ? MyScreenManager.GetScreenWithFocus() : null;
                 bool building = (MyCubeBuilder.Static != null && MyCubeBuilder.Static.IsActivated)
@@ -148,8 +161,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Screen touch failed");
+                guard.Failed(e, "Screen touch failed");
             }
         }
 

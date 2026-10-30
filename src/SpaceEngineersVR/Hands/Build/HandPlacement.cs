@@ -28,7 +28,8 @@ namespace SpaceEngineersVR.Hands
     {
         public static bool Hooked { get; private set; }
 
-        private static int errors;
+        private static readonly FeatureGuard pasteGuard = new FeatureGuard(nameof(HandPlacement) + " paste ray");
+        private static readonly FeatureGuard rayGuard = new FeatureGuard(nameof(HandPlacement) + " building ray");
         private static Harmony pending;
 
         /// <summary>
@@ -142,6 +143,8 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         private static void AfterPasteMatrix(ref MatrixD __result)
         {
+            if (!pasteGuard.On)
+                return;
             try
             {
                 Sandbox.Game.Entities.Character.MyCharacter character = MySession.Static?.LocalCharacter;
@@ -159,8 +162,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not take the paste ray from the hand");
+                pasteGuard.Failed(e, "Hand tools could not take the paste ray from the hand");
             }
         }
 
@@ -168,6 +170,8 @@ namespace SpaceEngineersVR.Hands
         internal static bool TryRay(out Vector3D origin, out Vector3D direction)
         {
             origin = direction = Vector3D.Zero;
+            if (!rayGuard.On)
+                return false;
             try
             {
                 Sandbox.Game.Entities.Character.MyCharacter character = MySession.Static?.LocalCharacter;
@@ -178,8 +182,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand tools could not take the building ray from the hand");
+                rayGuard.Failed(e, "Hand tools could not take the building ray from the hand");
                 return false;
             }
         }

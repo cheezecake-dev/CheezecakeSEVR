@@ -73,12 +73,8 @@ namespace SpaceEngineersVR.Gui
         public static bool TryGet(string profile, Hand hand, out ControllerDiagram d)
         {
             d = null;
-            if (profile == null)
-                return false;
-            const string prefix = "/interaction_profiles/";
-            if (profile.StartsWith(prefix, StringComparison.Ordinal))
-                profile = profile.Substring(prefix.Length);
-            if (!Profiles.TryGetValue(profile, out var entry))
+            profile = OpenXR.InteractionProfile.Key(profile);
+            if (profile == null || !Profiles.TryGetValue(profile, out var entry))
                 return false;
             var key = profile + "|" + hand;
             lock (Cache)

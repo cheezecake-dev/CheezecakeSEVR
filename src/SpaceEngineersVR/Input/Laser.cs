@@ -264,7 +264,7 @@ namespace SpaceEngineersVR.Input
             // that opens starts with the hands.
             bool mouseWon = mouseWins;
             // A grip closing on a tool or gun in your own inventory is a pull into the hand (InventoryPull), not the right
-            // button; it lasts while the grip is held.
+            // button; it lasts while the grip is held. A grip a menu feature claims is not the button.
             if (!ready || !cursorShown)
                 InventoryPull.Cancel();
             else
@@ -274,7 +274,7 @@ namespace SpaceEngineersVR.Input
                     InventoryPull.TryBegin(hand, GridAt(hit.Pixel), state.Grip.Translation, pullPanel);
                 InventoryPull.Step(hand, VRInput.IsPressed(hand, VRButtons.Grip), state.Grip.Translation);
             }
-            bool gripIsButton = !InventoryPull.OwnsGrip(hand);
+            bool gripIsButton = Hands.GripClaim.MenuOwner(hand) == null;
             bool handPressed = ready && hit.Inside && (VRInput.IsNewPressed(hand, VRButtons.Trigger)
                                                        || (VRInput.IsNewPressed(hand, VRButtons.Grip) && gripIsButton));
             if (!cursorShown)
@@ -489,8 +489,9 @@ namespace SpaceEngineersVR.Input
             {
                 return MyScreenManager.GetScreenWithFocus() is ISmoothWheelScreen;
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                OnceLog.Error("Laser.FocusTakesSmoothWheel", e, "Laser: the focused screen could not be asked about smooth wheel scrolling; it counts as not taking it");
                 return false;
             }
         }

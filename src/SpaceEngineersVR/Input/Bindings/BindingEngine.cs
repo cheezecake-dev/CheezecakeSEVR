@@ -447,6 +447,20 @@ namespace SpaceEngineersVR.Input.Bindings
         /// </summary>
         public static List<(Binding A, Binding B, string Why)> Conflicts(IReadOnlyList<Binding> list, Func<int, int, bool> sameContext, Func<int, bool> heldMode = null)
         {
+            if (sameContext == null)
+                throw new ArgumentNullException(nameof(sameContext));
+            return ConflictsBetween(list, (a, b) => sameContext(a.Action, b.Action), heldMode);
+        }
+
+        /// <summary>
+        /// As <see cref="Conflicts(IReadOnlyList{Binding}, Func{int, int, bool}, Func{int, bool})"/>, with <paramref name="sameContext"/>
+        /// asked of the two bindings rather than their actions: for bindings of one action that work in different places (an
+        /// action's moved bindings where it moves, its own where it stays: <see cref="BindingMirror.Conflicts"/>).
+        /// </summary>
+        public static List<(Binding A, Binding B, string Why)> ConflictsBetween(IReadOnlyList<Binding> list, Func<Binding, Binding, bool> sameContext, Func<int, bool> heldMode = null)
+        {
+            if (sameContext == null)
+                throw new ArgumentNullException(nameof(sameContext));
             var found = new List<(Binding, Binding, string)>();
             for (int x = 0; x < list.Count; x++)
             {
@@ -455,7 +469,7 @@ namespace SpaceEngineersVR.Input.Bindings
                 {
                     foreach (Binding layer in list)
                     {
-                        if (layer.Modifier.HasValue && layer.Modifier.Value.Equals(a.Control) && sameContext(a.Action, layer.Action))
+                        if (layer.Modifier.HasValue && layer.Modifier.Value.Equals(a.Control) && sameContext(a, layer))
                         {
                             found.Add((a, layer, "a modifier's press acts every time the modifier is held: use its tap or hold"));
                             break;
@@ -467,7 +481,7 @@ namespace SpaceEngineersVR.Input.Bindings
                     Binding b = list[y];
                     if (a.Action == b.Action || !a.Control.Equals(b.Control) || !Nullable.Equals(a.Modifier, b.Modifier))
                         continue;
-                    if (!sameContext(a.Action, b.Action))
+                    if (!sameContext(a, b))
                         continue;
                     if (a.Kind == b.Kind)
                         found.Add((a, b, "the same control, used the same way"));

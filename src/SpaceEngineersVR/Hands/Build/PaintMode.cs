@@ -32,9 +32,6 @@ namespace SpaceEngineersVR.Hands
     {
         public const string ClaimName = "paint skin";
 
-        /// <summary>After build mode's turn (50), which cannot be up at the same time.</summary>
-        public const int ClaimPriority = 51;
-
         private const float FlickPress = 0.7f, FlickRelease = 0.3f;
         private const float TickAmplitude = 0.3f, TickSeconds = 0.015f;
 
@@ -57,11 +54,11 @@ namespace SpaceEngineersVR.Hands
         private static bool paintWas, pickWas, painting, picking;
         private static int cycleLogIn, pickLogIn;
         private static string cycleAsked, cycleBefore, pickBefore;
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(PaintMode));
 
         public static void Patch()
         {
-            GripClaim.Register(ClaimName, ClaimPriority, Take);
+            GripClaim.Register(ClaimName, GripPriority.PaintMode, Take);
             Log.Info("Colour tool: right trigger paints (A/B held: medium, large, both: whole grid), left trigger takes a colour, right stick flick colour (grip: skin)");
         }
 
@@ -71,6 +68,8 @@ namespace SpaceEngineersVR.Hands
         internal static void Frame(VRContext context, bool blocked)
         {
             Paint = CopyColor = CycleNext = CyclePrev = false;
+            if (!guard.On)
+                return;
             try
             {
                 FrameNow(context, blocked);
@@ -78,8 +77,7 @@ namespace SpaceEngineersVR.Hands
             catch (Exception e)
             {
                 Active = false;
-                if (errors++ < 3)
-                    Log.Error(e, "Colour tool failed this frame");
+                guard.Failed(e, "Colour tool failed this frame");
             }
         }
 

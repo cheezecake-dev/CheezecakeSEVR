@@ -56,9 +56,6 @@ namespace SpaceEngineersVR.Rendering
         /// <summary>The camera a cutscene flies (MyCutsceneCamera, internal to the game).</summary>
         private static readonly Type CutsceneCamera = typeof(MySession).Assembly.GetType("Sandbox.Engine.Utils.MyCutsceneCamera");
 
-        /// <summary>Debug: the game's death camera, the respawn screen's camera and a cutscene's are the view again (<see cref="RenderDebug"/> ForcedView=0).</summary>
-        public static bool Off { get; set; }
-
         // ---- game thread ----
         private static volatile bool showing;
         private static volatile bool forBlock;
@@ -110,13 +107,13 @@ namespace SpaceEngineersVR.Rendering
         {
             bool failed = errors >= 3 || drawErrors >= 3;
             bool block = false;
-            string reason = Off || failed ? null : Reason(out block);
+            string reason = failed ? null : Reason(out block);
             if (reason != why)
             {
                 if (why == null)
                     Log.Info($"Forced view: on ({reason}); the eyes are a still, dark space and the game's own camera is on a screen ahead");
                 else if (reason == null)
-                    Log.Info($"Forced view: over ({(Off ? "turned off" : failed ? "it failed" : "the character's own view again")}); the eyes show the world again");
+                    Log.Info($"Forced view: over ({(failed ? "it failed" : "the character's own view again")}); the eyes show the world again");
                 else
                     Log.Info($"Forced view: {reason}");
                 why = reason;

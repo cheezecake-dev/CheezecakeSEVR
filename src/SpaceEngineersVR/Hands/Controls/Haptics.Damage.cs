@@ -227,8 +227,14 @@ namespace SpaceEngineersVR.Hands
             Hook(harmony, "heartbeat", () => AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)), nameof(AfterCharacterUpdate));
         }
 
+        private static readonly FeatureGuard hitGuard = new FeatureGuard(nameof(Haptics) + " damage direction");
+        private static readonly FeatureGuard damageGuard = new FeatureGuard(nameof(Haptics) + " damage");
+        private static readonly FeatureGuard heartbeatGuard = new FeatureGuard(nameof(Haptics) + " heartbeat");
+
         private static void BeforeHit(MyCharacter __instance, MyHitInfo? hitInfo, long attackerId)
         {
+            if (!hitGuard.On)
+                return;
             try
             {
                 if (!IsLocal(__instance))
@@ -239,7 +245,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "damage direction");
+                hitGuard.Failed(e, "Haptics (damage direction) failed");
             }
         }
 
@@ -252,6 +258,8 @@ namespace SpaceEngineersVR.Hands
 
         private static void AfterDamage(MyCharacter __instance, float damage, MyStringHash damageType, bool __result)
         {
+            if (!damageGuard.On)
+                return;
             try
             {
                 if (__result && IsLocal(__instance) && !IsTrickle(damageType))
@@ -259,12 +267,14 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "damage");
+                damageGuard.Failed(e, "Haptics (damage) failed");
             }
         }
 
         private static void AfterCharacterUpdate(MyCharacter __instance)
         {
+            if (!heartbeatGuard.On)
+                return;
             try
             {
                 if (IsLocal(__instance))
@@ -275,7 +285,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                Failed(e, "heartbeat");
+                heartbeatGuard.Failed(e, "Haptics (heartbeat) failed");
             }
         }
     }

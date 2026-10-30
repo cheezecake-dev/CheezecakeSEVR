@@ -144,6 +144,8 @@ namespace SpaceEngineersVR.Rendering
             Feature(nameof(HandIK), HandIK.Patch);
             Feature(nameof(HandResidual), HandResidual.Patch);
             Feature(nameof(Hands.Haptics), Hands.Haptics.Patch);
+            // Before the features that act on a chosen use object: FingerPress, GrabUse, QuickInventory, WristButton.
+            Feature(nameof(Hands.DetectorAnswer), Hands.DetectorAnswer.Patch);
             Feature(nameof(Hands.HandTools), Hands.HandTools.Patch);
             Feature(nameof(Hands.FingerPress), Hands.FingerPress.Patch);
             Feature(nameof(Hands.ScreenTouch), Hands.ScreenTouch.Patch);

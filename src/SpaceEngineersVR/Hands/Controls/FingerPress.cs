@@ -39,7 +39,7 @@ namespace SpaceEngineersVR.Hands
     /// <para>How it is pressed: the game's Use key calls <c>MyCharacter.Use()</c>, which acts on whatever the character's
     /// detector component says is the use object (<c>MyCharacterDetectorComponent.UseObject</c>), and does the rest
     /// itself (the sound, the access check, the multiplayer event, the terminal screen). So the touch makes that property
-    /// answer with the touched object for the length of one call, and calls <c>Use()</c>. A held use
+    /// answer with the touched object for the length of one call (<see cref="DetectorAnswer"/>), and calls <c>Use()</c>. A held use
     /// (<c>ContinuousUsage</c>, as a medical room's) goes on with <c>UseContinues()</c> every frame while the tip stays
     /// in, and <c>UseFinished()</c> follows when it leaves, as the key's held and release do.</para>
     /// <para>One touch, one press: a touched object stays latched until the tip is more than <see cref="ReleaseDistance"/>
@@ -184,34 +184,13 @@ namespace SpaceEngineersVR.Hands
 
         private static void PatchGame(Harmony harmony)
         {
-            // The use object the game acts on is whatever the character's detector component answers; both detector
-            // classes answer through UseObject (the closest one overrides it). Without this, nothing is pressed.
-            Type closest = AccessTools.TypeByName("Sandbox.Game.Entities.Character.Components.MyCharacterClosestDetectorComponent")
-                           ?? throw new MissingMemberException("MyCharacterClosestDetectorComponent");
-            var targets = new[]
-            {
-                AccessTools.PropertyGetter(typeof(MyCharacterDetectorComponent), nameof(MyCharacterDetectorComponent.UseObject))
-                    ?? throw new MissingMemberException(nameof(MyCharacterDetectorComponent), "UseObject"),
-                AccessTools.DeclaredProperty(closest, nameof(MyCharacterDetectorComponent.UseObject))?.GetGetMethod(true)
-                    ?? throw new MissingMemberException(closest.Name, "UseObject"),
-            };
-            foreach (var target in targets)
-                harmony.Patch(target, postfix: new HarmonyMethod(typeof(FingerPress), nameof(AnswerUseObject)));
+            // The use object the game acts on is whatever the character's detector component answers. Without it, nothing is pressed.
+            DetectorAnswer.Require("Finger press");
 
             harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                 postfix: new HarmonyMethod(typeof(FingerPress), nameof(AfterSimulation)));
             hooked = true;
-            Log.Info("Finger press: fingertip touch on use objects hooked (character Use, detector UseObject x2)");
-        }
-
-        /// <summary>The use object the detector answers with while a touch is being pressed (this thread, for the length of one call).</summary>
-        [ThreadStatic]
-        private static IMyUseObject answer;
-
-        private static void AnswerUseObject(ref IMyUseObject __result)
-        {
-            if (answer != null)
-                __result = answer;
+            Log.Info("Finger press: fingertip touch on use objects hooked (character Use, with the detector's answer)");
         }
 
         /// <summary>One hand's touches and where its tip was last frame.</summary>
@@ -485,15 +464,7 @@ namespace SpaceEngineersVR.Hands
                 MyCharacterDetectorComponent detector = character.GetDetectorComponent();
                 if (detector == null)
                     return;
-                answer = use;
-                try
-                {
-                    character.Use();
-                }
-                finally
-                {
-                    answer = null;
-                }
+                DetectorAnswer.With(use, () => character.Use());
                 Haptics.Pulse(hand, PulseAmplitude, PulseSeconds);
                 Log.Info($"Finger press: {hand} fingertip pressed '{contact.Tag}' {use.GetType().Name} on {Describe(use.Owner)} " +
                          $"({contact.Distance * 100:0.0} cm from the box; primary {use.PrimaryAction}, secondary {use.SecondaryAction})");
@@ -510,15 +481,7 @@ namespace SpaceEngineersVR.Hands
         {
             try
             {
-                answer = use;
-                try
-                {
-                    character.UseContinues();
-                }
-                finally
-                {
-                    answer = null;
-                }
+                DetectorAnswer.With(use, () => character.UseContinues());
             }
             catch (Exception e)
             {
@@ -534,15 +497,7 @@ namespace SpaceEngineersVR.Hands
             {
                 if (character.GetDetectorComponent() == null)
                     return;
-                answer = use;
-                try
-                {
-                    character.UseFinished();
-                }
-                finally
-                {
-                    answer = null;
-                }
+                DetectorAnswer.With(use, () => character.UseFinished());
             }
             catch (Exception e)
             {

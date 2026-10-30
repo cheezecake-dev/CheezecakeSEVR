@@ -7,7 +7,7 @@ namespace SpaceEngineersVR.Tracking
     /// Where the local character's own body is, relative to the first-person camera, and the two ways the head is
     /// kept out of it: pushed out of the torso on foot (<see cref="PushOut"/>), held within an ellipse around the seated
     /// character's head when seated (<see cref="LockSeat"/>). On foot the head is also held within an ellipse around the head
-    /// bone (<see cref="LockHead"/>), so it cannot walk off backwards, past the backpack and out of the body's far side.
+    /// bone (<see cref="PushEdge"/>), so it cannot walk off backwards, past the backpack and out of the body's far side.
     /// No game types: the offline probe compiles this file as it is.
     /// </summary>
     /// <remarks>
@@ -32,7 +32,7 @@ namespace SpaceEngineersVR.Tracking
         /// <summary>
         /// The most the lock lets the head go back from the head bone, metres: the table's keep-out at the eye's height
         /// (StopZ, 0.075 at the middle of the face, 0.05 a little lower), less a few millimetres. Back is where the body is, so
-        /// the lock does not give this a setting; forward and sideways are the player's room to lean (<see cref="LockHead"/>).
+        /// the lock does not give this a setting; forward and sideways are the player's room to lean (<see cref="PushEdge"/>).
         /// </summary>
         public const float LockBack = 0.07f;
 
@@ -41,7 +41,7 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>
         /// Where the lock starts to hold the head, as a share of its reach: the head moves one to one up to here, and then
-        /// slows smoothly to a stop at the reach (see <see cref="LockHead"/>).
+        /// slows smoothly to a stop at the reach (see <see cref="Ellipse"/>).
         /// </summary>
         public const float LockSoftFrom = 0.7f;
 
@@ -136,25 +136,11 @@ namespace SpaceEngineersVR.Tracking
         }
 
         /// <summary>
-        /// The head's offset held within an ellipse around the head bone, in the plane of the floor (x right, z back): forward
-        /// <paramref name="reach"/> metres, to the side <see cref="LockSideShare"/> of that, back <see cref="LockBack"/>. Height
-        /// is left alone (the crouch owns it). Smooth: up to <see cref="LockSoftFrom"/> of the way to the edge the offset is
-        /// returned as it is, and beyond it goes on slowing, in the same direction, and never passes the edge (tanh of the
-        /// distance, normalised to the ellipse), so the view neither jumps nor stops dead when the head reaches the edge, and
-        /// the slope is the same on both sides of it, also where forward turns into back. Beyond about twice the reach
-        /// the head is at the edge, wherever it is. The push-out (<see cref="PushOut"/>) then sees only an offset inside the
-        /// ellipse, which it leaves alone unless that is in the body.
+        /// The offset held within an ellipse in the plane of the floor (x right, z back) of the given half-widths. Smooth: up to
+        /// <see cref="LockSoftFrom"/> of the way to the edge the offset is returned as it is, and beyond it goes on slowing, in
+        /// the same direction, and never passes the edge (tanh of the distance, normalised to the ellipse), so the view neither
+        /// jumps nor stops dead when the head reaches the edge, and the slope is the same on both sides of it. Height is left alone.
         /// </summary>
-        public static Vector3 LockHead(Vector3 offset, float reach)
-        {
-            if (!IsFinite(offset))
-                return Vector3.Zero;
-            if (reach <= 0f)
-                return offset;
-            return Ellipse(offset, reach * LockSideShare, reach, LockBack);
-        }
-
-        /// <summary><see cref="LockHead"/>'s smooth hold, within an ellipse of the given half-widths.</summary>
         private static Vector3 Ellipse(Vector3 offset, float side, float forward, float back)
         {
             float along = offset.Z < 0f ? forward : back;
@@ -168,7 +154,7 @@ namespace SpaceEngineersVR.Tracking
         }
 
         /// <summary>
-        /// The head's offset kept within the same ellipse as <see cref="LockHead"/> (forward <paramref name="reach"/>, to the side
+        /// The head's offset kept within an ellipse (forward <paramref name="reach"/>, to the side
         /// <see cref="LockSideShare"/> of that, back <see cref="LockBack"/>), but one to one inside it and stopped at its edge:
         /// outside, it is brought in along the same direction onto the edge. Height is left alone. This is the edge the
         /// on-foot centre is pushed by (GameHead's push): with the centre moving with a head that goes past
@@ -192,7 +178,7 @@ namespace SpaceEngineersVR.Tracking
 
         /// <summary>
         /// The head's offset in a seat, from the seated character's head (x right, y up, z back), held as on foot: on the
-        /// floor's plane within the same ellipse (<see cref="LockHead"/>: <paramref name="reach"/> forward, <see cref="LockSideShare"/>
+        /// floor's plane within the same ellipse (<see cref="PushEdge"/>: <paramref name="reach"/> forward, <see cref="LockSideShare"/>
         /// of it to the side, <see cref="LockBack"/> back, where the head and the body are), and up and down within
         /// <paramref name="reach"/>, as smoothly. Seated, the body does not crouch or walk under the head, so height has a limit
         /// too: stand up in the room and the view stops short of the canopy, slump and it stops short of the chest.
@@ -229,7 +215,7 @@ namespace SpaceEngineersVR.Tracking
             upDown = Math.Max(reach, Math.Abs(eye.Y) / LockSoftFrom);
         }
 
-        /// <summary>One axis held within ±<paramref name="limit"/> with the lock's smooth stop (<see cref="LockHead"/>).</summary>
+        /// <summary>One axis held within ±<paramref name="limit"/> with the lock's smooth stop (<see cref="Ellipse"/>).</summary>
         private static float Soft(float value, float limit)
         {
             float r = Math.Abs(value) / limit;
@@ -253,20 +239,16 @@ namespace SpaceEngineersVR.Tracking
         /// <param name="ours">The character is crouching because the head told it to (<see cref="CrouchDriver.Ours"/>).</param>
         /// <param name="crouch">The crouch is taken into account (BodyGuard's crouch is on).</param>
         /// <param name="clear">The offset is pushed out of the body (BodyGuard's clearance is on).</param>
-        /// <param name="reach">The head is held to the body: how far forward it may go, metres (<see cref="BodyVolume.LockHead"/>); 0: not held.</param>
+        /// <param name="reach">The head is held to the body: how far forward it may go, metres (<see cref="BodyVolume.PushEdge"/>); 0: not held.</param>
         /// <param name="ahead">
         /// The body is drawn this far ahead of the head bone, metres (<c>BodyShift</c>): the table is the body around its own
         /// HeadDummy, so the eye is that much further back in it.
         /// </param>
         /// <param name="extra">Added to the eye's height after the crouch made up (<see cref="EyeHold.Extra"/>): the dip of the head bone in an upright animation, made up.</param>
-        /// <param name="push">
-        /// The lock is the pushed edge (<see cref="BodyVolume.PushEdge"/>: one to one inside, stopped at the edge, the on-foot
-        /// centre moving with the head past it), not the soft hold (<see cref="BodyVolume.LockHead"/>).
-        /// </param>
-        public static Vector3 Offset(Vector3 tracked, float bodyDrop, bool ours, bool crouch, bool clear, float reach = 0f, float ahead = 0f, float extra = 0f, bool push = false)
+        public static Vector3 Offset(Vector3 tracked, float bodyDrop, bool ours, bool crouch, bool clear, float reach = 0f, float ahead = 0f, float extra = 0f)
         {
             // Held first, in the floor's plane, and the crouch and the push-out work on what is left.
-            Vector3 offset = reach <= 0f ? tracked : push ? BodyVolume.PushEdge(tracked, reach) : BodyVolume.LockHead(tracked, reach);
+            Vector3 offset = reach <= 0f ? tracked : BodyVolume.PushEdge(tracked, reach);
             if (crouch)
                 offset.Y += CrouchDriver.Made(bodyDrop, Math.Max(0f, -tracked.Y), ours);
             offset.Y += extra;

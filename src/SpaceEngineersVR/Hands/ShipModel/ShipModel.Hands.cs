@@ -13,9 +13,6 @@ namespace SpaceEngineersVR.Hands
 
         private const string ClaimName = "ship model";
 
-        /// <summary>After two-handed tools (5), reloading (7) and the helmet (10); before the external view screen (15) and the rest.</summary>
-        private const int ClaimPriority = 12;
-
         /// <summary>How far outside the model a grip still takes it, metres.</summary>
         private const float GrabReach = GrabTolerance.Edge;
 
@@ -54,7 +51,7 @@ namespace SpaceEngineersVR.Hands
             if (registered)
                 return;
             registered = true;
-            GripClaim.Register(ClaimName, ClaimPriority, Claim);
+            GripClaim.Register(ClaimName, GripPriority.ShipModel, Claim);
         }
 
         /// <summary>The model rides the off hand again, facing where you look.</summary>

@@ -509,12 +509,12 @@ left stick click takes the components your Build Planner needs, the right stick 
 production, and the right stick click with the right grip held deposits all (but hand tools, ammunition, bottles and
 consumables). On foot and on the jetpack only, not with a block in hand.
 
-Cockpit sticks (Options > VR > Controls > Cockpits (from ColbyJack1134's SpaceEngineersVR)): in one of the game's cockpits
-the sticks in the seat move with your hands. Reach a hand to one and squeeze the grip to take hold. Tilt the right stick to
+Cockpit sticks (Options > VR > Controls > Cockpits (from ColbyJack1134's SpaceEngineersVR)): in one of the game's cockpits,
+or a mod's cockpit built on one whose mod tells the plugin so, the sticks in the seat move with your hands. Reach a hand to one and squeeze the grip to take hold. Tilt the right stick to
 pitch and roll and twist it to yaw. Push and pull the left one to move and twist it to go up and down. In a rover, buggy or
 speeder, take the wheel or handlebars the same way. A grip that holds nothing rolls the ship. The thumbsticks fly such a
 cockpit too only with **Thumbstick controls in cockpits** on. A remote control and a seat without sticks of its own (a
-modded cockpit) fly on the thumbsticks. A passenger seat gets the buttons but not the sticks or grips.
+modded cockpit its mod has not told the plugin about) fly on the thumbsticks. A passenger seat gets the buttons but not the sticks or grips.
 
 Camera block view: a camera block, turret or searchlight gives no look-around, so its view is on a screen ahead of you.
 A sideways flick of the right stick switches camera. Hold the stick up or down to zoom. Hold Y for half a second to come back.
@@ -644,7 +644,7 @@ Hands and tools:
 - Close your other hand on the front of a tool or gun for a two-handed hold. A rifle, grinder or drill in one hand kicks.
 - Reload by hand: click the gun hand's stick, the magazine drops out, reach to your other hip (or lower, belt height or
   below), pull that hand's trigger to take a fresh one, and keep it pulled while you push it up into the gun until it clicks.
-- Aim down the sights by raising a gun and looking along it.
+- Aim down the sights by raising a gun and looking along it. A mod's gun does so once its mod gives the plugin its sights.
 - Touch a push-button with your index fingertip to press it. Close your hand on a seat, door, terminal or container to use it.
 - In zero g, grip a hull or asteroid to pull yourself along. Let go with your hand moving to fly off.
 - Grip a ladder rung and pull down to climb.

@@ -45,7 +45,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>Debug: no ship model (<see cref="RenderDebug"/> ShipModel=0).</summary>
         public static bool Off { get; set; }
 
-        public static bool Enabled => !Off && VRSettings.ShipModel && errors < 3;
+        public static bool Enabled => !Off && VRSettings.ShipModel && guard.On;
 
         /// <summary>The model's longest side when it appears, metres.</summary>
         public const float ModelSize = 0.28f;
@@ -71,7 +71,7 @@ namespace SpaceEngineersVR.Hands
         /// <summary>The model fades in and out over this long, seconds, rather than popping.</summary>
         private const float FadeSeconds = 0.2f;
 
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(ShipModel));
 
         /// <summary>One grid of the model on the game thread: the entity, and its blocks as last built.</summary>
         private sealed class Part
@@ -241,9 +241,8 @@ namespace SpaceEngineersVR.Hands
 
         private static void Fail(Exception e, string what)
         {
-            if (errors++ < 3)
-                Log.Error(e, "Ship model " + what + (errors >= 3 ? "; it is off for this run" : string.Empty));
-            if (errors >= 3)
+            // Switched off, everything is let go; it comes back when the guard does, the next time it is asked for.
+            if (guard.Failed(e, "Ship model " + what))
                 Clear();
         }
 

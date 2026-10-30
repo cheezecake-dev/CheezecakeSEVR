@@ -46,7 +46,7 @@ namespace SpaceEngineersVR.Hands
     /// it. A use that spends money (a vending machine's Buy) needs the hand held on it for <see cref="DeliberateSeconds"/>.
     /// A use that is held (a medical room's healing, <c>ContinuousUsage</c>) goes on every frame while the hand stays on
     /// it, and is finished when the hand moves away or lets go, as the key's hold and release do. The right grip that goes down
-    /// at a container (<see cref="QuickInventory.HoldsBack"/>: the hand points at one or rests on one) keeps its claim but waits:
+    /// at a container (<see cref="GripClaim.UseWaits"/>: the hand points at one or rests on one) keeps its claim but waits:
     /// the use is due as above and done when the grip is let go, once, unless a deposit was taken meanwhile (the stick click with
     /// the grip held), which drops it (<see cref="UseOrWait"/>, <see cref="LetGo"/>).</para>
     /// <para>In a seat (first person, the seat's own view): the seat itself and everything else of the seat's own block
@@ -71,9 +71,6 @@ namespace SpaceEngineersVR.Hands
     {
         /// <summary>The name the grip claim is held under.</summary>
         public const string ClaimName = "GrabUse";
-
-        /// <summary>After the helmet (10) and floating items (20), before the hull and ladder grab (40).</summary>
-        public const int ClaimPriority = 30;
 
         /// <summary>Debug: no grab to use (<see cref="Rendering.RenderDebug"/> GrabUse=0).</summary>
         public static bool Off { get; set; }
@@ -252,7 +249,7 @@ namespace SpaceEngineersVR.Hands
             /// <summary>Fired: used (or, for a paid use, given up on as the hand moved off it).</summary>
             public bool Fired, Used, Continuing;
 
-            /// <summary>The use is due but waits for the grip to be let go (<see cref="QuickInventory.HoldsBack"/>), and how it would have been said.</summary>
+            /// <summary>The use is due but waits for the grip to be let go (<see cref="GripClaim.UseWaits"/>), and how it would have been said.</summary>
             public bool HeldBack;
             public string HeldBackHow;
             public long Since;
@@ -295,18 +292,8 @@ namespace SpaceEngineersVR.Hands
 
         private static void PatchGame(Harmony harmony)
         {
-            // The use object the game acts on is whatever the character's detector component answers (see FingerPress).
-            Type closest = AccessTools.TypeByName("Sandbox.Game.Entities.Character.Components.MyCharacterClosestDetectorComponent")
-                           ?? throw new MissingMemberException("MyCharacterClosestDetectorComponent");
-            var getters = new[]
-            {
-                AccessTools.PropertyGetter(typeof(MyCharacterDetectorComponent), nameof(MyCharacterDetectorComponent.UseObject))
-                    ?? throw new MissingMemberException(nameof(MyCharacterDetectorComponent), "UseObject"),
-                AccessTools.DeclaredProperty(closest, nameof(MyCharacterDetectorComponent.UseObject))?.GetGetMethod(true)
-                    ?? throw new MissingMemberException(closest.Name, "UseObject"),
-            };
-            foreach (var getter in getters)
-                harmony.Patch(getter, postfix: new HarmonyMethod(typeof(GrabUse), nameof(AnswerUseObject)));
+            // The use object the game acts on is whatever the character's detector component answers.
+            DetectorAnswer.Require("Grab to use");
 
             harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.UpdateAfterSimulation)),
                 postfix: new HarmonyMethod(typeof(GrabUse), nameof(AfterSimulation)));
@@ -337,36 +324,12 @@ namespace SpaceEngineersVR.Hands
             }
 
             hooked = true;
-            GripClaim.Register(ClaimName, ClaimPriority, Take);
-            Log.Info($"Grab to use: hooked (grip claim '{ClaimName}' at {ClaimPriority}, use radius {UseRadius * 100:0} cm, door pull {DoorPull * 100:0} cm, " +
+            GripClaim.Register(ClaimName, GripPriority.GrabUse, Take);
+            Log.Info($"Grab to use: hooked (grip claim '{ClaimName}' at {(int)GripPriority.GrabUse}, use radius {UseRadius * 100:0} cm, door pull {DoorPull * 100:0} cm, " +
                      $"paid use held {DeliberateSeconds:0.0} s, highlight {(highlight != null ? "on" : "off")})");
         }
 
-        /// <summary>The use object the detector answers with while a grab is being used (this thread, for the length of one call).</summary>
-        [ThreadStatic]
-        private static IMyUseObject answer;
-
-        private static void AnswerUseObject(ref IMyUseObject __result)
-        {
-            if (answer != null)
-                __result = answer;
-        }
-
         private static bool Enabled => hooked && !Off && VRSettings.GrabToUse && VRInput.Active;
-
-        /// <summary>Runs a game call with the character's detector answering with <paramref name="use"/>, as <see cref="Use"/> does (<see cref="QuickInventory"/>'s take, dump and production).</summary>
-        internal static void AnswerWith(IMyUseObject use, Action call)
-        {
-            answer = use;
-            try
-            {
-                call();
-            }
-            finally
-            {
-                answer = null;
-            }
-        }
 
         /// <summary>What a hand is on now on foot (in reach, nothing in the way, highlighted), with nothing held in it; null otherwise.</summary>
         internal static IMyUseObject OnFoot(Hand hand)
@@ -633,12 +596,12 @@ namespace SpaceEngineersVR.Hands
         }
 
         /// <summary>
-        /// The grab's use, now; or, with the right grip's Use held back at a container (<see cref="QuickInventory.HoldsBack"/>:
+        /// The grab's use, now; or, with the right grip's Use held back at a container (<see cref="GripClaim.UseWaits"/>:
         /// the stick click deposits with the grip held), noted as due and done when the grip is let go (<see cref="LetGo"/>).
         /// </summary>
         private static void UseOrWait(Hand hand, MyCharacter character, Held grab, string how)
         {
-            if (hand != Hand.Right || !QuickInventory.HoldsBack)
+            if (!GripClaim.UseWaits(hand))
             {
                 Use(hand, character, grab, how);
                 return;
@@ -656,15 +619,7 @@ namespace SpaceEngineersVR.Hands
             {
                 if (character.GetDetectorComponent() == null)
                     return;
-                answer = grab.Use;
-                try
-                {
-                    character.Use();
-                }
-                finally
-                {
-                    answer = null;
-                }
+                DetectorAnswer.With(grab.Use, () => character.Use());
                 grab.Used = true;
                 grab.Continuing = grab.Use.ContinuousUsage;
                 Haptics.Pulse(hand, UseAmplitude, UseSeconds);
@@ -690,15 +645,7 @@ namespace SpaceEngineersVR.Hands
             }
             try
             {
-                answer = grab.Use;
-                try
-                {
-                    character.UseContinues();
-                }
-                finally
-                {
-                    answer = null;
-                }
+                DetectorAnswer.With(grab.Use, () => character.UseContinues());
             }
             catch (Exception e)
             {
@@ -714,15 +661,7 @@ namespace SpaceEngineersVR.Hands
             {
                 if (character == null || character.GetDetectorComponent() == null)
                     return;
-                answer = grab.Use;
-                try
-                {
-                    character.UseFinished();
-                }
-                finally
-                {
-                    answer = null;
-                }
+                DetectorAnswer.With(grab.Use, () => character.UseFinished());
             }
             catch (Exception e)
             {
@@ -738,17 +677,12 @@ namespace SpaceEngineersVR.Hands
             {
                 if (character.GetDetectorComponent() == null)
                     return false;
-                answer = use;
-                try
+                DetectorAnswer.With(use, () =>
                 {
                     character.Use();
                     if (use.ContinuousUsage)
                         character.UseFinished();
-                }
-                finally
-                {
-                    answer = null;
-                }
+                });
                 Haptics.Pulse(Hand.Right, UseAmplitude, UseSeconds);
                 return true;
             }
@@ -772,13 +706,13 @@ namespace SpaceEngineersVR.Hands
 
         /// <summary>
         /// A use that waited for the right grip, at the end of the grip: done now when the grip was <paramref name="released"/>
-        /// and no deposit was taken meanwhile (<see cref="QuickInventory.Deposited"/>), dropped otherwise. One log line either way.
+        /// and no deposit was taken meanwhile (<see cref="GripClaim.UseDropped"/>), dropped otherwise. One log line either way.
         /// </summary>
         private static void UseHeldBack(Hand hand, MyCharacter character, Held grab, string how, bool released)
         {
             grab.HeldBack = false;
             string outcome;
-            if (QuickInventory.Deposited)
+            if (GripClaim.UseDropped(hand))
                 outcome = "dropped for a deposit";
             else if (Gone(grab.Use))
                 outcome = "dropped (the thing went away)";

@@ -195,8 +195,12 @@ namespace SpaceEngineersVR.Hands
         /// <summary>A line on the HUD (the game's notifications, level Important so the minimal HUD keeps it, as the control hints).</summary>
         private static void Notify(string text, int milliseconds) => Show(text, milliseconds);
 
+        private static readonly FeatureGuard hudGuard = new FeatureGuard(nameof(Ping) + " HUD line");
+
         private static MyHudNotificationBase Show(string text, int milliseconds)
         {
+            if (!hudGuard.On)
+                return null;
             try
             {
                 MyHudNotifications notifications = MyHud.Notifications;
@@ -208,8 +212,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Ping: a HUD line could not be shown");
+                hudGuard.Failed(e, "Ping: a HUD line could not be shown");
                 return null;
             }
         }

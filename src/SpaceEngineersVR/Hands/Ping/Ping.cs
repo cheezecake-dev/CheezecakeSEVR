@@ -88,7 +88,7 @@ namespace SpaceEngineersVR.Hands
         private static double aimStartedAt;
         private static bool xMarked, hooked;
         private static VRContext aimContext;
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(Ping));
 
         /// <summary>The Ping binding (holding X, by default) aims: on while the setting is.</summary>
         private static bool HoldSetting => !Off && VRSettings.PingHoldX;
@@ -116,6 +116,11 @@ namespace SpaceEngineersVR.Hands
         /// </summary>
         internal static void Frame(VRContext context, bool blocked, double seconds)
         {
+            if (!guard.On)
+            {
+                aim = Aim.None;
+                return;
+            }
             try
             {
                 HoldFade();
@@ -139,8 +144,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Ping: the frame failed");
+                guard.Failed(e, "Ping: the frame failed");
                 aim = Aim.None;
             }
         }

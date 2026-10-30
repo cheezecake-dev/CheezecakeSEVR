@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Reflection;
 using HarmonyLib;
-using Sandbox.Game;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.Entities.Character;
 using Sandbox.Game.Entities.Character.Components;
@@ -10,12 +9,11 @@ using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
 using SpaceEngineersVR.Gui;
+using SpaceEngineersVR.Hands;
 using SpaceEngineersVR.Input.Bindings;
 using VRage.Game.Entity.UseObject;
 using VRage.Game.Models;
-using VRage.Input;
 using VRage.ModAPI;
-using VRage.Utils;
 using VRageMath;
 
 namespace SpaceEngineersVR.Input
@@ -27,18 +25,16 @@ namespace SpaceEngineersVR.Input
     /// does not open it: the gauntlet's screen shows the status bars (<see cref="Rendering.WristStatus"/>) and brightens.
     /// </summary>
     /// <remarks>
-    /// A button on the screen does not do its action itself: the actions are the game's own controls, which the gameplay
-    /// screen reads in its input pass and only while it has the focus. So the button closes the screen and hands the
-    /// control to <see cref="Press"/>; once the screen is gone, the gameplay screen's next input pass is told that control
-    /// was pressed (MyGuiScreenGamePlay.HandleInput is wrapped, and the game's questions about that one control
-    /// - MyVRageInput.IsNewGameControlPressed, MyControllerHelper.IsControl - answer yes during the pass), exactly once.
-    /// The game then does what it does for the key: the same checks, sounds, synchronisation and screens.
+    /// A button on the screen is one of the game's controls. The game reads the keys only while its gameplay screen has the
+    /// focus, and the panel has it, so a press runs the game's own code that reads that control's key, there and then, once,
+    /// with that control the only one pressed (<see cref="Press"/>, <see cref="GameControlCall"/>): the game does what the
+    /// key does, with the same checks, sounds and synchronisation.
     /// The Terminal and Inventory tiles open what the hand pointed at when the panel opened (<see cref="OpenedOn"/>): the game
-    /// opens what its use ray is on as the key is read, and by then the hand points at the wrist. The Relative tile likewise
-    /// matches the speed of what the head looked at when the panel opened (<see cref="OpenedLook"/>): the game picks what the
-    /// head's ray is on as the key is read, and by then the head is turned down to the wrist.
+    /// opens what its use ray is on, and at the press the hand points at the wrist. The Relative tile likewise matches the
+    /// speed of what the head looked at when the panel opened (<see cref="OpenedLook"/>): the game picks what the head's ray is
+    /// on, and at the press the head is turned down to the wrist.
     /// </remarks>
-    internal static class WristButton
+    internal static partial class WristButton
     {
         /// <summary>Debug: no wrist button and no wrist panel (<see cref="Rendering.RenderDebug"/> WristPanel=0).</summary>
         public static bool Off { get; set; }
@@ -49,9 +45,6 @@ namespace SpaceEngineersVR.Input
         /// <summary>The hand that wears the panel; the button is on its controller.</summary>
         public const Hand WristHand = Hand.Left;
 
-        /// <summary>A control handed over for the game stays good this long (seconds): a paused or unfocused game does not read it.</summary>
-        public const double PressSeconds = 2.0;
-
         /// <summary>What <see cref="Decide"/> says Y does.</summary>
         internal enum Toggle
         {
@@ -60,55 +53,29 @@ namespace SpaceEngineersVR.Input
             Close,
         }
 
-        private enum Stage
-        {
-            None,
-
-            /// <summary>A button was pressed; its screen is closing.</summary>
-            Waiting,
-
-            /// <summary>The screen is gone; the gameplay screen's next input pass gets the control.</summary>
-            Armed,
-        }
-
         private static readonly object gate = new object();
         private static Matrix published = Matrix.Identity;
         private static bool publishedTracked;
 
-        // Game thread (the input pass flag is read by the questions about controls, wherever they come from).
+        // Game thread.
         private static QuickActionsScreen screen;
-        private static Stage stage;
-        private static MyStringId pending;
-        private static string pendingLabel;
-        private static long until;
-        private static volatile bool inPass;
-        private static bool served;
         private static readonly FeatureGuard guard = new FeatureGuard(nameof(WristButton));
-        private static int errors;
+        private static readonly FeatureGuard lookGuard = new FeatureGuard(nameof(WristButton) + " look");
 
-        /// <summary>The Terminal and Inventory tiles' target may be this far from where the character was when the panel opened.</summary>
-        private const double OpenedOnMetres = 3.0;
-
-        // What the character's use ray was on when the panel opened (OpenedOn), for the Terminal and Inventory tiles; and,
-        // for the length of the game's ShowTerminal or ShowInventory, the detector answers with it (AnswerUseObject).
+        // What the character's use ray was on when the panel opened (OpenedOn), and where on it the ray hit, in its owner's own
+        // frame (so a moving grid carries it), for the Terminal and Inventory tiles, which open it with the detector answering
+        // with it (DetectorAnswer) while it is still within the game's reach for it.
         private static MyCharacter openedBy;
         private static IMyUseObject openedOn;
-        private static Vector3D openedAt;
-        [ThreadStatic]
-        private static bool answering;
-        [ThreadStatic]
-        private static IMyUseObject answerWith;
+        private static Vector3D openedHit;
 
-        // The Relative tile: the look the panel opened on, handed over with the press (Press); and, for the length of the game's
-        // pick (MyPlayerCollection.SetDampeningEntity), the character it is for, the head matrix the character answers with,
-        // and the head's own at that moment (for the log).
-        private static OpenedLook pendingLook;
+        // The Relative tile: for the length of its call (Relative), the character it is for and the head matrix the character
+        // answers with. Without the head hook (headHooked) the game's pick takes the head as it is at the press.
+        private static bool headHooked;
         [ThreadStatic]
         private static MyCharacter lookFor;
         [ThreadStatic]
         private static MatrixD lookWith;
-        [ThreadStatic]
-        private static MatrixD lookNow;
 
         /// <summary>How far the game's relative-dampening ray reaches (MyPlayerCollection.SetDampeningEntity: forward * 1000).</summary>
         private const double RelativeRayMetres = 1000.0;
@@ -126,68 +93,24 @@ namespace SpaceEngineersVR.Input
         }
 
         /// <summary>
-        /// The quick-actions screen is hooked into the game's input here. Each hook on its own, like the hand input's: a
-        /// button that cannot be hooked must not take the rendering patches down with it.
+        /// The game's input states a tile's press quiets (<see cref="GameControlCall.Reach"/>), and the head the Relative tile's
+        /// pick asks for. Each on its own: a part that cannot reach the game must not take the panel down with it.
         /// </summary>
         public static void Patch(Harmony harmony)
         {
-            PatchRegistry.Apply("input pass", () =>
-            {
-                // The gameplay screen's input pass (it reads every on-foot control, and the cube builder's, from here).
-                harmony.Patch(AccessTools.Method(typeof(MyGuiScreenGamePlay), nameof(MyGuiScreenGamePlay.HandleInput), new[] { typeof(bool) }),
-                    prefix: new HarmonyMethod(typeof(WristButton), nameof(BeforeGameplayInput)),
-                    finalizer: new HarmonyMethod(typeof(WristButton), nameof(AfterGameplayInput)));
-            }, "Wrist panel (input pass) could not be hooked; its buttons will not reach the game");
-
-            PatchRegistry.Apply("new pressed", () =>
-            {
-                harmony.Patch(AccessTools.Method(typeof(MyVRageInput), nameof(MyVRageInput.IsNewGameControlPressed)),
-                    postfix: new HarmonyMethod(typeof(WristButton), nameof(NewPressed)));
-            }, "Wrist panel (new pressed) could not be hooked; its buttons will not reach the game");
-
-            PatchRegistry.Apply("controls", () =>
-            {
-                // The helper asks the input above unless a gamepad was used last; this answers in that case too.
-                harmony.Patch(AccessTools.Method(typeof(MyControllerHelper), nameof(MyControllerHelper.IsControl)),
-                    postfix: new HarmonyMethod(typeof(WristButton), nameof(Control)));
-            }, "Wrist panel (controls) could not be hooked; its buttons may not reach the game");
-
-            PatchRegistry.Apply("Terminal and Inventory target", () =>
-            {
-                // The Terminal and Inventory tiles: the game opens what the detector's use object is when the key is read.
-                // Both detector classes answer through UseObject (the closest one overrides it), as for FingerPress.
-                Type closest = AccessTools.TypeByName("Sandbox.Game.Entities.Character.Components.MyCharacterClosestDetectorComponent")
-                               ?? throw new MissingMemberException("MyCharacterClosestDetectorComponent");
-                var getters = new[]
-                {
-                    AccessTools.PropertyGetter(typeof(MyCharacterDetectorComponent), nameof(MyCharacterDetectorComponent.UseObject))
-                        ?? throw new MissingMemberException(nameof(MyCharacterDetectorComponent), "UseObject"),
-                    AccessTools.DeclaredProperty(closest, nameof(MyCharacterDetectorComponent.UseObject))?.GetGetMethod(true)
-                        ?? throw new MissingMemberException(closest.Name, "UseObject"),
-                };
-                foreach (var getter in getters)
-                    harmony.Patch(getter, postfix: new HarmonyMethod(typeof(WristButton), nameof(AnswerUseObject)));
-                harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.ShowTerminal), Type.EmptyTypes),
-                    prefix: new HarmonyMethod(typeof(WristButton), nameof(BeforeShowTerminal)),
-                    finalizer: new HarmonyMethod(typeof(WristButton), nameof(AfterShow)));
-                harmony.Patch(AccessTools.Method(typeof(MyCharacter), nameof(MyCharacter.ShowInventory), Type.EmptyTypes),
-                    prefix: new HarmonyMethod(typeof(WristButton), nameof(BeforeShowInventory)),
-                    finalizer: new HarmonyMethod(typeof(WristButton), nameof(AfterShow)));
-            }, "Wrist panel (Terminal and Inventory target) could not be hooked; those tiles open what the hand points at as the panel closes");
+            PatchRegistry.Apply("game controls", GameControlCall.Reach,
+                "Wrist panel (game controls) could not reach the game's input; its tiles for the game's controls do nothing");
 
             PatchRegistry.Apply("Relative target", () =>
             {
-                // The Relative tile: the game's pick (MyPlayerCollection.SetDampeningEntity) asks the controlled entity for its
-                // head matrix through the mod interface (IMyControllableEntity.GetHeadMatrix(true, true, false, false)), which
-                // a character answers in its explicit implementation. For the length of that one pick, the character answers
-                // with the look the panel opened on. The head is hooked first: without it the pick is left alone.
+                // The game's pick (MyPlayerCollection.SetDampeningEntity) asks the controlled entity for its head matrix through
+                // the mod interface (IMyControllableEntity.GetHeadMatrix(true, true, false, false)), which a character answers in
+                // its explicit implementation. For the length of the Relative tile's call, the character answers with the look
+                // the panel opened on.
                 harmony.Patch(CharacterHeadForInterface(),
                     postfix: new HarmonyMethod(typeof(WristButton), nameof(AnswerHead)));
-                harmony.Patch(AccessTools.Method(typeof(Sandbox.Game.Multiplayer.MyPlayerCollection), nameof(Sandbox.Game.Multiplayer.MyPlayerCollection.SetDampeningEntity))
-                        ?? throw new MissingMethodException("MyPlayerCollection", "SetDampeningEntity"),
-                    prefix: new HarmonyMethod(typeof(WristButton), nameof(BeforeSetDampening)),
-                    finalizer: new HarmonyMethod(typeof(WristButton), nameof(AfterSetDampening)));
-            }, "Wrist panel (Relative target) could not be hooked; the Relative tile matches what the head looks at as the panel closes");
+                headHooked = true;
+            }, "Wrist panel (Relative target) could not be hooked; the Relative tile matches what the head looks at as it is pressed");
         }
 
         /// <summary>MyCharacter's explicit VRage.Game.ModAPI.Interfaces.IMyControllableEntity.GetHeadMatrix, which the game's pick calls.</summary>
@@ -249,16 +172,9 @@ namespace SpaceEngineersVR.Input
                 publishedTracked = VRInput.Active && hand.Tracked;
             }
 
-            if (stage != Stage.None && Stopwatch.GetTimestamp() > until)
-            {
-                Log.Warn($"Wrist panel: '{pendingLabel}' was not taken by the game in {PressSeconds} s; dropped");
-                stage = Stage.None;
-                LastOutcome = "dropped";
-            }
-
             if (screen != null && Gone(screen))
                 screen = null;
-            if (screen == null && stage == Stage.None)
+            if (screen == null)
             {
                 openedBy = null;
                 openedOn = null;
@@ -269,7 +185,6 @@ namespace SpaceEngineersVR.Input
                 // Switched off while it is up (the setting, or the debug file): take it away.
                 if (screen != null)
                     screen.CloseScreen();
-                stage = Stage.None;
                 return;
             }
 
@@ -322,137 +237,73 @@ namespace SpaceEngineersVR.Input
 
         private static bool Gone(QuickActionsScreen s) => s.State == MyGuiScreenState.CLOSING || s.State == MyGuiScreenState.CLOSED;
 
-        // ---- A button on the screen pressing the game's control ----
-
-        /// <summary>
-        /// Game thread, from a button: the screen is closing, and the next gameplay input pass gets this control. For the
-        /// Relative tile, <paramref name="look"/> is where the head looked as the panel opened, which the game's pick then uses.
-        /// </summary>
-        public static void Press(MyStringId control, string label, OpenedLook look = null)
-        {
-            pending = control;
-            pendingLabel = label;
-            pendingLook = look;
-            stage = Stage.Waiting;
-            until = Stopwatch.GetTimestamp() + (long)(PressSeconds * Stopwatch.Frequency);
-            Log.Info($"Wrist panel: {label}");
-        }
-
-        /// <summary>
-        /// Game thread, when the screen the button was on has closed (the wrist panel, or the actions wheel for its entries that
-        /// press a game control: <see cref="GameControlEntries"/>). A control waiting for it can now go to the gameplay screen.
-        /// </summary>
+        /// <summary>Game thread, when the panel has closed: it is no longer the one up.</summary>
         public static void ScreenClosed(MyGuiScreenBase closed)
         {
             if (ReferenceEquals(screen, closed))
                 screen = null;
-            if (stage == Stage.Waiting)
-            {
-                stage = Stage.Armed;
-                served = false;
-                until = Stopwatch.GetTimestamp() + (long)(PressSeconds * Stopwatch.Frequency);
-            }
         }
 
-        /// <summary>A button's control is on its way to the game (the drive's quickmenu press waits for it).</summary>
-        internal static bool Busy => stage != Stage.None;
-
-        /// <summary>What became of the last control handed over: read by the game, not asked about, or dropped (for the drive's report).</summary>
+        /// <summary>What the last press of a game control did: read by the game, or why not (for the drive's report).</summary>
         internal static string LastOutcome { get; set; }
-
-        /// <summary>The game is asking about this control during the input pass the handed-over control is for.</summary>
-        internal static bool Wants(MyStringId control) => inPass && stage == Stage.Armed && control == pending;
-
-        internal static void Begin()
-        {
-            inPass = true;
-            served = false;
-        }
-
-        /// <summary>The input pass is over: a handed-over control is delivered (or not) just this once.</summary>
-        internal static void End()
-        {
-            inPass = false;
-            if (stage != Stage.Armed)
-                return;
-            stage = Stage.None;
-            LastOutcome = served ? "read by the game" : "not asked by the game";
-            if (served)
-                Log.Info($"Wrist panel: '{pendingLabel}' read by the game");
-            else
-                Log.Warn($"Wrist panel: the game did not ask about '{pendingLabel}' in its input pass (a screen open, or the control not allowed here)");
-        }
-
-        private static void BeforeGameplayInput() => Begin();
 
         // ---- The Terminal and Inventory tiles: what was targeted when the panel opened ----
 
-        /// <summary>Game thread, as the panel opens: what the character's use ray is on (the block the hand points at), and where the character is.</summary>
+        /// <summary>
+        /// Game thread, as the panel opens: what the character's use ray is on (the block the hand points at), and where the ray
+        /// hit it, in its owner's frame.
+        /// </summary>
         private static void OpenedOn()
         {
             MyCharacter character = MySession.Static?.LocalCharacter;
+            MyCharacterDetectorComponent detector = character?.GetDetectorComponent();
             openedBy = character;
-            openedOn = character?.GetDetectorComponent()?.UseObject;
-            openedAt = character?.PositionComp.GetPosition() ?? Vector3D.Zero;
+            openedOn = detector?.UseObject;
+            IMyEntity owner = openedOn?.Owner;
+            openedHit = owner != null ? Vector3D.Transform(detector.HitPosition, owner.PositionComp.WorldMatrixNormalizedInv) : Vector3D.Zero;
         }
-
-        private static void BeforeShowTerminal(MyCharacter __instance) => Answer(__instance, MyControlsSpace.TERMINAL, UseActionEnum.OpenTerminal);
-
-        private static void BeforeShowInventory(MyCharacter __instance) => Answer(__instance, MyControlsSpace.INVENTORY, UseActionEnum.OpenInventory);
 
         /// <summary>
-        /// The game's ShowTerminal or ShowInventory, run for the tile's control: for its length the detector answers with what
-        /// the use ray was on when the panel opened (nothing, if it was on nothing: then the game opens the character's own),
-        /// so the game's own choice (a block's terminal or inventory, or its own) is made from that. Not when the character has
-        /// moved off since (<see cref="OpenedOnMetres"/>) or the target has gone; then the game decides from where it is now.
+        /// The gameplay screen's pass with the Terminal or Inventory control pressed (<paramref name="press"/>): for its length
+        /// the detector answers with what the use ray was on when the panel opened (nothing, if it was on nothing: then the game
+        /// opens the character's own), so the game's own choice (a block's terminal or inventory, or its own) is made from that.
+        /// Not when that target has gone or is out of the game's reach for it now (<see cref="InReach"/>), nor from a seat or
+        /// without the panel; then the game decides from what the hand is on now. The press's outcome, and which it was.
         /// </summary>
-        private static void Answer(MyCharacter character, MyStringId control, UseActionEnum action)
+        private static string OpenTargeted(Sandbox.Game.Entities.IMyControllableEntity controlled, UseActionEnum action, Func<string> press)
         {
-            answering = false;
-            answerWith = null;
-            try
-            {
-                if (!inPass || stage != Stage.Armed || pending != control || character == null || character != openedBy)
-                    return;
-                IMyUseObject now = character.GetDetectorComponent()?.UseObject;
-                IMyEntity owner = openedOn?.Owner;
-                double moved = Vector3D.Distance(character.PositionComp.GetPosition(), openedAt);
-                if (openedOn != null && (owner == null || owner.Closed || owner.MarkedForClose))
-                {
-                    Log.Info($"Wrist panel: {pendingLabel}: what was targeted when the panel opened is gone; the game opens what the hand is on now ({Describe(now)})");
-                    return;
-                }
-                if (moved > OpenedOnMetres)
-                {
-                    Log.Info($"Wrist panel: {pendingLabel}: moved {moved:F1} m since the panel opened; the game opens what the hand is on now ({Describe(now)})");
-                    return;
-                }
-                answering = true;
-                answerWith = openedOn;
-                string opens = openedOn == null ? "the character's own (nothing was targeted)"
-                    : openedOn.IsActionSupported(action) ? Describe(openedOn) : $"the character's own ({Describe(openedOn)} has no {action})";
-                Log.Info($"Wrist panel: {pendingLabel} opens {opens}, targeted when the panel opened; the hand is on {Describe(now)} now");
-            }
-            catch (Exception e)
-            {
-                answering = false;
-                answerWith = null;
-                if (errors++ < 3)
-                    Log.Error(e, "Wrist panel: could not give the game what was targeted when the panel opened");
-            }
+            if (!(controlled is MyCharacter character) || character != openedBy)
+                return press() + "; the game opens what the controls are on now";
+            if (!DetectorAnswer.Hooked)
+                return press() + "; the detector's answer could not be hooked, so the game opens what the hand is on now";
+            MyCharacterDetectorComponent detector = character.GetDetectorComponent();
+            IMyUseObject now = detector?.UseObject;
+            IMyEntity owner = openedOn?.Owner;
+            if (openedOn != null && (owner == null || owner.Closed || owner.MarkedForClose))
+                return press() + $"; what was targeted when the panel opened is gone, so the game opens what the hand is on now ({Describe(now)})";
+            if (openedOn != null && !InReach(detector, openedOn, owner, out double metres))
+                return press() + $"; what was targeted when the panel opened is {metres:F1} m away now, past the game's reach for it " +
+                       $"({openedOn.InteractiveDistance:F1} m), so the game opens what the hand is on now ({Describe(now)})";
+            string outcome = null;
+            DetectorAnswer.With(openedOn, () => outcome = press());
+            string opened = openedOn == null ? "the character's own (nothing was targeted)"
+                : openedOn.IsActionSupported(action) ? Describe(openedOn) : $"the character's own ({Describe(openedOn)} has no {action})";
+            return $"{outcome}; {opened}, targeted when the panel opened; the hand is on {Describe(now)} now";
         }
 
-        private static Exception AfterShow(Exception __exception)
+        /// <summary>
+        /// The game's reach for a use object: its own interactive distance from where the character's detector looks from, to
+        /// where the ray hit it (MyCharacterShapecastDetectorComponent.cs:257). Here the hit taken as the panel opened, carried
+        /// with its owner since.
+        /// </summary>
+        private static bool InReach(MyCharacterDetectorComponent detector, IMyUseObject use, IMyEntity owner, out double metres)
         {
-            answering = false;
-            answerWith = null;
-            return __exception;
-        }
-
-        private static void AnswerUseObject(ref IMyUseObject __result)
-        {
-            if (answering)
-                __result = answerWith;
+            metres = double.PositiveInfinity;
+            if (detector == null)
+                return false;
+            Vector3D hit = Vector3D.Transform(openedHit, owner.PositionComp.WorldMatrixRef);
+            metres = Vector3D.Distance(detector.StartPosition, hit);
+            return metres < use.InteractiveDistance;
         }
 
         private static string Describe(IMyUseObject use)
@@ -474,6 +325,8 @@ namespace SpaceEngineersVR.Input
         /// </summary>
         internal static OpenedLook CaptureLook()
         {
+            if (!lookGuard.On)
+                return null;
             try
             {
                 if (!(MySession.Static?.ControlledEntity is MyCharacter character) || character.PositionComp == null)
@@ -488,8 +341,7 @@ namespace SpaceEngineersVR.Input
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Wrist panel: could not take where the head looked as the panel opened");
+                lookGuard.Failed(e, "Wrist panel: could not take where the head looked as the panel opened");
                 return null;
             }
         }
@@ -499,72 +351,52 @@ namespace SpaceEngineersVR.Input
             ((VRage.Game.ModAPI.Interfaces.IMyControllableEntity)character).GetHeadMatrix(true, true, false, false);
 
         /// <summary>
-        /// The game's relative-dampening pick, run for the Relative tile's control: for its length the character's head
-        /// matrix is the one taken as the panel opened, moved along with the character since (so a drifting player's ray
-        /// still starts at the head), so the game's own ray, its own hit and its own choice are made from that look.
-        /// Not for any other pick: another control, another entity, or a press without a look (a seat's panel).
+        /// The gameplay screen's pass with the Relative control pressed (<paramref name="press"/>), whose handler has the game
+        /// pick what to match: for its length the character's head matrix is the one taken as the panel opened, moved along
+        /// with the character since (so a drifting player's ray still starts at the head), so the game's own ray, its own hit
+        /// and its own choice are made from that look. Where this game runs the pick (single player, or the host) it runs inside
+        /// the call; a client's goes to the server, which picks from the head the server has. Without a look (a seat's panel,
+        /// the actions wheel) or the head hook, the game picks as it is. The press's outcome, and what was picked.
         /// </summary>
-        private static void BeforeSetDampening(long controlledEntityId)
+        private static string Relative(Sandbox.Game.Entities.IMyControllableEntity controlled, OpenedLook look, Func<string> press)
         {
-            lookFor = null;
+            MyCharacter character = look?.Character;
+            if (character == null || !headHooked || !ReferenceEquals(controlled, character) || character.Closed || character.MarkedForClose)
+            {
+                string outcome = press();
+                return outcome + (character == null ? "; the game picks from where the controls look now"
+                    : !headHooked ? "; the head could not be hooked, so the game picks from where the head looks now"
+                    : "; the character the panel opened on is not the one picking, so the game picks from where the head looks now");
+            }
+            MatrixD now = HeadForPick(character);
+            MatrixD then = look.Head;
+            then.Translation += character.PositionComp.GetPosition() - look.At;
+            lookWith = then;
+            lookFor = character;
+            string read;
             try
             {
-                if (!inPass || stage != Stage.Armed || pending != MyControlsSpace.DAMPING_RELATIVE)
-                    return;
-                OpenedLook look = pendingLook;
-                if (look == null)
-                    return;
-                MyCharacter character = look.Character;
-                if (character == null || character.Closed || character.MarkedForClose || character.EntityId != controlledEntityId)
-                {
-                    Log.Info($"Wrist panel: {pendingLabel}: the character the panel opened on is not the one picking; the game picks from where the head looks now");
-                    return;
-                }
-                lookNow = HeadForPick(character);
-                MatrixD then = look.Head;
-                then.Translation += character.PositionComp.GetPosition() - look.At;
-                lookWith = then;
-                lookFor = character;
+                read = press();
             }
-            catch (Exception e)
+            finally
             {
                 lookFor = null;
-                if (errors++ < 3)
-                    Log.Error(e, "Wrist panel: could not give the game where the head looked when the panel opened");
             }
+            double seconds = (Stopwatch.GetTimestamp() - look.Timestamp) / (double)Stopwatch.Frequency;
+            double moved = Vector3D.Distance(character.PositionComp.GetPosition(), look.At);
+            double turned = MathHelper.ToDegrees(Math.Acos(MathHelper.Clamp(
+                Vector3D.Dot(Vector3D.Normalize(then.Forward), Vector3D.Normalize(now.Forward)), -1.0, 1.0)));
+            string picked = Sandbox.Game.Multiplayer.Sync.IsServer
+                ? $"the game picked {Named(character.RelativeDampeningEntity)}"
+                : "the server picks, from the head it has";
+            return $"{read}; {picked}; ray as the panel opened ({seconds:F1} s ago, moved {moved:F1} m) is on {RayOn(character, then)}; "
+                   + $"ray now ({turned:F0} deg away) is on {RayOn(character, now)}";
         }
 
         private static void AnswerHead(MyCharacter __instance, ref MatrixD __result)
         {
             if (lookFor != null && ReferenceEquals(__instance, lookFor))
                 __result = lookWith;
-        }
-
-        /// <summary>The pick is over: what the game chose, and what each ray is on, logged once.</summary>
-        private static Exception AfterSetDampening(Exception __exception)
-        {
-            MyCharacter character = lookFor;
-            lookFor = null;
-            if (character == null)
-                return __exception;
-            try
-            {
-                OpenedLook look = pendingLook;
-                double seconds = look == null ? 0.0 : (Stopwatch.GetTimestamp() - look.Timestamp) / (double)Stopwatch.Frequency;
-                double moved = look == null ? 0.0 : Vector3D.Distance(character.PositionComp.GetPosition(), look.At);
-                double turned = MathHelper.ToDegrees(Math.Acos(MathHelper.Clamp(
-                    Vector3D.Dot(Vector3D.Normalize(lookWith.Forward), Vector3D.Normalize(lookNow.Forward)), -1.0, 1.0)));
-                Log.Info($"Wrist panel: {pendingLabel}: the game picked {Named(character.RelativeDampeningEntity)}"
-                         + $"{(__exception != null ? " (the pick threw)" : string.Empty)}; "
-                         + $"ray as the panel opened ({seconds:F1} s ago, moved {moved:F1} m) is on {RayOn(character, lookWith)}; "
-                         + $"ray now ({turned:F0} deg away) is on {RayOn(character, lookNow)}");
-            }
-            catch (Exception e)
-            {
-                if (errors++ < 3)
-                    Log.Error(e, "Wrist panel: could not report the Relative pick");
-            }
-            return __exception;
         }
 
         /// <summary>For the log: what the game's relative-dampening ray from this head is on, by the game's own query (SetDampeningEntity's), and how far.</summary>
@@ -585,31 +417,6 @@ namespace SpaceEngineersVR.Input
                 return "none";
             string name = string.IsNullOrWhiteSpace(entity.DisplayName) ? entity.GetType().Name : entity.DisplayName;
             return $"'{name}' (EntityId {entity.EntityId})";
-        }
-
-        // A finalizer, so that an exception out of the pass cannot leave the flag set; the exception goes on unchanged.
-        private static Exception AfterGameplayInput(Exception __exception)
-        {
-            End();
-            return __exception;
-        }
-
-        private static void NewPressed(MyVRageInput __instance, MyStringId controlId, ref bool __result)
-        {
-            if (!__result && Wants(controlId) && !__instance.IsControlBlocked(controlId))
-            {
-                served = true;
-                __result = true;
-            }
-        }
-
-        private static void Control(MyStringId controlId, MyControlStateType type, bool joystickOnly, ref bool __result)
-        {
-            if (!__result && !joystickOnly && type == MyControlStateType.NEW_PRESSED && Wants(controlId) && !MyInput.Static.IsControlBlocked(controlId))
-            {
-                served = true;
-                __result = true;
-            }
         }
     }
 }

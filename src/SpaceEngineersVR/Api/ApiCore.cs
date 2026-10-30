@@ -33,6 +33,23 @@ namespace SpaceEngineersVR.Api
         /// <summary>The full id, <c>owner.id</c>: what an action is saved and asked for by.</summary>
         public static string Full(string owner, string id) => owner + "." + id;
 
+        /// <summary>The longest definition subtype id taken (<see cref="IsSubtype"/>).</summary>
+        public const int MaxSubtype = 128;
+
+        /// <summary>
+        /// A definition's subtype id as the game's definitions name it ("AutomaticRifleItem", a mod's "MyRifle_Item"): 1 to
+        /// <see cref="MaxSubtype"/> characters, no control characters, not starting or ending with a space; matched exactly.
+        /// </summary>
+        public static bool IsSubtype(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length > MaxSubtype || char.IsWhiteSpace(text[0]) || char.IsWhiteSpace(text[text.Length - 1]))
+                return false;
+            foreach (char c in text)
+                if (char.IsControl(c))
+                    return false;
+            return true;
+        }
+
         private static bool Valid(string text, bool dot)
         {
             if (string.IsNullOrEmpty(text) || text.Length > MaxLength)

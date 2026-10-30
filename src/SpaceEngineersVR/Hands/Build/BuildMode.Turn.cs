@@ -7,6 +7,7 @@ using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.GUI;
 using Sandbox.Game.World;
 using SpaceEngineersVR.Input;
+using SpaceEngineersVR.Input.Bindings;
 using SpaceEngineersVR.Tracking;
 using VRage.Audio;
 using VRage.Game;
@@ -23,7 +24,7 @@ namespace SpaceEngineersVR.Hands
         {
             if (!Modifier)
             {
-                EndTurn("left stick click let go");
+                EndTurn(ActionNames.ForLog(VRAction.BuildModifier) + " let go");
                 return;
             }
             if (turning && pasteTurn)
@@ -345,7 +346,7 @@ namespace SpaceEngineersVR.Hands
                 EndTurn("a paste took over from the block");
             if (!Modifier || grids == null || !grids.IsActive || grids.PreviewGrids.Count == 0)
             {
-                EndTurn(Modifier ? "the paste has no grids to turn" : "left stick click let go");
+                EndTurn(Modifier ? "the paste has no grids to turn" : ActionNames.ForLog(VRAction.BuildModifier) + " let go");
                 return;
             }
             MyCharacter character = MySession.Static?.LocalCharacter;

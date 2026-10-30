@@ -48,7 +48,7 @@ namespace SpaceEngineersVR.Hands
         }
 
         private static readonly HandStopState[] states = { new HandStopState(), new HandStopState() };
-        private static int errors;
+        private static readonly FeatureGuard guard = new FeatureGuard(nameof(HandStop));
 
         /// <summary>Adds a source; the same source twice is one.</summary>
         public static void Register(IHandContactSource source)
@@ -88,7 +88,7 @@ namespace SpaceEngineersVR.Hands
         internal static void Apply(Hand hand, MyCharacter body, in HandState state, in MatrixD trackingToModel, ref Matrix target)
         {
             HandStopState s = states[(int)hand];
-            if (Off || errors >= 3 || body?.PositionComp == null)
+            if (Off || !guard.On || body?.PositionComp == null)
             {
                 s.Source = null;
                 s.Applied = s.Carry = Vector3D.Zero;
@@ -124,8 +124,7 @@ namespace SpaceEngineersVR.Hands
                         }
                         catch (Exception e)
                         {
-                            if (errors++ < 3)
-                                Log.Error(e, $"Hand stop: {source.GetType().Name} failed" + (errors >= 3 ? "; the hand stop is off for this run" : string.Empty));
+                            guard.Failed(e, $"Hand stop: {source.GetType().Name} failed");
                             continue;
                         }
                         if (hit && c.Depth > 0f && c.Source != null && (!found || c.Depth > best.Depth))
@@ -167,8 +166,7 @@ namespace SpaceEngineersVR.Hands
             }
             catch (Exception e)
             {
-                if (errors++ < 3)
-                    Log.Error(e, "Hand stop failed" + (errors >= 3 ? "; it is off for this run" : string.Empty));
+                guard.Failed(e, "Hand stop failed");
             }
         }
 

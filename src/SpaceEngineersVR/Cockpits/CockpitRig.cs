@@ -273,9 +273,38 @@ namespace SpaceEngineersVR.Cockpits
             for(int slot=0,packed=0;slot<Count;slot++)
                 coverIndices[slot]=LeverAt(slot)?.CoverActor>=0 ? packedCovers ? packed++ : slot : -1;
         }
+        // A mod's cockpit built on one of these (SevrApi RegisterCockpit): this rig's controls under the mod block's subtype, so
+        // what is keyed by the seated block's subtype (switch states, slot assignments, the render's materials) is the block's own.
+        private CockpitRig(CockpitRig like,string subtype)
+        {
+            Subtype=subtype; Model=like.Model; geometryModel=like.geometryModel; SeatMount=like.SeatMount; DefaultSeatOffset=like.DefaultSeatOffset;
+            Left=like.Left; Right=like.Right; Wheel=like.Wheel; Pieces=like.Pieces; Buttons=like.Buttons; Levers=like.Levers; Handles=like.Handles;
+            Bars=like.Bars; Screens=like.Screens; coverIndices=like.coverIndices; ActorCount=like.ActorCount; StaticActors=like.StaticActors;
+        }
         private static readonly Dictionary<string,CockpitRig> rigs=Create().ToDictionary(p=>p.Subtype,StringComparer.Ordinal);
+        private static readonly object registeredGate=new object();
+        private static Dictionary<string,CockpitRig> registered=new Dictionary<string,CockpitRig>(StringComparer.Ordinal);
+        private static int registeredFor=-1;
+        // The game's cockpits with controls; a registered mod cockpit shares one of these.
         internal static IEnumerable<CockpitRig> All => rigs.Values;
-        internal static CockpitRig Find(string subtype) => subtype!=null && rigs.TryGetValue(subtype,out var value) ? value:null;
+        internal static bool HasControls(string subtype) => subtype!=null && rigs.ContainsKey(subtype);
+        // The game's cockpit's rig, else a registered mod cockpit's (the same instance while its registration stands).
+        internal static CockpitRig Find(string subtype)
+        {
+            if(subtype==null) return null;
+            if(rigs.TryGetValue(subtype,out var rig)) return rig;
+            var cockpits=Api.ApiRuntime.Cockpits;
+            lock(registeredGate)
+            {
+                if(registeredFor!=cockpits.Version) { registered=new Dictionary<string,CockpitRig>(StringComparer.Ordinal); registeredFor=cockpits.Version; }
+                if(registered.TryGetValue(subtype,out rig)) return rig;
+                string like=cockpits.Like(subtype);
+                rig=like!=null && rigs.TryGetValue(like,out var template) ? new CockpitRig(template,subtype):null;
+                registered[subtype]=rig;
+                return rig;
+            }
+        }
+        internal bool IsHandle(int slot) => HandleAt(slot)!=null;
         internal bool HasSticks => Left!=null || Right!=null;
         internal bool Matches(string model) => model!=null && model.Replace('\\','/').EndsWith(Model,StringComparison.OrdinalIgnoreCase);
         internal int Count => Buttons.Length+Levers.Length+Handles.Length+Bars.Length;

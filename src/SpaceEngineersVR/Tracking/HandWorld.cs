@@ -93,12 +93,6 @@ namespace SpaceEngineersVR.Tracking
         /// </summary>
         internal const double LagSeconds = 0.1;
 
-        /// <summary>
-        /// RenderDebug HandIKFrame=0: the arms take the hands from the previous draw's camera, as they did before
-        /// (<see cref="TryGetTrackingToBody"/>), for comparison.
-        /// </summary>
-        internal static bool PreviousCamera { get; set; }
-
         /// <summary>How the last <see cref="TryGetTrackingToBody"/> placed the tracking space, for the log.</summary>
         internal enum BodySource
         {
@@ -108,7 +102,7 @@ namespace SpaceEngineersVR.Tracking
             /// <summary>From the last camera sent, carried along with the body since (third person, an untracked head).</summary>
             CameraInBody,
 
-            /// <summary>From the last camera sent, where it was in the world (RenderDebug HandIKFrame=0, or no camera sent yet).</summary>
+            /// <summary>From the last camera sent, where it was in the world (no camera sent yet).</summary>
             Camera,
         }
 
@@ -158,7 +152,7 @@ namespace SpaceEngineersVR.Tracking
         /// head (<see cref="TryGetTrackingToBody"/>) rather than the previous draw's camera, so a body in motion does not
         /// leave the hand a frame behind (7 m/s sprinting is 10 cm). Game thread, after the simulation moved the body.
         /// Falls back to the previous camera's placement where there is no head to build from (what
-        /// <see cref="TryGetTrackingToBody"/> does), and RenderDebug HandIKFrame=0 asks for it everywhere.
+        /// <see cref="TryGetTrackingToBody"/> does).
         /// </summary>
         internal static bool TryGetNow(MyCharacter body, Hand hand, out MatrixD grip, out MatrixD aim, out ViewRefusal why)
         {
@@ -228,13 +222,13 @@ namespace SpaceEngineersVR.Tracking
                 return false;
 
             MatrixD modelFromWorld = body.PositionComp.WorldMatrixNormalizedInv;
-            if (!PreviousCamera && view.HeadTracked && TryGetHeadCamera(body, out MatrixD head))
+            if (view.HeadTracked && TryGetHeadCamera(body, out MatrixD head))
             {
                 LastBodySource = BodySource.Head;
                 trackingToModel = InvertPose(view.HeadTracking) * head * modelFromWorld;
                 return true;
             }
-            if (!PreviousCamera && cameraInBodyOf == body)
+            if (cameraInBodyOf == body)
             {
                 LastBodySource = BodySource.CameraInBody;
                 view.Camera = cameraInBody;

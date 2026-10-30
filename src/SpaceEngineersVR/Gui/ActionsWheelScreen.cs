@@ -247,8 +247,9 @@ namespace SpaceEngineersVR.Gui
                     if (!string.IsNullOrEmpty(now))
                         icon = now;
                 }
-                catch
+                catch (Exception e)
                 {
+                    OnceLog.Error("ActionsWheelScreen.Icon", e, "Actions wheel: an entry's icon could not be read; its own icon stays", entry.Name);
                 }
                 if (icon != iconShown[i])
                 {
@@ -509,8 +510,6 @@ namespace SpaceEngineersVR.Gui
         {
             base.OnClosed();
             ActionsWheel.Closed();
-            // An entry that presses a game control (GameControlEntries) hands it to the gameplay screen once the wheel is gone.
-            WristButton.ScreenClosed(this);
             // The stick that pointed at an entry is still pushed as the wheel goes: the game's other radial menus ask for this.
             VRControls.HoldMovement();
         }

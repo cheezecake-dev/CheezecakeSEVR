@@ -31,9 +31,8 @@ namespace SpaceEngineersVR.Gui
     /// from a DLC the player lacks is greyed as the switcher greys it.</item>
     /// </list>
     /// Default mount point, on the build ring, is <see cref="BuildEntries"/>'s.
-    /// An entry for a control presses the game's own control as the wrist panel's tiles do (<see cref="WristButton.Press"/>): the
-    /// wheel closes, and the gameplay screen's next input pass is told the control was pressed, once, so the game does what the
-    /// key does, with its own checks and sounds.
+    /// An entry for a control presses it in the game's own code for it as the wrist panel's tiles do (<see cref="WristButton.Press"/>):
+    /// what the game does for the key, with its own checks and sounds, as the entry is picked.
     /// </summary>
     internal static class GameControlEntries
     {
@@ -62,7 +61,7 @@ namespace SpaceEngineersVR.Gui
             AddEmotes(top);
         }
 
-        /// <summary>An entry that presses a game control once the wheel has closed.</summary>
+        /// <summary>An entry that presses a control in the game's own code for it.</summary>
         private static ActionsWheel.Entry Control(string name, string icon, MyStringId control, Func<string> stateText) =>
             new ActionsWheel.Entry
             {
